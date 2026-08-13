@@ -13,6 +13,7 @@ import { EmptyState } from "@/components/data/empty-state";
 import { DirectorySkeleton, GenericLoadingState } from "@/components/data/data-loading";
 import { EditorToast, queueEditorToast, readQueuedEditorToast, type EditorToastState } from "@/components/data/editor-toast";
 import { FloatingInboxTabs, InboxLoadingPanel, InboxSection, NotificationBadge } from "@/components/data/inbox-shared";
+import { ConfirmModal } from "@/components/ui/confirm-modal";
 import { FlatLink } from "@/components/ui/flat-button";
 import { useHideMobileChromeWhileMounted, useModalFocusTrap } from "@/hooks/use-modal-behavior";
 import { useStudentNotificationCounts, useTeacherNotificationCounts } from "@/hooks/use-notification-counts";
@@ -6335,6 +6336,7 @@ export function TeacherProgramSettingsData({ slug, programId, returnHref }: { sl
   const [message, setMessage] = useState<string | null>(null);
   const [toast, setToast] = useState<EditorToastState | null>(null);
   const [missingFieldsModal, setMissingFieldsModal] = useState<{ fields: ProgramBuilderMissingField[]; allowContinue: boolean } | null>(null);
+  const [pendingFutureApplicantsConfirm, setPendingFutureApplicantsConfirm] = useState<{ statusOverride?: Partial<ProgramBuilderStatus> } | null>(null);
   const [startDateChangeConfirmOpen, setStartDateChangeConfirmOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -6838,12 +6840,7 @@ export function TeacherProgramSettingsData({ slug, programId, returnHref }: { sl
     const result = (await response.json()) as { program?: Program; error?: string; requiresFutureApplicantConfirmation?: boolean };
     if (!response.ok && result.requiresFutureApplicantConfirmation) {
       setBusy(false);
-      const confirmed = window.confirm(
-        "Existing students will keep their current approved payment terms. These changes apply only to future applicants. To change a current student's billing, use Manage Finances.",
-      );
-      if (confirmed) {
-        void saveProgram(statusOverride, true);
-      }
+      setPendingFutureApplicantsConfirm({ statusOverride });
       return;
     }
     if (!response.ok || !result.program) {
@@ -7210,6 +7207,19 @@ export function TeacherProgramSettingsData({ slug, programId, returnHref }: { sl
             document.body,
           )
         : null}
+      {pendingFutureApplicantsConfirm ? (
+        <ConfirmModal
+          title="Apply to future applicants only?"
+          text="Existing students will keep their current approved payment terms. These changes apply only to future applicants. To change a current student's billing, use Manage Finances."
+          confirmLabel="Apply Changes"
+          onConfirm={async () => {
+            const statusOverride = pendingFutureApplicantsConfirm.statusOverride;
+            setPendingFutureApplicantsConfirm(null);
+            await saveProgram(statusOverride, true);
+          }}
+          onCancel={() => setPendingFutureApplicantsConfirm(null)}
+        />
+      ) : null}
       {editWizardContent}
 
       {builderStep === "basics" ? (
@@ -15165,6 +15175,7 @@ function TeacherStudentNotesPage({
   const [busy, setBusy] = useState(false);
   const [deletingNoteId, setDeletingNoteId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [pendingDeleteNote, setPendingDeleteNote] = useState<StudentNoteWithContext | null>(null);
   const studentName = target.profile?.full_name?.trim() || "Student";
   const recipient = target.parent ?? target.profile;
   const recipientName = recipient?.full_name?.trim() || (target.parent ? "Parent" : studentName);
@@ -15251,9 +15262,6 @@ function TeacherStudentNotesPage({
     if (deletingNoteId) {
       return;
     }
-    if (!window.confirm("Delete this note?")) {
-      return;
-    }
     setDeletingNoteId(note.id);
     setError(null);
     const token = await getCurrentAccessToken();
@@ -15300,7 +15308,7 @@ function TeacherStudentNotesPage({
             {loading ? (
               <InboxLoadingPanel label="Loading student notes" />
             ) : notes.length ? (
-              notes.map((note) => <StudentNoteBubble key={note.id} note={note} viewer="teacher" deleting={deletingNoteId === note.id} onDelete={deleteNote} />)
+              notes.map((note) => <StudentNoteBubble key={note.id} note={note} viewer="teacher" deleting={deletingNoteId === note.id} onDelete={setPendingDeleteNote} />)
             ) : (
               <MiniEmpty text="No notes have been sent for this student in this class." />
             )}
@@ -15331,6 +15339,18 @@ function TeacherStudentNotesPage({
           </div>
         </section>
       </div>
+      {pendingDeleteNote ? (
+        <ConfirmModal
+          title="Delete this note?"
+          confirmLabel="Delete"
+          tone="danger"
+          onConfirm={async () => {
+            await deleteNote(pendingDeleteNote);
+            setPendingDeleteNote(null);
+          }}
+          onCancel={() => setPendingDeleteNote(null)}
+        />
+      ) : null}
     </div>
   );
 }

@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { EmptyState } from "@/components/data/empty-state";
+import { ConfirmModal } from "@/components/ui/confirm-modal";
 import { invalidateQuery } from "@/lib/query-cache";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { Database } from "@/lib/supabase/types";
@@ -43,6 +44,7 @@ export function ChildrenManager({ slug }: { slug: string }) {
   const [saving, setSaving] = useState(false);
   const [busyChildId, setBusyChildId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [pendingRemoveChild, setPendingRemoveChild] = useState<ChildWithDetails | null>(null);
 
   useEffect(() => {
     void loadChildren();
@@ -213,10 +215,6 @@ export function ChildrenManager({ slug }: { slug: string }) {
     if (!parentId || !mosqueId) {
       return;
     }
-    const childName = child.full_name?.trim() || "this child";
-    if (!window.confirm(`Remove ${childName} from your family? This will not delete their class history.`)) {
-      return;
-    }
 
     setBusyChildId(child.id);
     setError(null);
@@ -283,7 +281,7 @@ export function ChildrenManager({ slug }: { slug: string }) {
                 onEditFieldsChange={setEditFields}
                 onCancelEdit={() => setEditingChildId(null)}
                 onSave={() => saveChild(child.id)}
-                onRemove={() => removeChild(child)}
+                onRemove={() => setPendingRemoveChild(child)}
               />
             ))}
           </div>
@@ -334,6 +332,19 @@ export function ChildrenManager({ slug }: { slug: string }) {
           </button>
         )}
       </section>
+      {pendingRemoveChild ? (
+        <ConfirmModal
+          title="Remove from family?"
+          text={`Remove ${pendingRemoveChild.full_name?.trim() || "this child"} from your family? This will not delete their class history.`}
+          confirmLabel="Remove"
+          tone="danger"
+          onConfirm={async () => {
+            await removeChild(pendingRemoveChild);
+            setPendingRemoveChild(null);
+          }}
+          onCancel={() => setPendingRemoveChild(null)}
+        />
+      ) : null}
     </div>
   );
 }
