@@ -1,4 +1,5 @@
 import { requireProgramFinanceAccess } from "@/lib/finance/auth";
+import { recordFinanceAuditEvent } from "@/lib/finance/audit";
 import { requireProgramManageAccess } from "@/lib/programs/auth";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
 import type { Database } from "@/lib/supabase/types";
@@ -17,6 +18,12 @@ type ProgramTrack = Database["public"]["Tables"]["program_tracks"]["Row"];
 
 const exportTypes = new Set<ExportType>(["students", "applications", "finance_summary", "payment_history"]);
 const financeExportTypes = new Set<ExportType>(["finance_summary", "payment_history"]);
+const exportTypeLabels: Record<ExportType, string> = {
+  students: "students",
+  applications: "applications",
+  finance_summary: "finance summary",
+  payment_history: "payment history",
+};
 
 function csvEscape(value: unknown) {
   const text = value == null ? "" : String(value);
@@ -368,6 +375,14 @@ export async function GET(request: Request, { params }: { params: Promise<{ prog
             : type === "finance_summary"
               ? await exportFinanceSummary(supabase, programId, program)
               : await exportPaymentHistory(supabase, programId);
+
+    await recordFinanceAuditEvent(supabase, {
+      programId,
+      actorProfileId: user.id,
+      eventType: `export_${type}`,
+      summary: `Exported the ${exportTypeLabels[type]} CSV.`,
+      metadata: { exportType: type },
+    });
 
     return new Response(csv, {
       headers: {
