@@ -10,7 +10,7 @@ const variantClasses: Record<Variant, string> = {
   ghost: "border-transparent bg-transparent text-[#2F8FB3] hover:bg-white/70",
   danger: "border-[#E25241] bg-[#E25241] !text-white hover:bg-[#C83F31]",
   dangerOutline: "border-[#E25241] bg-white text-[#E25241] hover:bg-[#FDEDEA]",
-  success: "border-[#2F8FB3] bg-[#2F8FB3] !text-white hover:bg-[#257B9C]",
+  success: "border-[#17624F] bg-[#17624F] !text-white hover:bg-[#0F4537]",
 };
 
 type BaseProps = {
