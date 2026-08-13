@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { FlatButton } from "@/components/ui/flat-button";
+import { friendlyErrorMessage } from "@/lib/errors";
 import { getDefaultLandingHref, loadUserAccessByMosqueSlug } from "@/lib/authz";
 import { normalizePhoneNumber, phoneCountryCodes } from "@/lib/phone";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -99,7 +100,7 @@ export function OAuthProfileCompletion({ slug }: { slug: string }) {
 
     if (rpcError) {
       setSaving(false);
-      setError(rpcError.message);
+      setError(friendlyErrorMessage(rpcError, "Could not save your profile. Please try again."));
       return;
     }
 

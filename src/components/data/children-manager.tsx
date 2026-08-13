@@ -3,6 +3,7 @@
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { EmptyState } from "@/components/data/empty-state";
 import { ConfirmModal } from "@/components/ui/confirm-modal";
+import { friendlyErrorMessage } from "@/lib/errors";
 import { invalidateQuery } from "@/lib/query-cache";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { Database } from "@/lib/supabase/types";
@@ -81,7 +82,7 @@ export function ChildrenManager({ slug }: { slug: string }) {
       .eq("mosque_id", mosque.id);
 
     if (linksError) {
-      setError(linksError.message);
+      setError(friendlyErrorMessage(linksError, "Could not load your family."));
       setLoading(false);
       return;
     }
@@ -102,7 +103,7 @@ export function ChildrenManager({ slug }: { slug: string }) {
     ]);
 
     if (profilesError) {
-      setError(profilesError.message);
+      setError(friendlyErrorMessage(profilesError, "Could not load your family."));
       setLoading(false);
       return;
     }
@@ -157,7 +158,7 @@ export function ChildrenManager({ slug }: { slug: string }) {
     });
 
     if (rpcError) {
-      setError(rpcError.message);
+      setError(friendlyErrorMessage(rpcError, "Could not add this child."));
       setSaving(false);
       return;
     }
@@ -201,7 +202,7 @@ export function ChildrenManager({ slug }: { slug: string }) {
     });
 
     if (rpcError) {
-      setError(rpcError.message);
+      setError(friendlyErrorMessage(rpcError, "Could not save these changes."));
       setBusyChildId(null);
       return;
     }
@@ -227,7 +228,7 @@ export function ChildrenManager({ slug }: { slug: string }) {
       .eq("mosque_id", mosqueId);
 
     if (deleteError) {
-      setError(deleteError.message);
+      setError(friendlyErrorMessage(deleteError, "Could not remove this child."));
       setBusyChildId(null);
       return;
     }

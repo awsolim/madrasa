@@ -18,6 +18,7 @@ import { EditorToast, type EditorToastState } from "@/components/data/editor-toa
 import { EmptyState } from "@/components/data/empty-state";
 import { FloatingInboxTabs, InboxLoadingPanel, InboxSection } from "@/components/data/inbox-shared";
 import { useHideMobileChromeWhileMounted, useModalFocusTrap } from "@/hooks/use-modal-behavior";
+import { friendlyErrorMessage } from "@/lib/errors";
 import { buildAnnouncementThreads, buildNoteThreads } from "@/lib/messages/threads";
 import {
   fetchNotificationState,
@@ -963,7 +964,7 @@ export function InboxAnnouncementsData({ slug }: { slug: string }) {
     const noteError = noteQueries.find((result) => result.error)?.error;
     if (noteError) {
       setLoading(false);
-      setError(noteError.message);
+      setError(friendlyErrorMessage(noteError, "Could not load your notes."));
       return;
     }
     setNoteThreadExhausted(Object.fromEntries(noteQueries.map((result) => [result.key, result.rows.length < NOTE_THREAD_PAGE_SIZE])));
@@ -1076,7 +1077,7 @@ export function InboxAnnouncementsData({ slug }: { slug: string }) {
     const queryError = announcementQueries.find((result) => result.error)?.error;
     if (queryError) {
       setLoading(false);
-      setError(queryError.message);
+      setError(friendlyErrorMessage(queryError, "Could not load your announcements."));
       return;
     }
     setAnnouncementThreadExhausted(
