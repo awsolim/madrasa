@@ -335,9 +335,5 @@ export function validateProgramStatusCombination(fields: ProgramStatusFields): {
     errors.push({ field: "billingEndBehavior", message: "Ongoing programs cannot automatically end billing at a program end date — choose manual cancellation instead." });
   }
 
-  if (fields.isOngoing && fields.offersAnnualPayment) {
-    errors.push({ field: "offersAnnualPayment", message: "Ongoing programs can't offer Pay in Full — switch to Monthly Subscription or Free." });
-  }
-
   return { valid: errors.length === 0, errors };
 }

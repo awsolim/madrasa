@@ -49,12 +49,14 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
     if (programError || !program) {
       return Response.json({ error: programError?.message ?? "This class is no longer available." }, { status: 404 });
     }
-    if (program.is_paid && !enrollmentRequest.payment_bypassed) {
-      return Response.json({ error: "Payment is required to complete this registration." }, { status: 409 });
-    }
-
     const terms = await ensurePaymentTermsForRequest(supabase, requestId, user.id);
-    if (terms.payment_type === "monthly" || terms.payment_type === "pay_in_full") {
+    const noPaymentRequired =
+      !program.is_paid ||
+      enrollmentRequest.payment_bypassed ||
+      terms.payment_type === "free" ||
+      terms.payment_type === "waived" ||
+      terms.status === "waived";
+    if (!noPaymentRequired && (terms.payment_type === "monthly" || terms.payment_type === "pay_in_full" || terms.payment_type === "annual")) {
       return Response.json({ error: "Payment is required to complete this registration." }, { status: 409 });
     }
 

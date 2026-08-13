@@ -1,4 +1,4 @@
-import { ResetPasswordPage } from "@/components/pages/page-views";
+import { ResetPasswordPage } from "@/components/pages/auth-pages";
 
 export default async function Page({
   params,

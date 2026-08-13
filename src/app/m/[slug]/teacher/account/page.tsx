@@ -1,4 +1,4 @@
-import { TeacherAccountPage } from "@/components/pages/page-views";
+import { TeacherAccountPage } from "@/components/pages/teacher-pages";
 
 export default async function Page({
   params,

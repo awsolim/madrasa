@@ -1,4 +1,4 @@
-import { AdminProgramFinancesPage } from "@/components/pages/page-views";
+import { AdminProgramFinancesPage } from "@/components/pages/admin-pages";
 
 export default async function Page({ params }: { params: Promise<{ slug: string; programId: string }> }) {
   const { slug, programId } = await params;

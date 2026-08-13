@@ -1,4 +1,4 @@
-import { ProgramApplyPage } from "@/components/pages/page-views";
+import { ProgramApplyPage } from "@/components/pages/public-pages";
 
 export default async function Page({
   params,

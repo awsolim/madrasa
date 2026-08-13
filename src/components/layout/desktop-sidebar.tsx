@@ -5,8 +5,8 @@ import Link from "next/link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState, type ReactNode } from "react";
 import type { Session } from "@supabase/supabase-js";
-import { useStudentNotificationCounts, useTeacherNotificationCounts } from "@/components/data/supabase-public-sections";
 import type { NavItem } from "@/components/layout/horizontal-nav";
+import { useStudentNotificationCounts, useTeacherNotificationCounts } from "@/hooks/use-notification-counts";
 import { emptyUserAccess, getAccountLabel, type UserAccess } from "@/lib/authz";
 import {
   getCachedMosqueChrome,

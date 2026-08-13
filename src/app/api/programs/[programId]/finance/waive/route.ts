@@ -132,6 +132,22 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
       return Response.json({ error: waivedTermsError?.message ?? "Could not record waived payment terms." }, { status: 500 });
     }
 
+    if (enrollmentRequest?.id) {
+      const { error: requestUpdateError } = await supabase
+        .from("enrollment_requests")
+        .update({
+          payment_terms_id: waivedTerms.id,
+          payment_bypassed: true,
+          payment_bypass_external: false,
+          approved_price_monthly_cents: 0,
+          approved_price_annual_cents: 0,
+        })
+        .eq("id", enrollmentRequest.id);
+      if (requestUpdateError) {
+        return Response.json({ error: requestUpdateError.message }, { status: 500 });
+      }
+    }
+
     await supabase.from("program_subscriptions").upsert(
       {
         mosque_id: program.mosque_id,

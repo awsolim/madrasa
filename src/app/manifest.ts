@@ -78,19 +78,5 @@ export default function manifest(): MetadataRoute.Manifest {
         purpose: "maskable",
       },
     ],
-    shortcuts: [
-      {
-        name: "Classes",
-        short_name: "Classes",
-        description: "Open your class list",
-        url: "/portal/classes",
-      },
-      {
-        name: "Inbox",
-        short_name: "Inbox",
-        description: "Open announcements and notifications",
-        url: "/portal/announcements",
-      },
-    ],
   };
 }

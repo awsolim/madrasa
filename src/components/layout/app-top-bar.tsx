@@ -3,10 +3,10 @@
 import Image from "next/image";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
-import { useStudentNotificationCounts, useTeacherNotificationCounts } from "@/components/data/supabase-public-sections";
 import type { NavItem } from "@/components/layout/horizontal-nav";
+import { useStudentNotificationCounts, useTeacherNotificationCounts } from "@/hooks/use-notification-counts";
 import { emptyUserAccess, type UserAccess } from "@/lib/authz";
 import {
   getCachedMosqueChrome,
@@ -177,11 +177,17 @@ export function MobileBottomNav({
 // of route, independent of the tareeqah:nav-preview transition-only signal below.
 function useOverlayChromeHidden() {
   const [hidden, setHidden] = useState(false);
+  const activeOverlayCountRef = useRef(0);
 
   useEffect(() => {
     function handleOverlayChrome(event: Event) {
       const detail = (event as CustomEvent<{ hidden?: boolean }>).detail;
-      setHidden(Boolean(detail?.hidden));
+      if (detail?.hidden) {
+        activeOverlayCountRef.current += 1;
+      } else {
+        activeOverlayCountRef.current = Math.max(0, activeOverlayCountRef.current - 1);
+      }
+      setHidden(activeOverlayCountRef.current > 0);
     }
 
     window.addEventListener("tareeqah:overlay-chrome", handleOverlayChrome);
@@ -493,9 +499,10 @@ export function AppTopBar({
           <TopBarLogo src={logoUrl} name={displayName} compact />
           <span className="min-w-0 truncate text-[13px] font-semibold leading-4 text-[#26323A]">{displayName}</span>
         </Link>
-        <p className="whitespace-nowrap text-center text-[10px] font-medium leading-3 text-[#7B858C]">
-          Powered by Tareeqah
-        </p>
+        <div className="flex flex-col items-center justify-center whitespace-nowrap text-[#7B858C]">
+          <span className="text-[8px] font-medium leading-[9px]">Powered by</span>
+          <span className="text-[9px] font-semibold leading-[10px]">Tareeqah</span>
+        </div>
         <div className="flex min-w-0 items-center justify-end gap-1.5">
           {!accountReady ? (
             <>
@@ -507,7 +514,7 @@ export function AppTopBar({
               <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[#17624F] text-[11px] font-semibold leading-none text-white">
                 {accountInitial ?? <GuestProfileIcon />}
               </span>
-              <span className="min-w-0 max-w-[74px] truncate text-right text-[12px] font-semibold leading-4 text-[#26323A]">
+              <span className="min-w-0 flex-1 truncate text-right text-[12px] font-semibold leading-4 text-[#26323A]">
                 {userFirstName}
               </span>
             </>

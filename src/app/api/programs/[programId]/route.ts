@@ -315,7 +315,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ pr
     }
 
     if (!isDraft && isPaid && !usesPerTrackPricing && offersAnnualPayment && (!priceAnnualCents || priceAnnualCents < 50)) {
-      return Response.json({ error: "Pay in Full needs a valid price." }, { status: 400 });
+      return Response.json({ error: durationType === "ongoing" ? "Annual subscription needs a valid price." : "Pay in Full needs a valid price." }, { status: 400 });
     }
 
     const supabase = createSupabaseServiceClient();
@@ -416,6 +416,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ pr
             product: stripeProductId,
             currency: "cad",
             unit_amount: priceAnnualCents ?? 0,
+            ...(durationType === "ongoing" ? { recurring: { interval: "year" as const } } : {}),
             metadata: {
               mosque_id: existingProgram.mosque_id,
               mosque_slug: mosque?.slug ?? "",

@@ -3,20 +3,47 @@
 import Image from "next/image";
 import Link from "next/link";
 import { createPortal } from "react-dom";
+import { ApplicationDecisionModal, ApplicationReviewOverlay, type ApplicationRow } from "@/components/data/application-review";
 import { ChildrenManager } from "@/components/data/children-manager";
 import { TransitionLink } from "@/components/layout/transition-link";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { Dispatch, PointerEvent as ReactPointerEvent, ReactNode, RefObject, SetStateAction, WheelEvent as ReactWheelEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { EmptyState } from "@/components/data/empty-state";
+import { DirectorySkeleton, GenericLoadingState } from "@/components/data/data-loading";
+import { EditorToast, queueEditorToast, readQueuedEditorToast, type EditorToastState } from "@/components/data/editor-toast";
+import { FloatingInboxTabs, InboxLoadingPanel, InboxSection, NotificationBadge } from "@/components/data/inbox-shared";
 import { FlatLink } from "@/components/ui/flat-button";
+import { useHideMobileChromeWhileMounted, useModalFocusTrap } from "@/hooks/use-modal-behavior";
+import { useStudentNotificationCounts, useTeacherNotificationCounts } from "@/hooks/use-notification-counts";
 import { getAccountLabel, getDefaultLandingHref, loadUserAccessByMosqueSlug } from "@/lib/authz";
 import { clearUserScopedCaches, getCachedProfileSummary, getCachedSessionSnapshot, getCachedUserAccess, loadCachedSession, loadCachedUserAccess, performClientLogout, setCachedProfileName, setCachedProfileSummary, setCachedSessionSnapshot, subscribeCachedSession } from "@/lib/client-cache";
+import { attachmentDisplayName, attachmentMetaLabel, formatAttachmentSize, normalizeMessageAttachments, type MessageAttachment } from "@/lib/messages/attachments";
+import { buildAnnouncementThreads, buildNoteThreads } from "@/lib/messages/threads";
 import { invalidateQuery, invalidateQueryPrefix, prefetchQuery, useCachedQuery } from "@/lib/query-cache";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { Database, Json } from "@/lib/supabase/types";
 import { cn } from "@/lib/utils";
 import { deriveLifecycleStatus, getApplicationButtonState, getProgramPrimaryCta, getProgramStatusBadges, isPubliclyListed, toProgramStatusFields, validateProgramStatusCombination, type ApplicationStatus as ProgramApplicationStatus, type LifecycleStatus as ProgramLifecycleStatus, type PublicationStatus as ProgramPublicationStatus, type ProgramStatusFields } from "@/lib/programs/status";
+import {
+  dayFromSessionDate,
+  dayKey,
+  formatClockLabel,
+  formatDayAbbreviation,
+  formatScheduleRange,
+  normalizeScheduleDay,
+  normalizeScheduleTime,
+  parseProgramSchedule,
+  rosterSessionKey,
+  scheduleDayOptions,
+  scheduleLabel,
+  scheduleRowKey,
+  scheduleRowsToJson,
+  sortScheduleRows,
+  type ProgramScheduleRow,
+  uniqueScheduleRows,
+  weekdayName,
+} from "@/lib/programs/schedule";
 import {
   applicationNeedsAction,
   applicationStatusTone,
@@ -31,6 +58,34 @@ import {
   type ApplicationStatus as RequestApplicationStatus,
 } from "@/lib/programs/applications";
 import { getApplicantPrimaryAction, isApplicationActionRequired } from "@/lib/programs/applicant-actions";
+import { attendanceHistoryHref, attendanceMarkHref } from "@/lib/programs/attendance";
+import {
+  fetchNotificationState,
+  markNotificationsDismissed,
+  markNotificationsSeen,
+  revertOptimisticKeys,
+  studentRequestNotificationKey,
+  studentRequestRequiresAction,
+  studentRequestShouldNotify,
+  studentWithdrawalNotificationKey,
+  teacherInstructorNotificationKey,
+  teacherRequestNotificationKey,
+  teacherRequestShouldBeUnread,
+  type InstructorLifecycleNotification,
+  type NotificationCounts,
+} from "@/lib/notifications/inbox";
+import {
+  formatAgeRange,
+  formatCurrencyAmount,
+  formatDateOnly,
+  formatFullDate,
+  formatGender,
+  formatPrice,
+  formatShortDate,
+  formatStudentDetailGender,
+} from "@/lib/programs/display";
+import { isCurrentEnrollmentStatus } from "@/lib/programs/enrollment-status";
+import { fetchParentChildren } from "@/lib/programs/family";
 
 type Mosque = Database["public"]["Tables"]["mosques"]["Row"];
 type Program = Database["public"]["Tables"]["programs"]["Row"];
@@ -55,6 +110,7 @@ type ProgramPaymentTerms = Database["public"]["Tables"]["program_payment_terms"]
 type ProgramFinanceAuditEvent = Database["public"]["Tables"]["program_finance_audit_events"]["Row"];
 type AnnouncementReceipt = Database["public"]["Tables"]["program_announcement_receipts"]["Row"];
 type ProgramSessionCancellation = Database["public"]["Tables"]["program_session_cancellations"]["Row"];
+type ProgramAttendanceRecord = Database["public"]["Tables"]["program_attendance_records"]["Row"];
 type ProgramTrackSwitchRequestRow = Database["public"]["Tables"]["program_track_switch_requests"]["Row"];
 type ProgramTrackSwitchRequestWithContext = ProgramTrackSwitchRequestRow & {
   program?: Program | null;
@@ -142,9 +198,6 @@ type AnnouncementWithContext = Database["public"]["Tables"]["program_announcemen
   author?: Profile | null;
   receipt?: AnnouncementReceipt | null;
 };
-
-const ANNOUNCEMENT_THREAD_PAGE_SIZE = 25;
-const NOTE_THREAD_PAGE_SIZE = 25;
 
 const programBuilderSteps: Array<{ id: ProgramBuilderStep; label: string }> = [
   { id: "basics", label: "Basics" },
@@ -377,9 +430,9 @@ function monthsBetweenDates(startDate: string, endDate: string): number | null {
  * counts exact calendar-month boundaries crossed, which systematically undercounts a range like
  * Sep 1 -> Jun 30 as 9 (not the "10 months of school" a director actually means) since the end
  * date never quite reaches the 10th boundary. This rounds the leftover days after the last whole
- * month instead, so >=20 leftover days counts as another billing cycle. It's only ever a starting
- * suggestion for the editable "Number of billing months" field, never the calendar duration shown
- * elsewhere (that stays exact, driven by monthsBetweenDates/start_date/end_date directly).
+ * month instead, so >=20 leftover days counts as another billing cycle. This is the value shown
+ * (read-only) as the program's billing-cycle count, never the calendar duration shown elsewhere
+ * (that stays exact, driven by monthsBetweenDates/start_date/end_date directly).
  */
 function estimateBillingMonths(startDate: string, endDate: string): number | null {
   if (!startDate || !endDate) {
@@ -437,6 +490,7 @@ type RequestWithContext = EnrollmentRequest & {
   program?: Program | null;
   student?: StudentDisplay | null;
   parent?: ParentDisplay | null;
+  approver?: Profile | null;
   track?: ProgramTrack | null;
   subscription?: ProgramSubscription | null;
 };
@@ -445,16 +499,6 @@ type WithdrawalRequestWithContext = WithdrawalRequest & {
   student?: StudentDisplay | null;
   parent?: ParentDisplay | null;
   subscription?: ProgramSubscription | null;
-};
-type InstructorLifecycleNotification = {
-  id: string;
-  program_id: string;
-  assignment_id: string | null;
-  teacher_profile_id: string | null;
-  event_type: "joined" | "resigned";
-  created_at: string | null;
-  program?: Program | null;
-  instructor?: Profile | null;
 };
 type TeacherInboxTab = "requests" | "other";
 type TeacherInboxSortMode = "newest" | "unread";
@@ -508,27 +552,12 @@ type TeacherInboxMessageItem =
       request: ProgramTrackSwitchRequestWithContext;
     };
 
-type ProgramScheduleRow = {
-  id?: string;
-  date?: string;
-  day: (typeof scheduleDayOptions)[number];
-  start: string;
-  end: string;
-};
 type TrackSelectionMode = "exact" | "minimum" | "maximum";
 
 type MosqueProgramsSnapshot = {
   mosque: Mosque;
   programs: ProgramWithTeacher[];
 };
-
-type NotificationCounts = {
-  announcementCount: number;
-  noteCount: number;
-  requestCount: number;
-  actionRequired: boolean;
-};
-type EditorToastState = { tone: "success" | "error"; message: string };
 
 type StudentNoteWithContext = ProgramStudentNote & {
   program?: Program | null;
@@ -538,12 +567,10 @@ type StudentNoteWithContext = ProgramStudentNote & {
 };
 
 type StudentInboxThread =
-  | { kind: "announcements"; programId: string }
-  | { kind: "notes"; programId: string; studentId: string };
+  | { kind: "announcements"; programId: string; programTitle?: string | null }
+  | { kind: "notes"; programId: string; studentId: string; programTitle?: string | null; studentName?: string | null };
 type ProgramScheduleSource = (Program | ProgramWithTeacher) & { scheduleTracks?: ProgramTrack[] };
-type EnrollmentTrackSelection = Pick<Enrollment, "id" | "program_id" | "student_profile_id" | "program_track_id" | "created_at">;
-
-const notificationCountsCache = new Map<string, NotificationCounts>();
+type EnrollmentTrackSelection = Pick<Enrollment, "id" | "program_id" | "student_profile_id" | "program_track_id" | "created_at" | "status">;
 
 type DevSwitchAccount = {
   id?: string;
@@ -561,33 +588,8 @@ const fallbackDevSwitchAccounts: DevSwitchAccount[] = [
 ];
 
 const devSwitchAccountsStorageKey = "tareeqah:dev-switch-accounts";
-const editorToastStorageKey = "tareeqah:editor-toast";
-
 function getAnnouncementTargetTrackIds(announcement: Pick<AnnouncementWithContext, "target_program_track_ids">) {
   return announcement.target_program_track_ids ?? [];
-}
-
-function getEnrollmentTrackIdsByProgram(enrollments: EnrollmentTrackSelection[], enrollmentTrackRows: Array<{ enrollment_id: string; program_track_id: string }>) {
-  const trackIdsByEnrollmentId = new Map<string, string[]>();
-  for (const row of enrollmentTrackRows) {
-    trackIdsByEnrollmentId.set(row.enrollment_id, [...(trackIdsByEnrollmentId.get(row.enrollment_id) ?? []), row.program_track_id]);
-  }
-
-  const trackIdsByProgramId = new Map<string, Set<string>>();
-  for (const enrollment of enrollments) {
-    const selectedTrackIds = [
-      ...(trackIdsByEnrollmentId.get(enrollment.id) ?? []),
-      ...(enrollment.program_track_id ? [enrollment.program_track_id] : []),
-    ].filter((trackId, index, all) => all.indexOf(trackId) === index);
-
-    const programTrackIds = trackIdsByProgramId.get(enrollment.program_id) ?? new Set<string>();
-    for (const trackId of selectedTrackIds) {
-      programTrackIds.add(trackId);
-    }
-    trackIdsByProgramId.set(enrollment.program_id, programTrackIds);
-  }
-
-  return trackIdsByProgramId;
 }
 
 /**
@@ -595,7 +597,7 @@ function getEnrollmentTrackIdsByProgram(enrollments: EnrollmentTrackSelection[],
  * stored in the enrollment_request_tracks join table (not the legacy program_track_id column),
  * so callers that only checked program_track_id showed a blank "—" for those requests.
  */
-function resolveRequestTrack(
+export function resolveRequestTrack(
   request: Pick<EnrollmentRequest, "id" | "program_track_id">,
   requestTrackIdsByRequestId: Map<string, string[]>,
   tracks: ProgramTrack[],
@@ -604,161 +606,18 @@ function resolveRequestTrack(
   return primaryTrackId ? tracks.find((track) => track.id === primaryTrackId) ?? null : null;
 }
 
-/** Earliest enrollment created_at per program, across all target students — the "join date" cutoff before which an announcement shouldn't count as new. Mirrors getEnrollmentTrackIdsByProgram's "any child counts" merge for parents with multiple children in the same program. */
-function getEnrollmentJoinDatesByProgram(enrollments: Array<Pick<EnrollmentTrackSelection, "program_id" | "created_at">>) {
-  const joinDateByProgramId = new Map<string, string>();
-  for (const enrollment of enrollments) {
-    const existing = joinDateByProgramId.get(enrollment.program_id);
-    if (!existing || Date.parse(enrollment.created_at) < Date.parse(existing)) {
-      joinDateByProgramId.set(enrollment.program_id, enrollment.created_at);
-    }
-  }
-  return joinDateByProgramId;
-}
 
-function isAnnouncementVisibleForEnrollment(
-  announcement: Pick<AnnouncementWithContext, "target_program_track_ids" | "created_at">,
-  enrolledTrackIds: Set<string> | undefined,
-  joinedAt?: string,
-) {
-  if (joinedAt && Date.parse(announcement.created_at) < Date.parse(joinedAt)) {
-    return false;
-  }
-  const targetTrackIds = getAnnouncementTargetTrackIds(announcement);
-  if (targetTrackIds.length === 0) {
-    return true;
-  }
-  if (!enrolledTrackIds || enrolledTrackIds.size === 0) {
-    return true;
-  }
-  return targetTrackIds.some((trackId) => enrolledTrackIds.has(trackId));
-}
-
-function announcementTargetValue(programId: string, trackId: string | null) {
+export function announcementTargetValue(programId: string, trackId: string | null) {
   return `${programId}:${trackId ?? "all"}`;
 }
 
-function parseAnnouncementTargetValue(value: string) {
+export function parseAnnouncementTargetValue(value: string) {
   const [programId, trackId] = value.split(":");
   return { programId: programId ?? "", trackId: trackId && trackId !== "all" ? trackId : null };
 }
 
-function announcementTargetLabel(program: Pick<Program, "title">, track: ProgramTrack | null) {
+export function announcementTargetLabel(program: Pick<Program, "title">, track: ProgramTrack | null) {
   return track ? `${program.title} - ${track.name}` : `${program.title} - All Tracks`;
-}
-
-/**
- * Durable, per-account notification "seen"/"dismissed" state — replaces the localStorage-only
- * tracking above, which couldn't follow an account across browsers/devices. Shared by both the
- * teacher Inbox (applications, withdrawals, instructors) and the student/parent Inbox
- * (applications, withdrawals); the table is generic (user_id + notification_key), not role-specific.
- */
-async function fetchNotificationState(userId: string | null | undefined): Promise<{ seen: Set<string>; dismissed: Set<string> }> {
-  if (!userId) {
-    return { seen: new Set(), dismissed: new Set() };
-  }
-  const supabase = createSupabaseBrowserClient();
-  const { data, error } = await supabase.from("teacher_notification_state").select("notification_key, seen_at, dismissed_at").eq("user_id", userId);
-  if (error) {
-    console.error("Failed to load notification seen/dismissed state:", error.message);
-  }
-  const seen = new Set((data ?? []).filter((row) => row.seen_at).map((row) => row.notification_key));
-  const dismissed = new Set((data ?? []).filter((row) => row.dismissed_at).map((row) => row.notification_key));
-  return { seen, dismissed };
-}
-
-/**
- * Returns whether the write actually persisted. Callers that optimistically update local
- * "seen" state before this resolves MUST revert that update when this returns false — otherwise
- * the current tab silently shows something as seen that was never durably saved, and it will
- * reappear as unseen the next time the real state is fetched (a different browser, or simply
- * after this tab reloads).
- */
-async function markNotificationsSeen(userId: string | null | undefined, keys: string[]): Promise<boolean> {
-  if (!userId || keys.length === 0) {
-    return true;
-  }
-  const supabase = createSupabaseBrowserClient();
-  const now = new Date().toISOString();
-  const { error } = await supabase
-    .from("teacher_notification_state")
-    .upsert(
-      keys.map((key) => ({ user_id: userId, notification_key: key, seen_at: now })),
-      { onConflict: "user_id,notification_key" },
-    );
-  if (error) {
-    console.error("Failed to persist notification seen state:", error.message);
-    return false;
-  }
-  window.dispatchEvent(new Event("tareeqah:notifications-changed"));
-  return true;
-}
-
-/** Same contract as markNotificationsSeen — callers must revert optimistic state on a false return. */
-async function markNotificationsDismissed(userId: string | null | undefined, keys: string[]): Promise<boolean> {
-  if (!userId || keys.length === 0) {
-    return true;
-  }
-  const supabase = createSupabaseBrowserClient();
-  const now = new Date().toISOString();
-  const { error } = await supabase
-    .from("teacher_notification_state")
-    .upsert(
-      keys.map((key) => ({ user_id: userId, notification_key: key, seen_at: now, dismissed_at: now })),
-      { onConflict: "user_id,notification_key" },
-    );
-  if (error) {
-    console.error("Failed to persist notification dismissed state:", error.message);
-    return false;
-  }
-  window.dispatchEvent(new Event("tareeqah:notifications-changed"));
-  return true;
-}
-
-/** Reverts an optimistic Set update for exactly the keys that failed to persist. */
-function revertOptimisticKeys(setter: Dispatch<SetStateAction<Set<string>>>, keys: string[]) {
-  setter((current) => {
-    const next = new Set(current);
-    for (const key of keys) {
-      next.delete(key);
-    }
-    return next;
-  });
-}
-
-function studentRequestNotificationKey(request: Pick<EnrollmentRequest, "id" | "status" | "reviewed_at" | "requested_at">) {
-  return [request.id, request.status, request.reviewed_at ?? request.requested_at ?? ""].join(":");
-}
-
-function studentWithdrawalNotificationKey(request: Pick<WithdrawalRequest, "id" | "status" | "reviewed_at" | "requested_at">) {
-  return ["withdrawal", request.id, request.status, request.reviewed_at ?? request.requested_at ?? ""].join(":");
-}
-
-function teacherRequestNotificationKey(request: Pick<EnrollmentRequest, "id" | "status" | "requested_at" | "reviewed_at" | "admission_completed_at">) {
-  if (request.admission_completed_at) {
-    return ["admission-complete", request.id, request.admission_completed_at].join(":");
-  }
-  // Keep the teacher-side application key stable across approval/rejection/waitlist decisions.
-  // A new application stays unread until opened, but a director decision should not create a
-  // second unread notification for the same request.
-  return ["application", request.id].join(":");
-}
-
-function teacherRequestShouldBeUnread(
-  request: Pick<EnrollmentRequest, "id" | "status" | "requested_at" | "reviewed_at" | "admission_completed_at">,
-  seenIds: Set<string>,
-) {
-  if (request.admission_completed_at) {
-    return !seenIds.has(teacherRequestNotificationKey(request));
-  }
-  if (request.status !== "pending") {
-    return false;
-  }
-  return !seenIds.has(teacherRequestNotificationKey(request));
-}
-
-function teacherInstructorNotificationKey(notification: Pick<InstructorLifecycleNotification, "id" | "event_type" | "teacher_profile_id">) {
-  return ["instructor", notification.event_type, notification.id, notification.teacher_profile_id ?? ""].join(":");
 }
 
 async function getCurrentAccessToken() {
@@ -769,7 +628,7 @@ async function getCurrentAccessToken() {
 
 type ApplicationActionEndpoint = "approve" | "waitlist" | "reject" | "cancel-approval" | "change-price" | "waive" | "note" | "confirm" | "reopen" | "cancel-registration";
 
-async function callApplicationAction<T = Record<string, unknown>>(
+export async function callApplicationAction<T = Record<string, unknown>>(
   programId: string,
   requestId: string,
   endpoint: ApplicationActionEndpoint,
@@ -850,7 +709,7 @@ function notifyNoteSent(programId: string, noteId: string) {
   })().catch(() => null);
 }
 
-function notifyAnnouncementPosted(programId: string, announcementId: string) {
+export function notifyAnnouncementPosted(programId: string, announcementId: string) {
   void (async () => {
     const accessToken = await getCurrentAccessToken();
     if (!accessToken) {
@@ -866,6 +725,31 @@ function notifyAnnouncementPosted(programId: string, announcementId: string) {
       body: JSON.stringify({ announcementId }),
     });
   })().catch(() => null);
+}
+
+async function uploadMessageAttachment(programId: string, file: File): Promise<{ attachment?: MessageAttachment; error?: string }> {
+  const token = await getCurrentAccessToken();
+  if (!token) {
+    return { error: "Log in required." };
+  }
+  const formData = new FormData();
+  formData.append("file", file);
+  const response = await fetch(`/api/programs/${programId}/message-attachments/upload`, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${token}` },
+    body: formData,
+  });
+  const result = (await response.json().catch(() => ({}))) as { attachment?: MessageAttachment; error?: string };
+  if (!response.ok || !result.attachment) {
+    return { error: result.error ?? "Could not upload attachment." };
+  }
+  return { attachment: result.attachment };
+}
+
+function formatRecordingDuration(seconds: number) {
+  const minutes = Math.floor(seconds / 60);
+  const remainingSeconds = seconds % 60;
+  return `${minutes}:${String(remainingSeconds).padStart(2, "0")}`;
 }
 
 function notifyInstructorEvent(programId: string, eventType: "joined" | "resigned") {
@@ -990,39 +874,6 @@ function mergeDevSwitchAccounts(primary: DevSwitchAccount[], fallback: DevSwitch
   });
 }
 
-function EditorToast({ toast, onClose }: { toast: EditorToastState | null; onClose: () => void }) {
-  const [mounted, setMounted] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
-
-  useEffect(() => {
-    if (!toast) {
-      return;
-    }
-    const timeout = window.setTimeout(onClose, 3200);
-    return () => window.clearTimeout(timeout);
-  }, [onClose, toast]);
-
-  if (!toast || !mounted || typeof document === "undefined") {
-    return null;
-  }
-
-  const isSuccess = toast.tone === "success";
-  return createPortal(
-    <div className="fixed left-1/2 top-4 w-[calc(100%-32px)] max-w-sm -translate-x-1/2" style={{ zIndex: 2147483647 }}>
-      <div className={cn("flex min-h-12 items-center gap-3 rounded-[10px] px-4 py-3 text-sm font-semibold text-white shadow-[0_18px_44px_rgba(38,50,58,0.20)]", isSuccess ? "bg-[#1D8B68]" : "bg-[#C83F31]")}>
-        <span className="min-w-0 flex-1">{toast.message}</span>
-        <button type="button" onClick={onClose} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/15 text-lg leading-none text-white hover:bg-white/25" aria-label="Close notification">
-          ×
-        </button>
-      </div>
-    </div>,
-    document.body,
-  );
-}
-
 function saveDevSwitchAccount(account: DevSwitchAccount) {
   if (typeof window === "undefined") {
     return;
@@ -1034,33 +885,6 @@ function saveDevSwitchAccount(account: DevSwitchAccount) {
   const current = readStoredDevSwitchAccounts();
   const next = [account, ...current.filter((saved) => saved.email.toLowerCase() !== account.email.toLowerCase())].slice(0, 12);
   window.localStorage.setItem(devSwitchAccountsStorageKey, JSON.stringify(next));
-}
-
-function queueEditorToast(toast: EditorToastState) {
-  if (typeof window === "undefined") {
-    return;
-  }
-  window.sessionStorage.setItem(editorToastStorageKey, JSON.stringify(toast));
-}
-
-function readQueuedEditorToast() {
-  if (typeof window === "undefined") {
-    return null;
-  }
-  try {
-    const raw = window.sessionStorage.getItem(editorToastStorageKey);
-    window.sessionStorage.removeItem(editorToastStorageKey);
-    if (!raw) {
-      return null;
-    }
-    const parsed = JSON.parse(raw) as Partial<EditorToastState>;
-    if ((parsed.tone === "success" || parsed.tone === "error") && typeof parsed.message === "string" && parsed.message.trim()) {
-      return { tone: parsed.tone, message: parsed.message };
-    }
-  } catch {
-    window.sessionStorage.removeItem(editorToastStorageKey);
-  }
-  return null;
 }
 
 export function MosqueDirectoryRows() {
@@ -1119,7 +943,7 @@ export function PublicMasjidData({ slug }: { slug: string }) {
 }
 
 export function StudentHomeData({ slug }: { slug: string }) {
-  const { programs, enrolledProgramIds, programOwnerLabels, programTracksByProgramId, accountType, viewerProfiles, loading, enrollmentLoading, error } = useStudentPrograms(slug);
+  const { programs, enrolledProgramIds, programOwnerLabels, programOwnerLabelsByTrackId, programTracksByProgramId, accountType, viewerProfiles, loading, enrollmentLoading, error } = useStudentPrograms(slug);
   const { rows: applicationRows, loading: applicationsLoading } = useApplicantApplications(slug);
   const { announcementCount, noteCount, requestCount, actionRequired } = useStudentNotificationCounts(slug);
 
@@ -1163,7 +987,7 @@ export function StudentHomeData({ slug }: { slug: string }) {
       {enrolledPrograms.length === 0 ? (
         <HomeEmptyState title="You are not enrolled in any classes" text="Your next lesson will appear here after enrollment." />
       ) : (
-        <HomeUpcomingRows programs={enrolledPrograms} ownerLabelsByProgramId={programOwnerLabels} />
+        <HomeUpcomingRows programs={enrolledPrograms} ownerLabelsByProgramId={programOwnerLabels} ownerLabelsByTrackId={programOwnerLabelsByTrackId} />
       )}
     </section>
   );
@@ -1377,7 +1201,7 @@ async function fetchProgramDetailSnapshot(
   ]);
   const nextAccountType = profileResult.data?.account_type ?? access.accountType ?? null;
   snapshot.accountType = nextAccountType;
-  snapshot.isEnrolled = Boolean(enrollmentResult.data);
+  snapshot.isEnrolled = Boolean(enrollmentResult.data && isCurrentEnrollmentStatus(enrollmentResult.data.status));
   snapshot.requestStatus = requestResult.data?.status ?? null;
   snapshot.isStaffForProgram = Boolean(teacherAssignmentResult.data) || directorProfileId === userId || access.isMosqueAdmin;
 
@@ -1386,7 +1210,7 @@ async function fetchProgramDetailSnapshot(
     const childIds = children.map((child) => child.id);
     if (childIds.length) {
       const [childEnrollments, childRequests] = await Promise.all([
-        supabase.from("enrollments").select("student_profile_id").eq("program_id", programData.id).in("student_profile_id", childIds),
+        supabase.from("enrollments").select("student_profile_id, status").eq("program_id", programData.id).in("student_profile_id", childIds),
         supabase
           .from("enrollment_requests")
           .select("student_profile_id, status")
@@ -1396,7 +1220,7 @@ async function fetchProgramDetailSnapshot(
           .is("student_dismissed_at", null)
           .order("requested_at", { ascending: false }),
       ]);
-      const enrolledChildIds = new Set((childEnrollments.data ?? []).map((row) => row.student_profile_id));
+      const enrolledChildIds = new Set((childEnrollments.data ?? []).filter((row) => isCurrentEnrollmentStatus(row.status)).map((row) => row.student_profile_id));
       const statuses: Record<string, { enrolled: boolean; requestStatus: string | null }> = {};
       for (const child of children) {
         statuses[child.id] = {
@@ -1585,18 +1409,6 @@ export function ProgramDetailData({ slug, programId, section = "public" }: { slu
   return (
     <div className="bg-[var(--workspace)] p-4">
       <EditorToast toast={toast} onClose={() => setToast(null)} />
-      {program.tax_receipt_policy && program.tax_receipt_policy !== "not_applicable" ? (
-        <div className="sticky top-3 z-20 mb-4">
-          <div className="flex items-start gap-2.5 rounded-2xl bg-[#EAF7F1] px-4 py-3 text-xs leading-5 text-[#17624F] shadow-[0_10px_24px_rgba(23,98,79,0.14)] ring-1 ring-[#CBEADD]">
-            <span className="mt-0.5 shrink-0" aria-hidden>🧾</span>
-            <span>
-              {program.tax_receipt_policy === "eligible_confirmed"
-                ? `Registration payments for this class are eligible for an official charitable tax receipt, issued by ${mosque.name}.`
-                : `Registration payments for this class may be eligible for an official charitable tax receipt. Eligibility is reviewed by ${mosque.name} administration.`}
-            </span>
-          </div>
-        </div>
-      ) : null}
       <div className="space-y-5">
         <section className="overflow-hidden rounded-[28px] bg-white shadow-[0_12px_30px_rgba(38,50,58,0.08)]">
           <ProgramHero program={program} />
@@ -1670,19 +1482,14 @@ export function ProgramDetailData({ slug, programId, section = "public" }: { slu
             <aside className="rounded-2xl border border-[#C8DCE2] bg-white p-4 shadow-[0_14px_34px_rgba(38,50,58,0.10)]">
               <p className="text-lg font-semibold text-[#26323A]">Program Details</p>
               <div className="mt-3 divide-y divide-[#E6ECEF]">
-                <ProgramDetailFact icon="🎂" label="Age" value={age} />
-                <ProgramDetailFact icon="🧑‍🤝‍🧑" label="Gender" value={gender} />
-                <ProgramDetailFact icon="📅" label="Duration" value={durationDisplay} />
-                <ProgramDetailFact icon="📍" label="Location" value={locationDisplay} />
-                {program.room_area?.trim() ? <ProgramDetailFact icon="🚪" label="Room / Area" value={program.room_area.trim()} /> : null}
+                <ProgramDetailFact label="Age" value={age} />
+                <ProgramDetailFact label="Gender" value={gender} />
+                <ProgramDetailFact label="Duration" value={durationDisplay} />
+                <ProgramDetailFact label="Location" value={locationDisplay} />
+                {program.room_area?.trim() ? <ProgramDetailFact label="Room / Area" value={program.room_area.trim()} /> : null}
                 {registrationDeadlineText ? (
                   <div className="flex items-start justify-between gap-4 py-3">
-                    <dt className="flex items-center gap-2 text-[#6B747B]">
-                      <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#FBEAE7] text-sm" aria-hidden>
-                        ⏰
-                      </span>
-                      Registration deadline
-                    </dt>
+                    <dt className="text-[#6B747B]">Registration deadline</dt>
                     <dd className={cn("max-w-[55%] text-right font-semibold", program.registration_deadline_at ? "text-[#C0392B]" : "text-[#7B858C]")}>
                       {program.registration_deadline_at ? formatFinanceShortDate(program.registration_deadline_at) : "No registration deadline"}
                     </dd>
@@ -1698,20 +1505,17 @@ export function ProgramDetailData({ slug, programId, section = "public" }: { slu
             </aside>
 
             <section className="rounded-2xl border border-[#C8DCE2] bg-white p-4 shadow-[0_14px_34px_rgba(38,50,58,0.10)]">
-              <p className="flex items-center gap-2 text-lg font-semibold text-[#26323A]">
-                Schedule and Pricing
-                {program.is_ongoing ? (
-                  <span className="inline-flex items-center rounded-full bg-[#EEF6F7] px-2 py-0.5 text-[11px] font-semibold text-[#2F8FB3]">Ongoing</span>
-                ) : billingDurationMonths ? (
-                  <span className="inline-flex items-center rounded-full bg-[#EEF6F7] px-2 py-0.5 text-[11px] font-semibold text-[#2F8FB3]">{billingDurationMonths} mo</span>
-                ) : null}
-              </p>
-              <ProgramScheduleOptionsDisplay tracks={tracks} program={program} fallbackSchedule={schedule.full} enrolledCountByTrackId={enrolledCountByTrackId} />
-              {section === "portal" && viewerHasActiveEnrollment ? (
-                <p className="mt-3 text-xs leading-5 text-[#6B747B]">
-                  Go to Schedule Options from your class card to view different schedule options.
+              <p className="text-lg font-semibold text-[#26323A]">Schedule and Pricing</p>
+              {program.tax_receipt_policy && program.tax_receipt_policy !== "not_applicable" ? (
+                <p className="mt-2 border-l-2 border-[#17624F] pl-3 text-xs leading-5 text-[#52616A]">
+                  {program.tax_receipt_policy === "eligible_confirmed"
+                    ? `Payments for this class are eligible for an official charitable tax receipt issued by ${mosque.name}.`
+                    : `Receipt eligibility is reviewed by ${mosque.name} administration for this class.`}
                 </p>
               ) : null}
+              <ProgramScheduleOptionsDisplay tracks={tracks} program={program} fallbackSchedule={schedule.full} enrolledCountByTrackId={enrolledCountByTrackId} />
+              <ProgramPaymentOptionsDisplay program={program} tracks={tracks} />
+             
 
               <div className="mt-4 border-t border-[#E6ECEF] pt-4">
                 {isTeacherContext || isStaffForProgram ? (
@@ -1888,7 +1692,7 @@ async function fetchProgramApplyDetail(slug: string, programId: string, userId: 
   const nextAccountType = profileResult.data?.account_type ?? access.accountType ?? null;
   snapshot.accountType = nextAccountType;
   snapshot.selfProfile = (profileResult.data as StudentDisplay | null) ?? null;
-  snapshot.isEnrolled = Boolean(enrollmentResult.data);
+  snapshot.isEnrolled = Boolean(enrollmentResult.data && isCurrentEnrollmentStatus(enrollmentResult.data.status));
   snapshot.requestStatus = requestResult.data?.status ?? null;
 
   if (nextAccountType === "parent") {
@@ -1897,7 +1701,7 @@ async function fetchProgramApplyDetail(slug: string, programId: string, userId: 
     const childIds = children.map((child) => child.id);
     if (childIds.length) {
       const [childEnrollments, childRequests] = await Promise.all([
-        supabase.from("enrollments").select("student_profile_id").eq("program_id", programData.id).in("student_profile_id", childIds),
+        supabase.from("enrollments").select("student_profile_id, status").eq("program_id", programData.id).in("student_profile_id", childIds),
         supabase
           .from("enrollment_requests")
           .select("student_profile_id, status")
@@ -1907,7 +1711,7 @@ async function fetchProgramApplyDetail(slug: string, programId: string, userId: 
           .is("student_dismissed_at", null)
           .order("requested_at", { ascending: false }),
       ]);
-      const enrolledChildIds = new Set((childEnrollments.data ?? []).map((row) => row.student_profile_id));
+      const enrolledChildIds = new Set((childEnrollments.data ?? []).filter((row) => isCurrentEnrollmentStatus(row.status)).map((row) => row.student_profile_id));
       const statuses: Record<string, { enrolled: boolean; requestStatus: string | null }> = {};
       for (const child of children) {
         statuses[child.id] = {
@@ -2048,6 +1852,7 @@ export function ProgramApplyData({ slug, programId }: { slug: string; programId:
       return;
     }
     const supabase = createSupabaseBrowserClient();
+    const submittedAt = new Date().toISOString();
     const trackValidation = validateTrackSelection(program, tracks, selectedTrackIds);
     if (!trackValidation.valid) {
       setSubmitError(trackValidation.message);
@@ -2085,6 +1890,7 @@ export function ProgramApplyData({ slug, programId }: { slug: string; programId:
             student_profile_id: studentId,
             parent_profile_id: studentId === currentUserId ? null : currentUserId,
             status: "pending",
+            requested_at: submittedAt,
             reviewed_by: null,
             reviewed_at: null,
             review_note: null,
@@ -2095,6 +1901,7 @@ export function ProgramApplyData({ slug, programId }: { slug: string; programId:
             payment_bypassed: false,
             admission_completed_at: null,
             student_dismissed_at: null,
+            teacher_dismissed_at: null,
           })),
           { onConflict: "program_id,student_profile_id" },
         )
@@ -2105,9 +1912,18 @@ export function ProgramApplyData({ slug, programId }: { slug: string; programId:
         setSubmitBusy(false);
         return;
       }
+      const parentRequestIds = (parentRequestRows ?? []).map((row) => row.id);
+      if (parentRequestIds.length) {
+        const { error: timestampError } = await supabase.from("enrollment_requests").update({ requested_at: submittedAt, teacher_dismissed_at: null }).in("id", parentRequestIds);
+        if (timestampError) {
+          setSubmitError(timestampError.message);
+          setSubmitBusy(false);
+          return;
+        }
+      }
       const trackWriteError = await replaceEnrollmentRequestTracks(
         supabase,
-        (parentRequestRows ?? []).map((row) => row.id),
+        parentRequestIds,
         selectedTrackIds,
       );
       if (trackWriteError) {
@@ -2116,9 +1932,10 @@ export function ProgramApplyData({ slug, programId }: { slug: string; programId:
         return;
       }
 
-      queueEnrollmentRequestSubmittedEmails((parentRequestRows ?? []).map((row) => row.id));
+      queueEnrollmentRequestSubmittedEmails(parentRequestIds);
       invalidateQuery(`student-applications:${slug}:${currentUserId}`);
       invalidateQueryPrefix(`program-detail:${slug}:${programId}:`);
+      window.dispatchEvent(new Event("tareeqah:notifications-changed"));
       if (applyKey) {
         invalidateQuery(applyKey);
       }
@@ -2145,6 +1962,7 @@ export function ProgramApplyData({ slug, programId }: { slug: string; programId:
           student_profile_id: currentUserId,
           parent_profile_id: null,
           status: "pending",
+          requested_at: submittedAt,
           reviewed_by: null,
           reviewed_at: null,
           review_note: null,
@@ -2155,6 +1973,7 @@ export function ProgramApplyData({ slug, programId }: { slug: string; programId:
           payment_bypassed: false,
           admission_completed_at: null,
           student_dismissed_at: null,
+          teacher_dismissed_at: null,
         },
         { onConflict: "program_id,student_profile_id" },
       )
@@ -2165,16 +1984,26 @@ export function ProgramApplyData({ slug, programId }: { slug: string; programId:
       setSubmitBusy(false);
       return;
     }
-    const trackWriteError = await replaceEnrollmentRequestTracks(supabase, (requestRows ?? []).map((row) => row.id), selectedTrackIds);
+    const requestIds = (requestRows ?? []).map((row) => row.id);
+    if (requestIds.length) {
+      const { error: timestampError } = await supabase.from("enrollment_requests").update({ requested_at: submittedAt, teacher_dismissed_at: null }).in("id", requestIds);
+      if (timestampError) {
+        setSubmitError(timestampError.message);
+        setSubmitBusy(false);
+        return;
+      }
+    }
+    const trackWriteError = await replaceEnrollmentRequestTracks(supabase, requestIds, selectedTrackIds);
     if (trackWriteError) {
       setSubmitError(trackWriteError);
       setSubmitBusy(false);
       return;
     }
 
-    queueEnrollmentRequestSubmittedEmails((requestRows ?? []).map((row) => row.id));
+    queueEnrollmentRequestSubmittedEmails(requestIds);
     invalidateQuery(`student-applications:${slug}:${currentUserId}`);
     invalidateQueryPrefix(`program-detail:${slug}:${programId}:`);
+    window.dispatchEvent(new Event("tareeqah:notifications-changed"));
     if (applyKey) {
       invalidateQuery(applyKey);
     }
@@ -2262,8 +2091,6 @@ export function ProgramApplyData({ slug, programId }: { slug: string; programId:
                   onToggle={(childId) =>
                     setSelectedChildIds((current) => (current.includes(childId) ? current.filter((id) => id !== childId) : [...current, childId]))
                   }
-                  onSubmit={submitApplication}
-                  busy={submitBusy}
                 />
               </DetailSection>
             ) : null}
@@ -2324,24 +2151,20 @@ export function ProgramApplyData({ slug, programId }: { slug: string; programId:
               </DetailSection>
             ) : null}
 
-            {accountType !== "parent" ? (
-              <DetailSection title="Review & Submit">
-                <p className="text-sm leading-6 text-[#52616A]">
-                  Administration will review your application after you submit it. You&apos;ll be notified once a decision is made.
-                </p>
-                {submitError ? <p className="mt-3 text-sm font-semibold text-[#C0392B]">{submitError}</p> : null}
-                <button
-                  type="button"
-                  onClick={submitApplication}
-                  disabled={submitBusy}
-                  className="mt-4 flex min-h-12 w-full items-center justify-center rounded-full bg-[#248B72] px-4 text-sm font-semibold !text-white shadow-[0_10px_22px_rgba(36,139,114,0.24)] transition-colors hover:bg-[#17624F] disabled:opacity-60 md:w-auto md:px-10"
-                >
-                  {submitBusy ? "Submitting..." : "Submit Application"}
-                </button>
-              </DetailSection>
-            ) : submitError ? (
-              <p className="text-sm font-semibold text-[#C0392B]">{submitError}</p>
-            ) : null}
+            <DetailSection title="Review & Submit">
+              <p className="text-sm leading-6 text-[#52616A]">
+                Administration will review your application after you submit it. You&apos;ll be notified once a decision is made.
+              </p>
+              {submitError ? <p className="mt-3 text-sm font-semibold text-[#C0392B]">{submitError}</p> : null}
+              <button
+                type="button"
+                onClick={submitApplication}
+                disabled={submitBusy || (accountType === "parent" && selectedChildIds.length === 0)}
+                className="mt-4 flex min-h-12 w-full items-center justify-center rounded-full bg-[#248B72] px-4 text-sm font-semibold !text-white shadow-[0_10px_22px_rgba(36,139,114,0.24)] transition-colors hover:bg-[#17624F] disabled:opacity-60 md:w-auto md:px-10"
+              >
+                {submitBusy ? "Submitting..." : "Submit Application"}
+              </button>
+            </DetailSection>
           </>
         )}
       </div>
@@ -2349,7 +2172,7 @@ export function ProgramApplyData({ slug, programId }: { slug: string; programId:
   );
 }
 
-type ConfirmationState = "payment_required_monthly" | "payment_required_annual" | "no_payment_required" | "completed" | "blocked";
+type ConfirmationState = "payment_required_monthly" | "payment_required_annual" | "payment_required_annual_subscription" | "no_payment_required" | "completed" | "blocked";
 
 function getConfirmationState(request: EnrollmentRequest, program: Program): ConfirmationState {
   if (request.admission_completed_at) {
@@ -2361,7 +2184,12 @@ function getConfirmationState(request: EnrollmentRequest, program: Program): Con
   if (!program.is_paid || request.payment_bypassed) {
     return "no_payment_required";
   }
-  return request.payment_type === "annual" ? "payment_required_annual" : "payment_required_monthly";
+  if (request.payment_type !== "annual") {
+    return "payment_required_monthly";
+  }
+  // An ongoing program's "annual" is a recurring yearly subscription, not the one-time
+  // pay-in-full lump sum a fixed-duration program's "annual" is — see payment-terms.ts.
+  return program.is_ongoing ? "payment_required_annual_subscription" : "payment_required_annual";
 }
 
 export function RegistrationConfirmationData({ slug, requestId }: { slug: string; requestId: string }) {
@@ -2639,6 +2467,8 @@ export function RegistrationConfirmationData({ slug, requestId }: { slug: string
                 <p className="text-sm leading-6 text-[#52616A]">Your registration has been approved. No payment is required.</p>
               ) : state === "payment_required_annual" ? (
                 <p className="text-sm leading-6 text-[#52616A]">Your registration has been approved. Pay in full to complete registration — {listedPrice} once, covering the full program.</p>
+              ) : state === "payment_required_annual_subscription" ? (
+                <p className="text-sm leading-6 text-[#52616A]">Your registration has been approved. Start your annual subscription to complete registration — {listedPrice}/year, renews automatically until cancelled.</p>
               ) : (
                 <p className="text-sm leading-6 text-[#52616A]">Your registration has been approved. Start your monthly subscription to complete registration — {listedPrice}/month.</p>
               )}
@@ -2857,28 +2687,27 @@ export function StudentClassesData({ slug }: { slug: string }) {
 
   return (
     <section className="bg-[var(--workspace)]">
-      <div className="grid grid-cols-3 border-b border-[#D6DCE0] md:hidden">
-        <button
-          type="button"
-          onClick={() => changeClassesTab("classes")}
-          className={cn("min-h-12 text-sm font-medium", tab === "classes" ? "border-b-2 border-[#2F8FB3] text-[#2F8FB3]" : "text-[#6B747B]")}
-        >
-          My Classes
-        </button>
-        <button
-          type="button"
-          onClick={() => changeClassesTab("browse")}
-          className={cn("min-h-12 text-sm font-medium", tab === "browse" ? "border-b-2 border-[#2F8FB3] text-[#2F8FB3]" : "text-[#6B747B]")}
-        >
-          Browse
-        </button>
-        <button
-          type="button"
-          onClick={() => changeClassesTab("applications")}
-          className={cn("min-h-12 text-sm font-medium", tab === "applications" ? "border-b-2 border-[#2F8FB3] text-[#2F8FB3]" : "text-[#6B747B]")}
-        >
-          My Applications
-        </button>
+      <div className="flex justify-center gap-7 border-b border-[#D6DCE0] px-4 md:hidden">
+        {(
+          [
+            ["classes", "My Classes"],
+            ["browse", "Browse"],
+            ["applications", "Applications"],
+          ] as const
+        ).map(([id, label]) => (
+          <button
+            key={id}
+            type="button"
+            onClick={() => changeClassesTab(id)}
+            className={cn(
+              "flex min-h-12 shrink-0 flex-col items-center justify-center gap-2 text-center text-sm font-medium leading-none",
+              tab === id ? "text-[#2F8FB3]" : "text-[#6B747B]",
+            )}
+          >
+            <span>{label}</span>
+            <span className={cn("h-px w-full min-w-12 rounded-full", tab === id ? "bg-[#2F8FB3]" : "bg-transparent")} aria-hidden />
+          </button>
+        ))}
       </div>
       <div className="hidden gap-2 border-b border-[#D6DCE0] px-4 py-3 md:flex">
         {(
@@ -3288,7 +3117,7 @@ export function PortalAccountData({ slug }: { slug: string }) {
   const [paymentsError, setPaymentsError] = useState<string | null>(null);
   const [loading, setLoading] = useState(initialSession === undefined);
   const photoInputRef = useRef<HTMLInputElement | null>(null);
-  const canUseAccountSwitcher = true;
+  const canUseAccountSwitcher = process.env.NODE_ENV !== "production";
 
   async function loadBillingPayments() {
     setPaymentsLoading(true);
@@ -4004,902 +3833,6 @@ function isAccountPanel(value: string): value is AccountPanel {
   return value === "menu" || value === "settings" || value === "family" || value === "billing" || value === "security" || value === "homescreen" || value === "photo" || value === "switchAccount";
 }
 
-export function InboxAnnouncementsData({ slug }: { slug: string }) {
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const [announcements, setAnnouncements] = useState<AnnouncementWithContext[]>([]);
-  const [enrolledProgramsForInbox, setEnrolledProgramsForInbox] = useState<Program[]>([]);
-  const [notes, setNotes] = useState<StudentNoteWithContext[]>([]);
-  const [requests, setRequests] = useState<RequestWithContext[]>([]);
-  const [studentWithdrawals, setStudentWithdrawals] = useState<WithdrawalRequestWithContext[]>([]);
-  const initialInboxTab = searchParams.get("tab");
-  const [tab, setTab] = useState<"announcements" | "notes" | "requests">(initialInboxTab === "notes" || initialInboxTab === "requests" ? initialInboxTab : "announcements");
-  const [selectedThread, setSelectedThread] = useState<StudentInboxThread | null>(null);
-  const [announcementTrackIdsByProgramId, setAnnouncementTrackIdsByProgramId] = useState<Record<string, string[]>>({});
-  const [announcementJoinDateByProgramId, setAnnouncementJoinDateByProgramId] = useState<Record<string, string>>({});
-  const [announcementThreadExhausted, setAnnouncementThreadExhausted] = useState<Record<string, boolean>>({});
-  const [announcementThreadLoadingOlder, setAnnouncementThreadLoadingOlder] = useState<Record<string, boolean>>({});
-  const [noteThreadExhausted, setNoteThreadExhausted] = useState<Record<string, boolean>>({});
-  const [noteThreadLoadingOlder, setNoteThreadLoadingOlder] = useState<Record<string, boolean>>({});
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-  const [seenRequestIds, setSeenRequestIds] = useState<Set<string>>(new Set());
-  const [paymentNotice, setPaymentNotice] = useState<"success" | "cancelled" | null>(null);
-  const [protectedClear, setProtectedClear] = useState<{ mode: "single" | "all"; requestIds: string[]; count: number } | null>(null);
-  const [toast, setToast] = useState<EditorToastState | null>(null);
-  const [applicationDetailsRow, setApplicationDetailsRow] = useState<ApplicantApplicationRow | null>(null);
-  const [cancelRegistrationTarget, setCancelRegistrationTarget] = useState<ApplicantApplicationRow | null>(null);
-  const [cancelRegistrationBusy, setCancelRegistrationBusy] = useState(false);
-  const [paymentConfirming, setPaymentConfirming] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const inboxDeepLinkHandledRef = useRef<string | null>(null);
-
-  useEffect(() => {
-    const payment = searchParams.get("payment");
-    const checkoutSessionId = searchParams.get("session_id");
-    if (payment === "success" || payment === "cancelled") {
-      router.replace(`/m/${slug}/portal/announcements`);
-      if (payment === "success") {
-        void confirmCheckoutPayment(checkoutSessionId);
-      } else {
-        setPaymentNotice("cancelled");
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [router, searchParams, slug]);
-
-  async function confirmCheckoutPayment(checkoutSessionId: string | null) {
-    if (!checkoutSessionId) {
-      setError("Payment succeeded, but Stripe did not return a checkout session.");
-      return;
-    }
-
-    setPaymentConfirming(true);
-    setError(null);
-    const supabase = createSupabaseBrowserClient();
-    const { data: sessionData } = await supabase.auth.getSession();
-    const accessToken = sessionData.session?.access_token;
-    if (!accessToken) {
-      setPaymentConfirming(false);
-      setError("Payment succeeded. Please sign in again to finish registration.");
-      return;
-    }
-
-    const response = await fetch("/api/stripe/confirm", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${accessToken}`,
-      },
-      body: JSON.stringify({ checkoutSessionId }),
-    });
-    const payload = (await response.json()) as { ok?: boolean; error?: string };
-    setPaymentConfirming(false);
-
-    if (!response.ok || !payload.ok) {
-      setError(payload.error ?? "Payment succeeded, but registration could not be completed.");
-      return;
-    }
-
-    setPaymentNotice("success");
-    window.dispatchEvent(new Event("tareeqah:notifications-changed"));
-    await loadInbox();
-  }
-
-  async function loadInbox() {
-    const supabase = createSupabaseBrowserClient();
-    const { data: sessionData } = await supabase.auth.getSession();
-    const userId = sessionData.session?.user.id;
-    if (!userId) {
-      setCurrentUserId(null);
-      setSeenRequestIds(new Set());
-      setAnnouncements([]);
-      setEnrolledProgramsForInbox([]);
-      setAnnouncementTrackIdsByProgramId({});
-      setAnnouncementThreadExhausted({});
-      setAnnouncementThreadLoadingOlder({});
-      setNoteThreadExhausted({});
-      setNoteThreadLoadingOlder({});
-      setNotes([]);
-      setRequests([]);
-      setStudentWithdrawals([]);
-      setLoading(false);
-      return;
-    }
-
-    setCurrentUserId(userId);
-    const { seen: initialSeenRequestIds } = await fetchNotificationState(userId);
-    setSeenRequestIds(initialSeenRequestIds);
-
-    const { data: mosque } = await supabase.from("mosques").select("id").eq("slug", slug).maybeSingle();
-    if (!mosque) {
-      setLoading(false);
-      return;
-    }
-
-    const { data: profile } = await supabase.from("profiles").select("account_type").eq("id", userId).maybeSingle();
-    const isParent = profile?.account_type === "parent";
-    const { children } = isParent ? await fetchParentChildren(supabase, slug, userId, mosque.id) : { children: [] as StudentDisplay[] };
-    const targetStudentIds = isParent ? children.map((child) => child.id) : [userId];
-
-    const [{ data: enrollments }, { data: requestRows, error: requestError }, { data: withdrawalRows, error: withdrawalError }] = await Promise.all([
-      targetStudentIds.length
-        ? supabase.from("enrollments").select("id, program_id, student_profile_id, program_track_id, created_at").in("student_profile_id", targetStudentIds)
-        : Promise.resolve({ data: [] as EnrollmentTrackSelection[] }),
-      isParent
-        ? supabase
-            .from("enrollment_requests")
-            .select("*")
-            .eq("mosque_id", mosque.id)
-            .eq("parent_profile_id", userId)
-            .is("student_dismissed_at", null)
-            .order("requested_at", { ascending: false })
-        : supabase
-            .from("enrollment_requests")
-            .select("*")
-            .eq("mosque_id", mosque.id)
-            .eq("student_profile_id", userId)
-            .is("student_dismissed_at", null)
-            .order("requested_at", { ascending: false }),
-      isParent
-        ? supabase
-            .from("withdrawal_requests")
-            .select("*")
-            .eq("mosque_id", mosque.id)
-            .or(`parent_profile_id.eq.${userId},requested_by.eq.${userId}`)
-            .is("student_dismissed_at", null)
-            .order("requested_at", { ascending: false })
-        : supabase
-            .from("withdrawal_requests")
-            .select("*")
-            .eq("mosque_id", mosque.id)
-            .eq("student_profile_id", userId)
-            .is("student_dismissed_at", null)
-            .order("requested_at", { ascending: false }),
-    ]);
-
-    if (requestError || withdrawalError) {
-      setLoading(false);
-      setError(requestError?.message ?? withdrawalError?.message ?? "Could not load inbox.");
-      return;
-    }
-
-    const enrollmentRows = (enrollments ?? []) as EnrollmentTrackSelection[];
-    const enrollmentIds = enrollmentRows.map((enrollment) => enrollment.id);
-    const { data: enrollmentTrackRows } = enrollmentIds.length
-      ? await supabase.from("enrollment_tracks").select("enrollment_id, program_track_id").in("enrollment_id", enrollmentIds)
-      : { data: [] as Array<{ enrollment_id: string; program_track_id: string }> };
-    const enrolledTrackIdsByProgramId = getEnrollmentTrackIdsByProgram(enrollmentRows, enrollmentTrackRows ?? []);
-    setAnnouncementTrackIdsByProgramId(
-      Object.fromEntries(Array.from(enrolledTrackIdsByProgramId.entries()).map(([programId, trackIds]) => [programId, Array.from(trackIds)])),
-    );
-    const enrolledJoinDatesByProgramId = getEnrollmentJoinDatesByProgram(enrollmentRows);
-    setAnnouncementJoinDateByProgramId(Object.fromEntries(enrolledJoinDatesByProgramId.entries()));
-
-    const enrolledProgramIds = enrollmentRows.map((enrollment) => enrollment.program_id);
-    const noteThreadKeys = Array.from(new Set(enrollmentRows.map((enrollment) => `${enrollment.program_id}:${enrollment.student_profile_id}`)));
-    const noteQueries = await Promise.all(
-      noteThreadKeys.map(async (key) => {
-        const [programId, studentId] = key.split(":");
-        const { data: rows, error: noteError } = await supabase
-          .from("program_student_notes")
-          .select("*")
-          .eq("program_id", programId)
-          .eq("student_profile_id", studentId)
-          .order("created_at", { ascending: false })
-          .limit(NOTE_THREAD_PAGE_SIZE);
-        return { key, rows: rows ?? [], error: noteError };
-      }),
-    );
-    const noteError = noteQueries.find((result) => result.error)?.error;
-    if (noteError) {
-      setLoading(false);
-      setError(noteError.message);
-      return;
-    }
-    setNoteThreadExhausted(Object.fromEntries(noteQueries.map((result) => [result.key, result.rows.length < NOTE_THREAD_PAGE_SIZE])));
-    setNoteThreadLoadingOlder({});
-    const noteRows = noteQueries.flatMap((result) => result.rows);
-    const requestProgramIds = (requestRows ?? []).map((request) => request.program_id);
-    const withdrawalProgramIds = (withdrawalRows ?? []).map((request) => request.program_id);
-    const noteProgramIds = noteRows.map((note) => note.program_id);
-    const knownProgramIds = Array.from(new Set([...enrolledProgramIds, ...requestProgramIds, ...withdrawalProgramIds, ...noteProgramIds]));
-    const requestStudentIds = Array.from(new Set((requestRows ?? []).map((request) => request.student_profile_id)));
-    const withdrawalStudentIds = Array.from(new Set((withdrawalRows ?? []).map((request) => request.student_profile_id)));
-    const noteStudentIds = Array.from(new Set(noteRows.map((note) => note.student_profile_id)));
-    const requestIds = (requestRows ?? []).map((request) => request.id);
-    const requestParentIds = Array.from(new Set((requestRows ?? []).map((request) => request.parent_profile_id).filter(Boolean))) as string[];
-    const [{ data: programs }, { data: requestStudents }, { data: noteStudents }, { data: requestParents }, { data: requestTrackLinkRows }, { data: programTrackRows }, { data: requestSubscriptions }] = await Promise.all([
-      knownProgramIds.length ? supabase.from("programs").select("*").in("id", knownProgramIds) : Promise.resolve({ data: [] as Program[] }),
-      [...requestStudentIds, ...withdrawalStudentIds].length
-        ? supabase.from("profiles").select("id, full_name, email, phone_number, avatar_url, age, gender, date_of_birth, account_type").in("id", Array.from(new Set([...requestStudentIds, ...withdrawalStudentIds])))
-        : Promise.resolve({ data: [] as StudentDisplay[] }),
-      noteStudentIds.length
-        ? supabase.from("profiles").select("id, full_name, email, phone_number, avatar_url, age, gender, date_of_birth, account_type").in("id", noteStudentIds)
-        : Promise.resolve({ data: [] as StudentDisplay[] }),
-      requestParentIds.length ? supabase.from("profiles").select("id, full_name, email, phone_number, avatar_url").in("id", requestParentIds) : Promise.resolve({ data: [] as ParentDisplay[] }),
-      requestIds.length ? supabase.from("enrollment_request_tracks").select("enrollment_request_id, program_track_id").in("enrollment_request_id", requestIds) : Promise.resolve({ data: [] as Array<{ enrollment_request_id: string; program_track_id: string }> }),
-      knownProgramIds.length ? supabase.from("program_tracks").select("*").in("program_id", knownProgramIds).eq("is_active", true).order("sort_order", { ascending: true }) : Promise.resolve({ data: [] as ProgramTrack[] }),
-      requestStudentIds.length ? supabase.from("program_subscriptions").select("*").in("program_id", knownProgramIds).in("student_profile_id", requestStudentIds) : Promise.resolve({ data: [] as ProgramSubscription[] }),
-    ]);
-    const requestTrackIdsByRequestId = new Map<string, string[]>();
-    for (const linkRow of requestTrackLinkRows ?? []) {
-      requestTrackIdsByRequestId.set(linkRow.enrollment_request_id, [...(requestTrackIdsByRequestId.get(linkRow.enrollment_request_id) ?? []), linkRow.program_track_id]);
-    }
-    const childProfiles = isParent ? [...children, ...((requestStudents ?? []) as StudentDisplay[])] : ((requestStudents ?? []) as StudentDisplay[]);
-    const enrolledProgramSet = new Set(enrolledProgramIds);
-    setEnrolledProgramsForInbox((programs ?? []).filter((program) => enrolledProgramSet.has(program.id)));
-
-    setRequests(
-      (requestRows ?? []).map((request) => ({
-        ...request,
-        program: (programs ?? []).find((program) => program.id === request.program_id) ?? null,
-        student: childProfiles.find((student) => student.id === request.student_profile_id) ?? null,
-        parent: request.parent_profile_id ? ((requestParents ?? []).find((parent) => parent.id === request.parent_profile_id) as ParentDisplay | undefined) ?? null : null,
-        track: resolveRequestTrack(request, requestTrackIdsByRequestId, programTrackRows ?? []),
-        subscription: (requestSubscriptions ?? []).find((subscription) => subscription.program_id === request.program_id && subscription.student_profile_id === request.student_profile_id) ?? null,
-      })),
-    );
-    setStudentWithdrawals(
-      (withdrawalRows ?? []).map((request) => ({
-        ...request,
-        program: (programs ?? []).find((program) => program.id === request.program_id) ?? null,
-        student: childProfiles.find((student) => student.id === request.student_profile_id) ?? null,
-      })),
-    );
-
-    const noteAuthorIds = Array.from(new Set(noteRows.map((note) => note.author_profile_id)));
-    const noteRecipientIds = Array.from(new Set(noteRows.map((note) => note.recipient_profile_id)));
-    const [{ data: noteAuthors }, { data: noteRecipients }] = await Promise.all([
-      noteAuthorIds.length ? supabase.from("profiles").select("*").in("id", noteAuthorIds) : Promise.resolve({ data: [] as Profile[] }),
-      noteRecipientIds.length ? supabase.from("profiles").select("*").in("id", noteRecipientIds) : Promise.resolve({ data: [] as Profile[] }),
-    ]);
-    const studentProfiles = [...childProfiles, ...((noteStudents ?? []) as StudentDisplay[])];
-    setNotes(
-      noteRows.map((note) => ({
-        ...note,
-        program: (programs ?? []).find((program) => program.id === note.program_id) ?? null,
-        student: studentProfiles.find((student) => student.id === note.student_profile_id) ?? null,
-        recipient: (noteRecipients ?? []).find((recipient) => recipient.id === note.recipient_profile_id) ?? null,
-        author: (noteAuthors ?? []).find((author) => author.id === note.author_profile_id) ?? null,
-      })),
-    );
-
-    if (enrolledProgramIds.length === 0) {
-      setAnnouncements([]);
-      setEnrolledProgramsForInbox([]);
-      setAnnouncementThreadExhausted({});
-      setAnnouncementThreadLoadingOlder({});
-      setNoteThreadExhausted({});
-      setNoteThreadLoadingOlder({});
-      setLoading(false);
-      return;
-    }
-
-    const announcementQueries = await Promise.all(
-      Array.from(new Set(enrolledProgramIds)).map(async (programId) => {
-        const { data: rows, error: queryError } = await supabase
-          .from("program_announcements")
-          .select("*")
-          .eq("program_id", programId)
-          .order("created_at", { ascending: false })
-          .limit(ANNOUNCEMENT_THREAD_PAGE_SIZE);
-        return { programId, rows: rows ?? [], error: queryError };
-      }),
-    );
-    const queryError = announcementQueries.find((result) => result.error)?.error;
-    if (queryError) {
-      setLoading(false);
-      setError(queryError.message);
-      return;
-    }
-    setAnnouncementThreadExhausted(
-      Object.fromEntries(announcementQueries.map((result) => [result.programId, result.rows.length < ANNOUNCEMENT_THREAD_PAGE_SIZE])),
-    );
-    setAnnouncementThreadLoadingOlder({});
-
-    const announcementRows = announcementQueries.flatMap((result) => result.rows);
-    const announcementIds = announcementRows.map((announcement) => announcement.id);
-    const authorIds = Array.from(new Set(announcementRows.map((announcement) => announcement.author_profile_id).filter(Boolean)));
-    const [{ data: authors }, { data: receipts }] = await Promise.all([
-      authorIds.length ? supabase.from("profiles").select("*").in("id", authorIds) : Promise.resolve({ data: [] as Profile[] }),
-      announcementIds.length
-        ? supabase.from("program_announcement_receipts").select("*").eq("profile_id", userId).in("announcement_id", announcementIds)
-        : Promise.resolve({ data: [] as AnnouncementReceipt[] }),
-    ]);
-
-    const visibleAnnouncements = announcementRows
-      .map((announcement) => ({
-        ...announcement,
-        program: (programs ?? []).find((program) => program.id === announcement.program_id) ?? null,
-        author: (authors ?? []).find((author) => author.id === announcement.author_profile_id) ?? null,
-        receipt: (receipts ?? []).find((receipt) => receipt.announcement_id === announcement.id) ?? null,
-      }))
-      .filter((announcement) => isAnnouncementVisibleForEnrollment(announcement, enrolledTrackIdsByProgramId.get(announcement.program_id), enrolledJoinDatesByProgramId.get(announcement.program_id)))
-      .filter((announcement) => !announcement.receipt?.dismissed_at);
-
-    setAnnouncements(visibleAnnouncements);
-    setLoading(false);
-  }
-
-  useEffect(() => {
-    const timeout = window.setTimeout(() => {
-      void loadInbox();
-    }, 0);
-    return () => window.clearTimeout(timeout);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slug]);
-
-  async function dismissRequests(requestIds: string[]) {
-    if (!requestIds.length) {
-      return;
-    }
-    const supabase = createSupabaseBrowserClient();
-    const { error: dismissError } = await supabase
-      .from("enrollment_requests")
-      .update({ student_dismissed_at: new Date().toISOString() })
-      .in("id", requestIds);
-    if (dismissError) {
-      setError(dismissError.message);
-      return;
-    }
-    window.dispatchEvent(new Event("tareeqah:notifications-changed"));
-    await loadInbox();
-  }
-
-  async function dismissWithdrawalRequests(requestIds: string[]) {
-    if (!requestIds.length) {
-      return;
-    }
-    const { error: dismissError } = await createSupabaseBrowserClient()
-      .from("withdrawal_requests")
-      .update({ student_dismissed_at: new Date().toISOString() })
-      .in("id", requestIds);
-    if (dismissError) {
-      setError(dismissError.message);
-      return;
-    }
-    window.dispatchEvent(new Event("tareeqah:notifications-changed"));
-    await loadInbox();
-  }
-
-  async function dismissRequest(requestId: string) {
-    const request = requests.find((item) => item.id === requestId);
-    if (request && hasIncompletePaidApproval(request)) {
-      setProtectedClear({ mode: "single", requestIds: [requestId], count: 1 });
-      return;
-    }
-    await dismissRequests([requestId]);
-  }
-
-  async function confirmCancelRegistrationFromApplication() {
-    if (!cancelRegistrationTarget?.program) {
-      return;
-    }
-    setCancelRegistrationBusy(true);
-    const result = await callApplicationAction(cancelRegistrationTarget.program.id, cancelRegistrationTarget.request.id, "cancel-registration", {});
-    setCancelRegistrationBusy(false);
-    if (!result.ok) {
-      setToast({ tone: "error", message: result.error });
-      return;
-    }
-    setToast({ tone: "success", message: "Registration cancelled." });
-    setCancelRegistrationTarget(null);
-    setApplicationDetailsRow(null);
-    window.dispatchEvent(new Event("tareeqah:notifications-changed"));
-    await loadInbox();
-  }
-
-  async function clearAllReturnedRequests() {
-    const returnedRequestIds = returnedRequests.map((request) => request.id);
-    const returnedWithdrawalIds = returnedWithdrawals.map((request) => request.id);
-    if (!returnedRequestIds.length && !returnedWithdrawalIds.length) {
-      return;
-    }
-    const protectedRequests = returnedRequests.filter(hasIncompletePaidApproval);
-    if (protectedRequests.length) {
-      setProtectedClear({ mode: "all", requestIds: returnedRequestIds, count: protectedRequests.length });
-      return;
-    }
-
-    await dismissRequests(returnedRequestIds);
-    await dismissWithdrawalRequests(returnedWithdrawalIds);
-  }
-
-  const pendingRequests = requests.filter((request) => request.status === "pending");
-  const returnedRequests = requests.filter((request) => request.status !== "pending");
-  const pendingWithdrawals = studentWithdrawals.filter((request) => request.status === "pending");
-  const returnedWithdrawals = studentWithdrawals.filter((request) => request.status !== "pending");
-  const unseenRequestCount =
-    requests.filter((request) => !seenRequestIds.has(studentRequestNotificationKey(request))).length +
-    studentWithdrawals.filter((request) => !seenRequestIds.has(studentWithdrawalNotificationKey(request))).length;
-  const announcementThreads = buildAnnouncementThreads(announcements, enrolledProgramsForInbox);
-  const noteThreads = buildNoteThreads(notes);
-  const unreadAnnouncementCount = announcements.filter((announcement) => !announcement.receipt?.read_at).length;
-  const unreadNoteCount = notes.filter((note) => !note.seen_at).length;
-
-  function markRequestsSeenOptimistically(keys: string[]) {
-    if (!keys.length) {
-      return;
-    }
-    setSeenRequestIds((current) => new Set([...current, ...keys]));
-    window.dispatchEvent(new Event("tareeqah:notifications-changed"));
-    void markNotificationsSeen(currentUserId, keys).then((ok) => {
-      if (!ok) {
-        revertOptimisticKeys(setSeenRequestIds, keys);
-        window.dispatchEvent(new Event("tareeqah:notifications-changed"));
-      }
-    });
-  }
-
-  function changeTab(nextTab: "announcements" | "notes" | "requests") {
-    setTab(nextTab);
-    setSelectedThread(null);
-  }
-
-  function viewRequestFromInbox(request: RequestWithContext) {
-    markRequestsSeenOptimistically([studentRequestNotificationKey(request)]);
-    setApplicationDetailsRow(applicantRowFromRequest(request));
-  }
-
-  function viewWithdrawalFromInbox(request: WithdrawalRequestWithContext) {
-    markRequestsSeenOptimistically([studentWithdrawalNotificationKey(request)]);
-  }
-
-  useEffect(() => {
-    if (loading || selectedThread) {
-      return;
-    }
-
-    const requestedTab = searchParams.get("tab");
-    const programId = searchParams.get("programId");
-    if (requestedTab !== "announcements" && requestedTab !== "notes" && requestedTab !== "requests") {
-      return;
-    }
-
-    const key = `${requestedTab}:${programId ?? ""}`;
-    if (inboxDeepLinkHandledRef.current === key) {
-      return;
-    }
-
-    inboxDeepLinkHandledRef.current = key;
-    changeTab(requestedTab);
-    if (requestedTab === "announcements" && programId) {
-      void openThread({ kind: "announcements", programId });
-    }
-    if (requestedTab === "notes" && programId) {
-      const targetNote = notes.find((note) => note.program_id === programId);
-      if (targetNote) {
-        void openThread({ kind: "notes", programId, studentId: targetNote.student_profile_id });
-      }
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [announcements, loading, notes, searchParams, selectedThread]);
-
-  async function openThread(thread: StudentInboxThread) {
-    setSelectedThread(thread);
-    const supabase = createSupabaseBrowserClient();
-    const now = new Date().toISOString();
-
-    if (thread.kind === "announcements" && currentUserId) {
-      const threadAnnouncements = announcements.filter((announcement) => announcement.program_id === thread.programId && !announcement.receipt?.read_at);
-      if (threadAnnouncements.length) {
-        const { error: receiptError } = await supabase.from("program_announcement_receipts").upsert(
-          threadAnnouncements.map((announcement) => ({
-            announcement_id: announcement.id,
-            profile_id: currentUserId,
-            read_at: now,
-            dismissed_at: null,
-            updated_at: now,
-          })),
-          { onConflict: "announcement_id,profile_id" },
-        );
-        if (receiptError) {
-          console.error("Failed to persist announcement read state:", receiptError.message);
-        } else {
-          setAnnouncements((current) =>
-            current.map((announcement) =>
-              announcement.program_id === thread.programId
-                ? {
-                    ...announcement,
-                    receipt: {
-                      id: announcement.receipt?.id ?? `local-${announcement.id}`,
-                      announcement_id: announcement.id,
-                      profile_id: currentUserId,
-                      read_at: now,
-                      dismissed_at: null,
-                      created_at: announcement.receipt?.created_at ?? now,
-                      updated_at: now,
-                    },
-                  }
-                : announcement,
-            ),
-          );
-        }
-      }
-    }
-
-    if (thread.kind === "notes") {
-      const unreadIds = notes.filter((note) => note.program_id === thread.programId && note.student_profile_id === thread.studentId && !note.seen_at).map((note) => note.id);
-      if (unreadIds.length) {
-        const { error: notesError } = await supabase.rpc("mark_program_student_notes_seen", { note_ids: unreadIds });
-        if (notesError) {
-          console.error("Failed to persist note seen state:", notesError.message);
-        } else {
-          setNotes((current) =>
-            current.map((note) => (unreadIds.includes(note.id) ? { ...note, seen_at: now, seen_by: currentUserId, updated_at: now } : note)),
-          );
-        }
-      }
-    }
-
-    window.dispatchEvent(new Event("tareeqah:notifications-changed"));
-  }
-
-  async function loadOlderAnnouncements(programId: string) {
-    if (!currentUserId || announcementThreadLoadingOlder[programId] || announcementThreadExhausted[programId]) {
-      return;
-    }
-
-    const currentProgramAnnouncements = announcements
-      .filter((announcement) => announcement.program_id === programId)
-      .sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
-    const oldestLoadedAt = currentProgramAnnouncements[0]?.created_at;
-    if (!oldestLoadedAt) {
-      return;
-    }
-
-    setAnnouncementThreadLoadingOlder((current) => ({ ...current, [programId]: true }));
-    const supabase = createSupabaseBrowserClient();
-    const { data: olderRows, error: olderError } = await supabase
-      .from("program_announcements")
-      .select("*")
-      .eq("program_id", programId)
-      .lt("created_at", oldestLoadedAt)
-      .order("created_at", { ascending: false })
-      .limit(ANNOUNCEMENT_THREAD_PAGE_SIZE);
-
-    if (olderError) {
-      setAnnouncementThreadLoadingOlder((current) => ({ ...current, [programId]: false }));
-      setError(olderError.message);
-      return;
-    }
-
-    const announcementIds = (olderRows ?? []).map((announcement) => announcement.id);
-    const authorIds = Array.from(new Set((olderRows ?? []).map((announcement) => announcement.author_profile_id).filter(Boolean)));
-    const [{ data: authors }, { data: receipts }] = await Promise.all([
-      authorIds.length ? supabase.from("profiles").select("*").in("id", authorIds) : Promise.resolve({ data: [] as Profile[] }),
-      announcementIds.length
-        ? supabase.from("program_announcement_receipts").select("*").eq("profile_id", currentUserId).in("announcement_id", announcementIds)
-        : Promise.resolve({ data: [] as AnnouncementReceipt[] }),
-    ]);
-
-    const enrolledTrackIds = new Set(announcementTrackIdsByProgramId[programId] ?? []);
-    const joinedAt = announcementJoinDateByProgramId[programId];
-    const program = enrolledProgramsForInbox.find((item) => item.id === programId) ?? null;
-    const now = new Date().toISOString();
-    const visibleOlderAnnouncements = (olderRows ?? [])
-      .map((announcement) => ({
-        ...announcement,
-        program,
-        author: (authors ?? []).find((author) => author.id === announcement.author_profile_id) ?? null,
-        receipt: (receipts ?? []).find((receipt) => receipt.announcement_id === announcement.id) ?? null,
-      }))
-      .filter((announcement) => isAnnouncementVisibleForEnrollment(announcement, enrolledTrackIds, joinedAt))
-      .filter((announcement) => !announcement.receipt?.dismissed_at)
-      .map((announcement) => ({
-        ...announcement,
-        receipt: {
-          id: announcement.receipt?.id ?? `local-${announcement.id}`,
-          announcement_id: announcement.id,
-          profile_id: currentUserId,
-          read_at: now,
-          dismissed_at: null,
-          created_at: announcement.receipt?.created_at ?? now,
-          updated_at: now,
-        },
-      }));
-
-    let olderReceiptsPersisted = true;
-    if (visibleOlderAnnouncements.length) {
-      const { error: olderReceiptError } = await supabase.from("program_announcement_receipts").upsert(
-        visibleOlderAnnouncements.map((announcement) => ({
-          announcement_id: announcement.id,
-          profile_id: currentUserId,
-          read_at: now,
-          dismissed_at: null,
-          updated_at: now,
-        })),
-        { onConflict: "announcement_id,profile_id" },
-      );
-      if (olderReceiptError) {
-        console.error("Failed to persist announcement read state:", olderReceiptError.message);
-        olderReceiptsPersisted = false;
-      }
-    }
-
-    setAnnouncements((current) => {
-      const existingIds = new Set(current.map((announcement) => announcement.id));
-      const incoming = visibleOlderAnnouncements.filter((announcement) => !existingIds.has(announcement.id));
-      return [...current, ...(olderReceiptsPersisted ? incoming : incoming.map((announcement) => ({ ...announcement, receipt: null })))];
-    });
-    setAnnouncementThreadExhausted((current) => ({
-      ...current,
-      [programId]: (olderRows ?? []).length < ANNOUNCEMENT_THREAD_PAGE_SIZE,
-    }));
-    setAnnouncementThreadLoadingOlder((current) => ({ ...current, [programId]: false }));
-  }
-
-  async function loadOlderNotes(programId: string, studentId: string) {
-    const threadKey = `${programId}:${studentId}`;
-    if (!currentUserId || noteThreadLoadingOlder[threadKey] || noteThreadExhausted[threadKey]) {
-      return;
-    }
-
-    const currentThreadNotes = notes
-      .filter((note) => note.program_id === programId && note.student_profile_id === studentId)
-      .sort((a, b) => Date.parse(a.created_at) - Date.parse(b.created_at));
-    const oldestLoadedAt = currentThreadNotes[0]?.created_at;
-    if (!oldestLoadedAt) {
-      return;
-    }
-
-    setNoteThreadLoadingOlder((current) => ({ ...current, [threadKey]: true }));
-    const supabase = createSupabaseBrowserClient();
-    const { data: olderRows, error: olderError } = await supabase
-      .from("program_student_notes")
-      .select("*")
-      .eq("program_id", programId)
-      .eq("student_profile_id", studentId)
-      .lt("created_at", oldestLoadedAt)
-      .order("created_at", { ascending: false })
-      .limit(NOTE_THREAD_PAGE_SIZE);
-
-    if (olderError) {
-      setNoteThreadLoadingOlder((current) => ({ ...current, [threadKey]: false }));
-      setError(olderError.message);
-      return;
-    }
-
-    const authorIds = Array.from(new Set((olderRows ?? []).map((note) => note.author_profile_id)));
-    const recipientIds = Array.from(new Set((olderRows ?? []).map((note) => note.recipient_profile_id)));
-    const [{ data: authors }, { data: recipients }] = await Promise.all([
-      authorIds.length ? supabase.from("profiles").select("*").in("id", authorIds) : Promise.resolve({ data: [] as Profile[] }),
-      recipientIds.length ? supabase.from("profiles").select("*").in("id", recipientIds) : Promise.resolve({ data: [] as Profile[] }),
-    ]);
-
-    const now = new Date().toISOString();
-    const olderNoteIds = (olderRows ?? []).filter((note) => !note.seen_at).map((note) => note.id);
-    let olderNotesPersisted = true;
-    if (olderNoteIds.length) {
-      const { error: notesRpcError } = await supabase.rpc("mark_program_student_notes_seen", { note_ids: olderNoteIds });
-      if (notesRpcError) {
-        console.error("Failed to persist note seen state:", notesRpcError.message);
-        olderNotesPersisted = false;
-      }
-    }
-
-    const program = enrolledProgramsForInbox.find((item) => item.id === programId) ?? null;
-    const student = notes.find((note) => note.program_id === programId && note.student_profile_id === studentId)?.student ?? null;
-    const visibleOlderNotes = (olderRows ?? []).map((note) => ({
-      ...note,
-      program,
-      student,
-      recipient: (recipients ?? []).find((recipient) => recipient.id === note.recipient_profile_id) ?? null,
-      author: (authors ?? []).find((author) => author.id === note.author_profile_id) ?? null,
-      seen_at: olderNotesPersisted ? note.seen_at ?? now : note.seen_at,
-      seen_by: olderNotesPersisted ? note.seen_by ?? currentUserId : note.seen_by,
-      updated_at: now,
-    }));
-
-    setNotes((current) => {
-      const existingIds = new Set(current.map((note) => note.id));
-      return [...current, ...visibleOlderNotes.filter((note) => !existingIds.has(note.id))];
-    });
-    setNoteThreadExhausted((current) => ({ ...current, [threadKey]: (olderRows ?? []).length < NOTE_THREAD_PAGE_SIZE }));
-    setNoteThreadLoadingOlder((current) => ({ ...current, [threadKey]: false }));
-    window.dispatchEvent(new Event("tareeqah:notifications-changed"));
-  }
-
-  return (
-    <div className="bg-[var(--workspace)]">
-      <EditorToast toast={toast} onClose={() => setToast(null)} />
-      <div className="md:hidden">
-        <FloatingInboxTabs
-          tabs={[
-            { id: "announcements", label: "Announcements", badge: unreadAnnouncementCount },
-            { id: "notes", label: "Notes", badge: unreadNoteCount },
-            { id: "requests", label: "Applications", badge: unseenRequestCount },
-          ]}
-          value={tab}
-          onChange={(value) => changeTab(value as "announcements" | "notes" | "requests")}
-        />
-      </div>
-      <div className="space-y-4 p-4">
-        {error ? (
-          <EmptyState title="Could not load inbox" text={error} onRetry={() => window.location.reload()} />
-        ) : loading ? (
-          <InboxLoadingPanel label={tab === "announcements" ? "Loading announcements" : tab === "notes" ? "Loading notes" : "Loading applications"} />
-        ) : selectedThread ? (
-          <StudentInboxThreadView
-            thread={selectedThread}
-            announcements={announcements}
-            notes={notes}
-            hasOlderAnnouncements={selectedThread.kind === "announcements" ? !announcementThreadExhausted[selectedThread.programId] : false}
-            loadingOlderAnnouncements={selectedThread.kind === "announcements" ? Boolean(announcementThreadLoadingOlder[selectedThread.programId]) : false}
-            onLoadOlderAnnouncements={selectedThread.kind === "announcements" ? () => void loadOlderAnnouncements(selectedThread.programId) : undefined}
-            hasOlderNotes={selectedThread.kind === "notes" ? !noteThreadExhausted[`${selectedThread.programId}:${selectedThread.studentId}`] : false}
-            loadingOlderNotes={selectedThread.kind === "notes" ? Boolean(noteThreadLoadingOlder[`${selectedThread.programId}:${selectedThread.studentId}`]) : false}
-            onLoadOlderNotes={selectedThread.kind === "notes" ? () => void loadOlderNotes(selectedThread.programId, selectedThread.studentId) : undefined}
-            onBack={() => setSelectedThread(null)}
-          />
-        ) : tab === "announcements" ? (
-          <StudentInboxThreadList
-            emptyText="Class announcements will appear here."
-            threads={announcementThreads.map((thread) => ({
-              id: thread.programId,
-              title: thread.program?.title ?? "Class announcement",
-              subtitle: thread.latest ? `${thread.latest.author?.full_name ?? "Teacher"} - ${thread.latest.message}` : "No announcements yet",
-              meta: thread.latest ? timeAgo(thread.latest.created_at) : "",
-              unreadCount: thread.unreadCount,
-              onClick: () => void openThread({ kind: "announcements", programId: thread.programId }),
-            }))}
-          />
-        ) : tab === "notes" ? (
-          <StudentInboxThreadList
-            emptyText="Teacher notes, homework, feedback, and progress updates will appear here."
-            threads={noteThreads.map((thread) => ({
-              id: `${thread.programId}-${thread.studentId}`,
-              title: thread.program?.title ?? "Class note",
-              subtitle: `${thread.latest.author?.full_name ?? "Teacher"} - ${thread.latest.message}`,
-              meta: `${thread.student?.full_name ?? "Student"} - ${timeAgo(thread.latest.created_at)}`,
-              unreadCount: thread.unreadCount,
-              onClick: () => void openThread({ kind: "notes", programId: thread.programId, studentId: thread.studentId }),
-            }))}
-          />
-        ) : (
-          <>
-            <InboxSection title="Pending" count={pendingRequests.length + pendingWithdrawals.length}>
-              {pendingRequests.length || pendingWithdrawals.length ? (
-                <>
-                  {pendingRequests.map((request) => (
-                    <StudentRequestCard key={request.id} request={request} onViewApplication={() => viewRequestFromInbox(request)} />
-                  ))}
-                  {pendingWithdrawals.map((request) => (
-                    <StudentWithdrawalStatusCard key={request.id} request={request} onOpen={() => viewWithdrawalFromInbox(request)} />
-                  ))}
-                </>
-              ) : (
-                <MiniEmpty text="No pending requests." />
-              )}
-            </InboxSection>
-            <InboxSection title="Returned" count={returnedRequests.length + returnedWithdrawals.length} action={returnedRequests.length || returnedWithdrawals.length ? <ClearAllButton onClick={clearAllReturnedRequests} /> : null}>
-              {returnedRequests.length || returnedWithdrawals.length ? (
-                <>
-                  {returnedRequests.map((request) => (
-                    <StudentRequestCard
-                      key={request.id}
-                      request={request}
-                      onViewApplication={request.status === "approved" && !request.admission_completed_at ? () => viewRequestFromInbox(request) : undefined}
-                      viewClassHref={request.status === "approved" && request.admission_completed_at ? `/m/${slug}/portal/classes/${request.program_id}` : undefined}
-                      onDismiss={() => dismissRequest(request.id)}
-                    />
-                  ))}
-                  {returnedWithdrawals.map((request) => (
-                    <StudentWithdrawalStatusCard key={request.id} request={request} onOpen={() => viewWithdrawalFromInbox(request)} onDismiss={() => dismissWithdrawalRequests([request.id])} />
-                  ))}
-                </>
-              ) : (
-                <MiniEmpty text="Accepted or rejected requests will appear here." />
-              )}
-            </InboxSection>
-          </>
-        )}
-      </div>
-      {paymentNotice ? (
-        <PaymentResultModal
-          status={paymentNotice}
-          slug={slug}
-          onClose={() => {
-            setPaymentNotice(null);
-            window.dispatchEvent(new Event("tareeqah:notifications-changed"));
-            void loadInbox();
-          }}
-        />
-      ) : null}
-      {paymentConfirming ? <PaymentConfirmingModal /> : null}
-      {applicationDetailsRow ? (
-        <ApplicantDetailsDrawer
-          row={applicationDetailsRow}
-          slug={slug}
-          returnTo={`/m/${slug}/portal/announcements`}
-          onClose={() => setApplicationDetailsRow(null)}
-          onRescind={() => null}
-          onCancelRegistration={() => setCancelRegistrationTarget(applicationDetailsRow)}
-        />
-      ) : null}
-      {cancelRegistrationTarget ? (
-        <ConfirmStudentRescindModal
-          mode="cancel_registration"
-          request={{ ...cancelRegistrationTarget.request, student: cancelRegistrationTarget.student, parent: cancelRegistrationTarget.request.parent_profile_id ? cancelRegistrationTarget.parent ?? null : null, program: cancelRegistrationTarget.program, track: cancelRegistrationTarget.track }}
-          busy={cancelRegistrationBusy}
-          onCancel={() => {
-            if (!cancelRegistrationBusy) {
-              setCancelRegistrationTarget(null);
-            }
-          }}
-          onConfirm={() => void confirmCancelRegistrationFromApplication()}
-        />
-      ) : null}
-      {protectedClear ? (
-        <ProtectedPaidApplicationClearModal
-          count={protectedClear.count}
-          mode={protectedClear.mode}
-          onCancel={() => setProtectedClear(null)}
-          onConfirm={() => {
-            const requestIds = protectedClear.requestIds;
-            setProtectedClear(null);
-            void dismissRequests(requestIds);
-          }}
-        />
-      ) : null}
-    </div>
-  );
-}
-
-const modalFocusableSelector =
-  'a[href], button:not([disabled]), textarea:not([disabled]), input:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])';
-
-function useModalFocusTrap<T extends HTMLElement>(containerRef: RefObject<T | null>, active: boolean, onClose?: () => void) {
-  useEffect(() => {
-    if (!active) {
-      return;
-    }
-    const container = containerRef.current;
-    if (!container) {
-      return;
-    }
-
-    const previouslyFocused = document.activeElement as HTMLElement | null;
-    const initialFocusable = container.querySelectorAll<HTMLElement>(modalFocusableSelector);
-    (initialFocusable[0] ?? container).focus({ preventScroll: true });
-
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        if (onClose) {
-          event.preventDefault();
-          onClose();
-        }
-        return;
-      }
-      if (event.key !== "Tab") {
-        return;
-      }
-      const focusable = Array.from(container!.querySelectorAll<HTMLElement>(modalFocusableSelector));
-      if (focusable.length === 0) {
-        event.preventDefault();
-        return;
-      }
-      const first = focusable[0];
-      const last = focusable[focusable.length - 1];
-      if (event.shiftKey && document.activeElement === first) {
-        event.preventDefault();
-        last.focus();
-      } else if (!event.shiftKey && document.activeElement === last) {
-        event.preventDefault();
-        first.focus();
-      }
-    }
-
-    document.addEventListener("keydown", handleKeyDown);
-    return () => {
-      document.removeEventListener("keydown", handleKeyDown);
-      previouslyFocused?.focus?.({ preventScroll: true });
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [active]);
-}
-
 function ConfirmStudentRescindModal({
   request,
   busy,
@@ -4915,6 +3848,7 @@ function ConfirmStudentRescindModal({
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   useModalFocusTrap(containerRef, true, onCancel);
+  useHideMobileChromeWhileMounted();
   const isCancelRegistration = mode === "cancel_registration";
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#26323A]/35 px-5 backdrop-blur-sm">
@@ -4939,799 +3873,16 @@ function ConfirmStudentRescindModal({
   );
 }
 
-type TeacherInboxSnapshot = {
-  currentUserId: string | null;
-  seenRequestIds: Set<string>;
-  dismissedNotificationIds: Set<string>;
-  programs: Program[];
-  selectedProgramId: string;
-  canReviewRequests: boolean;
-  announcementTracksByProgramId: Record<string, ProgramTrack[]>;
-  selectedAnnouncementTargetValue: string;
-  announcements: AnnouncementWithContext[];
-  trackSwitchRequests: ProgramTrackSwitchRequestWithContext[];
-  requests: RequestWithContext[];
-  withdrawals: WithdrawalRequestWithContext[];
-  instructorNotifications: InstructorLifecycleNotification[];
-  error: string | null;
-};
-
-const emptyTeacherInboxSnapshot: TeacherInboxSnapshot = {
-  currentUserId: null,
-  seenRequestIds: new Set(),
-  dismissedNotificationIds: new Set(),
-  programs: [],
-  selectedProgramId: "",
-  canReviewRequests: false,
-  announcementTracksByProgramId: {},
-  selectedAnnouncementTargetValue: "",
-  announcements: [],
-  trackSwitchRequests: [],
-  requests: [],
-  withdrawals: [],
-  instructorNotifications: [],
-  error: null,
-};
-
-export function TeacherInboxData({ slug }: { slug: string }) {
-  const router = useRouter();
-  const pathname = usePathname();
-  const searchParams = useSearchParams();
-  const [programs, setPrograms] = useState<Program[]>([]);
-  const [selectedProgramId, setSelectedProgramId] = useState<string>("");
-  const [announcements, setAnnouncements] = useState<AnnouncementWithContext[]>([]);
-  const [requests, setRequests] = useState<RequestWithContext[]>([]);
-  const [withdrawals, setWithdrawals] = useState<WithdrawalRequestWithContext[]>([]);
-  const [instructorNotifications, setInstructorNotifications] = useState<InstructorLifecycleNotification[]>([]);
-  const [trackSwitchRequests, setTrackSwitchRequests] = useState<ProgramTrackSwitchRequestWithContext[]>([]);
-  const [switchRequestBusyId, setSwitchRequestBusyId] = useState<string | null>(null);
-  const initialTeacherInboxTab = searchParams.get("tab");
-  const [tab, setTab] = useState<TeacherInboxTab>(initialTeacherInboxTab === "other" ? "other" : "requests");
-  const [sortMode, setSortMode] = useState<TeacherInboxSortMode>("newest");
-  const [canReviewRequests, setCanReviewRequests] = useState(false);
-  const [message, setMessage] = useState("");
-  const [announcementTracksByProgramId, setAnnouncementTracksByProgramId] = useState<Record<string, ProgramTrack[]>>({});
-  const [selectedAnnouncementTargetValue, setSelectedAnnouncementTargetValue] = useState("");
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-  const [seenRequestIds, setSeenRequestIds] = useState<Set<string>>(new Set());
-  const [dismissedNotificationIds, setDismissedNotificationIds] = useState<Set<string>>(new Set());
-  const [busyWithdrawalId, setBusyWithdrawalId] = useState<string | null>(null);
-  const [toast, setToast] = useState<EditorToastState | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [reviewTarget, setReviewTarget] = useState<{ programId: string; requestId: string } | null>(null);
-  const [drawerItem, setDrawerItem] = useState<TeacherInboxMessageItem | null>(null);
-  const [teacherInboxSession, setTeacherInboxSession] = useState<ReturnType<typeof getCachedSessionSnapshot>>(() => getCachedSessionSnapshot());
-
-  useEffect(() => {
-    let cancelled = false;
-    loadCachedSession().then((nextSession) => {
-      if (!cancelled) {
-        setTeacherInboxSession(nextSession);
-      }
-    });
-    const unsubscribe = subscribeCachedSession((nextSession) => {
-      setTeacherInboxSession(nextSession);
-    });
-    return () => {
-      cancelled = true;
-      unsubscribe();
-    };
-  }, []);
-
-  useEffect(() => {
-    const nextTab = searchParams.get("tab");
-    if (nextTab === "requests" || nextTab === "other") {
-      setTab(nextTab);
-    }
-  }, [searchParams]);
-
-  async function fetchTeacherInboxSnapshot(): Promise<TeacherInboxSnapshot> {
-    const supabase = createSupabaseBrowserClient();
-    const { data: sessionData } = await supabase.auth.getSession();
-    const userId = sessionData.session?.user.id;
-    if (!userId) {
-      return { ...emptyTeacherInboxSnapshot };
-    }
-
-    const { seen: initialSeenIds, dismissed: initialDismissedIds } = await fetchNotificationState(userId);
-    const { data: mosque } = await supabase.from("mosques").select("id").eq("slug", slug).maybeSingle();
-    if (!mosque) {
-      return { ...emptyTeacherInboxSnapshot, currentUserId: userId, seenRequestIds: initialSeenIds, dismissedNotificationIds: initialDismissedIds };
-    }
-
-    const [{ data: mosquePrograms }, { data: assignments }] = await Promise.all([
-      supabase.from("programs").select("*").eq("mosque_id", mosque.id).eq("is_active", true),
-      supabase.from("program_teachers").select("program_id, role").eq("teacher_profile_id", userId),
-    ]);
-    const assignedIds = new Set((assignments ?? []).map((assignment) => assignment.program_id));
-    const directorAssignmentIds = new Set((assignments ?? []).filter((assignment) => assignment.role === "director").map((assignment) => assignment.program_id));
-    const teacherPrograms = (mosquePrograms ?? []).filter((program) => (program.director_profile_id ?? program.teacher_profile_id) === userId || assignedIds.has(program.id));
-    const directorProgramIds = teacherPrograms
-      .filter((program) => (program.director_profile_id ?? program.teacher_profile_id) === userId || directorAssignmentIds.has(program.id))
-      .map((program) => program.id);
-    const activeProgramId = selectedProgramId || teacherPrograms[0]?.id || "";
-
-    const programIds = teacherPrograms.map((program) => program.id);
-    if (programIds.length === 0) {
-      return {
-        ...emptyTeacherInboxSnapshot,
-        currentUserId: userId,
-        seenRequestIds: initialSeenIds,
-        dismissedNotificationIds: initialDismissedIds,
-        programs: teacherPrograms,
-        selectedProgramId: activeProgramId,
-        canReviewRequests: directorProgramIds.length > 0,
-      };
-    }
-
-    const [
-      { data: announcementRows, error: announcementError },
-      { data: requestRows, error: requestError },
-      { data: withdrawalRows, error: withdrawalError },
-      { data: instructorRows, error: instructorError },
-      { data: instructorEventRows, error: instructorEventError },
-      { data: trackRows },
-      { data: trackSwitchRows },
-    ] = await Promise.all([
-      activeProgramId
-        ? supabase.from("program_announcements").select("*").eq("program_id", activeProgramId).order("created_at", { ascending: false })
-        : Promise.resolve({ data: [] as AnnouncementWithContext[], error: null }),
-      directorProgramIds.length
-        ? supabase.from("enrollment_requests").select("*").in("program_id", directorProgramIds).is("teacher_dismissed_at", null).order("requested_at", { ascending: false })
-        : Promise.resolve({ data: [] as EnrollmentRequest[], error: null }),
-      directorProgramIds.length
-        ? supabase.from("withdrawal_requests").select("*").in("program_id", directorProgramIds).is("teacher_dismissed_at", null).order("requested_at", { ascending: false })
-        : Promise.resolve({ data: [] as WithdrawalRequest[], error: null }),
-      directorProgramIds.length
-        ? supabase
-            .from("program_teachers")
-            .select("*")
-            .in("program_id", directorProgramIds)
-            .eq("role", "instructor")
-            .not("teacher_profile_id", "is", null)
-            .order("created_at", { ascending: false })
-        : Promise.resolve({ data: [] as ProgramTeacher[], error: null }),
-      directorProgramIds.length
-        ? supabase.from("program_instructor_events").select("*").in("program_id", directorProgramIds).order("created_at", { ascending: false })
-        : Promise.resolve({ data: [] as ProgramInstructorEvent[], error: null }),
-      programIds.length
-        ? supabase.from("program_tracks").select("*").in("program_id", programIds).eq("is_active", true).order("sort_order", { ascending: true })
-        : Promise.resolve({ data: [] as ProgramTrack[] }),
-      directorProgramIds.length
-        ? supabase.from("program_track_switch_requests").select("*").in("program_id", directorProgramIds).order("requested_at", { ascending: false })
-        : Promise.resolve({ data: [] as ProgramTrackSwitchRequestRow[] }),
-    ]);
-
-    if (announcementError || requestError || withdrawalError || instructorError || instructorEventError) {
-      return {
-        ...emptyTeacherInboxSnapshot,
-        currentUserId: userId,
-        seenRequestIds: initialSeenIds,
-        dismissedNotificationIds: initialDismissedIds,
-        programs: teacherPrograms,
-        selectedProgramId: activeProgramId,
-        canReviewRequests: directorProgramIds.length > 0,
-        error: announcementError?.message ?? requestError?.message ?? withdrawalError?.message ?? instructorError?.message ?? instructorEventError?.message ?? "Could not load teacher inbox.",
-      };
-    }
-
-    const studentIds = Array.from(
-      new Set([
-        ...(requestRows ?? []).map((request) => request.student_profile_id),
-        ...(withdrawalRows ?? []).map((request) => request.student_profile_id),
-        ...(trackSwitchRows ?? []).map((request) => request.student_profile_id),
-      ]),
-    );
-    const parentIds = Array.from(new Set([...(requestRows ?? []).map((request) => request.parent_profile_id).filter(Boolean), ...(withdrawalRows ?? []).map((request) => request.parent_profile_id).filter(Boolean)])) as string[];
-    const authorIds = Array.from(new Set((announcementRows ?? []).map((announcement) => announcement.author_profile_id).filter(Boolean))) as string[];
-    const instructorIds = Array.from(
-      new Set([
-        ...(instructorRows ?? []).map((instructor) => instructor.teacher_profile_id).filter(Boolean),
-        ...(instructorEventRows ?? []).map((event) => event.teacher_profile_id).filter(Boolean),
-      ]),
-    ) as string[];
-    const subscriptionStudentIds = Array.from(new Set((withdrawalRows ?? []).map((request) => request.student_profile_id)));
-    const requestIds = (requestRows ?? []).map((request) => request.id);
-    const [{ data: students }, { data: parents }, { data: authors }, { data: instructorProfiles }, { data: subscriptions }, { data: requestTrackLinkRows }] = await Promise.all([
-      studentIds.length
-        ? supabase.from("profiles").select("id, full_name, email, phone_number, avatar_url, age, gender, date_of_birth, account_type").in("id", studentIds)
-        : Promise.resolve({ data: [] as StudentDisplay[] }),
-      parentIds.length
-        ? supabase.from("profiles").select("id, full_name, email, phone_number, avatar_url").in("id", parentIds)
-        : Promise.resolve({ data: [] as ParentDisplay[] }),
-      authorIds.length ? supabase.from("profiles").select("*").in("id", authorIds) : Promise.resolve({ data: [] as Profile[] }),
-      instructorIds.length ? supabase.from("profiles").select("*").in("id", instructorIds) : Promise.resolve({ data: [] as Profile[] }),
-      subscriptionStudentIds.length
-        ? supabase.from("program_subscriptions").select("*").in("program_id", directorProgramIds).in("student_profile_id", subscriptionStudentIds)
-        : Promise.resolve({ data: [] as ProgramSubscription[] }),
-      requestIds.length
-        ? supabase.from("enrollment_request_tracks").select("enrollment_request_id, program_track_id").in("enrollment_request_id", requestIds)
-        : Promise.resolve({ data: [] as Array<{ enrollment_request_id: string; program_track_id: string }> }),
-    ]);
-    const requestTrackIdsByRequestId = new Map<string, string[]>();
-    for (const linkRow of requestTrackLinkRows ?? []) {
-      requestTrackIdsByRequestId.set(linkRow.enrollment_request_id, [...(requestTrackIdsByRequestId.get(linkRow.enrollment_request_id) ?? []), linkRow.program_track_id]);
-    }
-
-    const tracksByProgramId = (trackRows ?? []).reduce<Record<string, ProgramTrack[]>>((next, track) => {
-      next[track.program_id] = [...(next[track.program_id] ?? []), track];
-      return next;
-    }, {});
-    const joinedAssignmentIdsWithEvents = new Set((instructorEventRows ?? []).filter((event) => event.event_type === "joined" && event.assignment_id).map((event) => event.assignment_id as string));
-    const instructorEventNotifications: InstructorLifecycleNotification[] = (instructorEventRows ?? []).map((event) => ({
-      id: event.id,
-      program_id: event.program_id,
-      assignment_id: event.assignment_id,
-      teacher_profile_id: event.teacher_profile_id,
-      event_type: event.event_type === "resigned" ? "resigned" : "joined",
-      created_at: event.created_at,
-      program: teacherPrograms.find((program) => program.id === event.program_id) ?? null,
-      instructor: event.teacher_profile_id ? ((instructorProfiles ?? []).find((profile) => profile.id === event.teacher_profile_id) as Profile | undefined) ?? null : null,
-    }));
-    const fallbackJoinNotifications: InstructorLifecycleNotification[] = (instructorRows ?? [])
-      .filter((notification) => !joinedAssignmentIdsWithEvents.has(notification.id))
-      .map((notification) => ({
-        id: notification.id,
-        program_id: notification.program_id,
-        assignment_id: notification.id,
-        teacher_profile_id: notification.teacher_profile_id,
-        event_type: "joined",
-        created_at: notification.created_at,
-        program: teacherPrograms.find((program) => program.id === notification.program_id) ?? null,
-        instructor: notification.teacher_profile_id ? ((instructorProfiles ?? []).find((profile) => profile.id === notification.teacher_profile_id) as Profile | undefined) ?? null : null,
-      }));
-
-    return {
-      currentUserId: userId,
-      seenRequestIds: initialSeenIds,
-      dismissedNotificationIds: initialDismissedIds,
-      programs: teacherPrograms,
-      selectedProgramId: activeProgramId,
-      canReviewRequests: directorProgramIds.length > 0,
-      announcementTracksByProgramId: tracksByProgramId,
-      selectedAnnouncementTargetValue: selectedAnnouncementTargetValue || (activeProgramId ? announcementTargetValue(activeProgramId, null) : ""),
-      announcements: (announcementRows ?? []).map((announcement) => ({
-        ...announcement,
-        program: teacherPrograms.find((program) => program.id === announcement.program_id) ?? null,
-        author: (authors ?? []).find((author) => author.id === announcement.author_profile_id) ?? null,
-      })),
-      trackSwitchRequests: (trackSwitchRows ?? []).map((request) => ({
-        ...request,
-        program: teacherPrograms.find((program) => program.id === request.program_id) ?? null,
-        student: (students ?? []).find((student) => student.id === request.student_profile_id) ?? null,
-      })),
-      requests: (requestRows ?? []).map((request) => ({
-        ...request,
-        program: teacherPrograms.find((program) => program.id === request.program_id) ?? null,
-        student: (students ?? []).find((student) => student.id === request.student_profile_id) ?? null,
-        parent: request.parent_profile_id ? ((parents ?? []).find((parent) => parent.id === request.parent_profile_id) as ParentDisplay | undefined) ?? null : null,
-        track: resolveRequestTrack(request, requestTrackIdsByRequestId, trackRows ?? []),
-      })),
-      withdrawals: (withdrawalRows ?? []).map((request) => ({
-        ...request,
-        program: teacherPrograms.find((program) => program.id === request.program_id) ?? null,
-        student: (students ?? []).find((student) => student.id === request.student_profile_id) ?? null,
-        parent: request.parent_profile_id ? ((parents ?? []).find((parent) => parent.id === request.parent_profile_id) as ParentDisplay | undefined) ?? null : null,
-        subscription:
-          (subscriptions ?? []).find((subscription) => subscription.program_id === request.program_id && subscription.student_profile_id === request.student_profile_id) ?? null,
-      })),
-      instructorNotifications: [...instructorEventNotifications, ...fallbackJoinNotifications].sort((a, b) => Date.parse(b.created_at ?? "0") - Date.parse(a.created_at ?? "0")),
-      error: null,
-    };
-  }
-
-  const teacherInboxKey = teacherInboxSession === undefined ? null : `teacher-inbox:${slug}:${teacherInboxSession?.user.id ?? "guest"}`;
-  const { data: inboxSnapshot, loading: inboxQueryLoading, refetch } = useCachedQuery(teacherInboxKey, () => fetchTeacherInboxSnapshot());
-
-  useEffect(() => {
-    if (!inboxSnapshot) {
-      return;
-    }
-    setCurrentUserId(inboxSnapshot.currentUserId);
-    setSeenRequestIds(inboxSnapshot.seenRequestIds);
-    setDismissedNotificationIds(inboxSnapshot.dismissedNotificationIds);
-    setPrograms(inboxSnapshot.programs);
-    setSelectedProgramId(inboxSnapshot.selectedProgramId);
-    setCanReviewRequests(inboxSnapshot.canReviewRequests);
-    setAnnouncementTracksByProgramId(inboxSnapshot.announcementTracksByProgramId);
-    setSelectedAnnouncementTargetValue(inboxSnapshot.selectedAnnouncementTargetValue);
-    setAnnouncements(inboxSnapshot.announcements);
-    setTrackSwitchRequests(inboxSnapshot.trackSwitchRequests);
-    setRequests(inboxSnapshot.requests);
-    setWithdrawals(inboxSnapshot.withdrawals);
-    setInstructorNotifications(inboxSnapshot.instructorNotifications);
-    setError(inboxSnapshot.error);
-    setLoading(false);
-  }, [inboxSnapshot]);
-
-  useEffect(() => {
-    setLoading(inboxQueryLoading);
-  }, [inboxQueryLoading]);
-
-  // Switching which program's announcements to view isn't part of the cache key (it starts
-  // empty and only resolves once the first fetch runs), so re-run explicitly when the director
-  // picks a different program after the initial load, mirroring the original effect's behavior.
-  const hasLoadedInboxOnce = useRef(false);
-  useEffect(() => {
-    if (!hasLoadedInboxOnce.current) {
-      hasLoadedInboxOnce.current = Boolean(inboxSnapshot);
-      return;
-    }
-    void refetch();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedProgramId]);
-
-  async function sendAnnouncement() {
-    if (!currentUserId || !selectedProgramId || !message.trim()) {
-      return;
-    }
-
-    const selectedTarget = parseAnnouncementTargetValue(selectedAnnouncementTargetValue || announcementTargetValue(selectedProgramId, null));
-    const targetTrackIds = selectedTarget.trackId ? [selectedTarget.trackId] : [];
-
-    const supabase = createSupabaseBrowserClient();
-    const targetProgramId = selectedTarget.programId || selectedProgramId;
-    const { data: inserted, error: insertError } = await supabase
-      .from("program_announcements")
-      .insert({
-        program_id: targetProgramId,
-        author_profile_id: currentUserId,
-        message: message.trim(),
-        target_program_track_ids: targetTrackIds,
-      })
-      .select("id")
-      .single();
-    if (insertError) {
-      setError(insertError.message);
-      return;
-    }
-    setMessage("");
-    window.dispatchEvent(new Event("tareeqah:notifications-changed"));
-    if (inserted) {
-      void notifyAnnouncementPosted(targetProgramId, inserted.id);
-    }
-    await refetch();
-  }
-
-  async function clearPastRequest(requestId: string) {
-    setError(null);
-    const { error: clearError } = await createSupabaseBrowserClient()
-      .from("enrollment_requests")
-      .update({ teacher_dismissed_at: new Date().toISOString() })
-      .eq("id", requestId);
-
-    if (clearError) {
-      setError(clearError.message);
-      return;
-    }
-
-    setRequests((current) => current.filter((request) => request.id !== requestId));
-    window.dispatchEvent(new Event("tareeqah:notifications-changed"));
-  }
-
-  async function clearAllPastRequests() {
-    const pastRequestIds = pastRequests.map((request) => request.id);
-    if (!pastRequestIds.length) {
-      return;
-    }
-
-    setError(null);
-    const { error: clearError } = await createSupabaseBrowserClient()
-      .from("enrollment_requests")
-      .update({ teacher_dismissed_at: new Date().toISOString() })
-      .in("id", pastRequestIds);
-
-    if (clearError) {
-      setError(clearError.message);
-      return;
-    }
-
-    setRequests((current) => current.filter((request) => !pastRequestIds.includes(request.id)));
-    window.dispatchEvent(new Event("tareeqah:notifications-changed"));
-  }
-
-  async function reviewWithdrawal(request: WithdrawalRequestWithContext, status: "approved" | "rejected") {
-    setBusyWithdrawalId(request.id);
-    const supabase = createSupabaseBrowserClient();
-    const { data: sessionData } = await supabase.auth.getSession();
-    const token = sessionData.session?.access_token;
-    if (!token) {
-      setBusyWithdrawalId(null);
-      setError("Please sign in again to review this withdrawal.");
-      return false;
-    }
-
-    const response = await fetch("/api/withdrawal-requests/review", {
-      method: "POST",
-      headers: {
-        "content-type": "application/json",
-        authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({ withdrawalRequestId: request.id, status }),
-    });
-    const result = (await response.json().catch(() => ({}))) as { error?: string };
-    setBusyWithdrawalId(null);
-    if (!response.ok) {
-      setError(result.error ?? "Could not review withdrawal request.");
-      return false;
-    }
-    window.dispatchEvent(new Event("tareeqah:notifications-changed"));
-    await refetch();
-    return true;
-  }
-
-  async function clearPastWithdrawal(requestId: string) {
-    setError(null);
-    const { error: clearError } = await createSupabaseBrowserClient()
-      .from("withdrawal_requests")
-      .update({ teacher_dismissed_at: new Date().toISOString() })
-      .eq("id", requestId);
-
-    if (clearError) {
-      setError(clearError.message);
-      return;
-    }
-
-    setWithdrawals((current) => current.filter((request) => request.id !== requestId));
-    window.dispatchEvent(new Event("tareeqah:notifications-changed"));
-  }
-
-  async function clearAllPastWithdrawals() {
-    const pastWithdrawalIds = pastWithdrawals.map((request) => request.id);
-    if (!pastWithdrawalIds.length) {
-      return;
-    }
-
-    setError(null);
-    const { error: clearError } = await createSupabaseBrowserClient()
-      .from("withdrawal_requests")
-      .update({ teacher_dismissed_at: new Date().toISOString() })
-      .in("id", pastWithdrawalIds);
-
-    if (clearError) {
-      setError(clearError.message);
-      return;
-    }
-
-    setWithdrawals((current) => current.filter((request) => !pastWithdrawalIds.includes(request.id)));
-    window.dispatchEvent(new Event("tareeqah:notifications-changed"));
-  }
-
-  const pendingRequests = requests.filter((request) => request.status === "pending");
-  const pastRequests = requests.filter((request) => request.status !== "pending");
-  const completedAdmissionRequests = pastRequests.filter((request) => request.admission_completed_at && !request.teacher_dismissed_at);
-  const pendingWithdrawals = withdrawals.filter((request) => request.status === "pending");
-  const pastWithdrawals = withdrawals.filter((request) => request.status !== "pending");
-  const newInstructorNotifications = instructorNotifications.filter((notification) => !seenRequestIds.has(teacherInstructorNotificationKey(notification)));
-  const pastInstructorNotifications = instructorNotifications.filter(
-    (notification) => seenRequestIds.has(teacherInstructorNotificationKey(notification)) && !dismissedNotificationIds.has(teacherInstructorNotificationKey(notification)),
-  );
-  const pendingTrackSwitchRequests = trackSwitchRequests.filter((request) => request.status === "pending");
-  const pastTrackSwitchRequests = trackSwitchRequests.filter((request) => request.status !== "pending");
-  const allTracksById = Object.fromEntries(Object.values(announcementTracksByProgramId).flat().map((track) => [track.id, track]));
-  const selectedProgram = programs.find((program) => program.id === selectedProgramId);
-  const announcementTargetOptions = programs.flatMap((program) => [
-    { value: announcementTargetValue(program.id, null), label: announcementTargetLabel(program, null) },
-    ...(announcementTracksByProgramId[program.id] ?? []).map((track) => ({
-      value: announcementTargetValue(program.id, track.id),
-      label: announcementTargetLabel(program, track),
-    })),
-  ]);
-  function markSeenOptimistically(keys: string[]) {
-    if (!keys.length) {
-      return;
-    }
-    setSeenRequestIds((current) => new Set([...current, ...keys]));
-    void markNotificationsSeen(currentUserId, keys).then((ok) => {
-      if (!ok) {
-        revertOptimisticKeys(setSeenRequestIds, keys);
-      }
-    });
-  }
-
-  function changeTab(nextTab: TeacherInboxTab) {
-    setTab(nextTab);
-    router.replace(`/m/${slug}/teacher/inbox?tab=${nextTab}`, { scroll: false });
-  }
-
-  async function decideTrackSwitchRequest(requestId: string, decision: "approved" | "rejected") {
-    setSwitchRequestBusyId(requestId);
-    const supabase = createSupabaseBrowserClient();
-    const { error: decisionError } = await supabase.rpc(decision === "approved" ? "approve_track_switch_request" : "reject_track_switch_request", {
-      target_request_id: requestId,
-    });
-    setSwitchRequestBusyId(null);
-    if (decisionError) {
-      setToast({ tone: "error", message: decisionError.message });
-      return false;
-    }
-    setToast({ tone: "success", message: decision === "approved" ? "Switch approved." : "Switch rejected." });
-    await refetch();
-    return true;
-  }
-
-  function clearAllInstructorUpdates() {
-    const keys = pastInstructorNotifications.map(teacherInstructorNotificationKey);
-    if (!keys.length) {
-      return;
-    }
-    setDismissedNotificationIds((current) => new Set([...current, ...keys]));
-    void markNotificationsDismissed(currentUserId, keys).then((ok) => {
-      if (!ok) {
-        revertOptimisticKeys(setDismissedNotificationIds, keys);
-      }
-    });
-  }
-
-  function trackSwitchNotificationKey(request: ProgramTrackSwitchRequestWithContext) {
-    return `track-switch:${request.id}:${request.status}:${request.requested_at}`;
-  }
-
-  // Items never disappear on their own — this is the only thing that removes an inbox item
-  // from view (applications/withdrawals get their own teacher_dismissed_at column; instructor
-  // updates and track switches share the generic teacher_notification_state dismissed_at ledger
-  // since neither of those tables has a dismissal column of its own).
-  function dismissInboxNotificationKey(key: string) {
-    setDismissedNotificationIds((current) => new Set([...current, key]));
-    void markNotificationsDismissed(currentUserId, [key]).then((ok) => {
-      if (!ok) {
-        revertOptimisticKeys(setDismissedNotificationIds, [key]);
-      }
-    });
-  }
-
-  function clearInboxItem(item: TeacherInboxMessageItem) {
-    if (item.kind === "application") {
-      void clearPastRequest(item.request.id);
-    } else if (item.kind === "withdrawal") {
-      void clearPastWithdrawal(item.request.id);
-    } else {
-      dismissInboxNotificationKey(item.key);
-    }
-  }
-
-  function applicationMessage(request: RequestWithContext) {
-    if (request.status === "pending") {
-      return "Application requires review";
-    }
-    if (request.admission_completed_at) {
-      return "Registration was completed";
-    }
-    if (request.status === "approved") {
-      return "Application was accepted";
-    }
-    if (request.status === "waitlisted") {
-      return "Application was waitlisted";
-    }
-    if (request.status === "rejected") {
-      return "Application was rejected";
-    }
-    return `Application was ${request.status}`;
-  }
-
-  function sortInboxItems(items: TeacherInboxMessageItem[]) {
-    const ordered = items.slice();
-    ordered.sort((a, b) => {
-      if (sortMode === "unread") {
-        if (a.requiresAction !== b.requiresAction) {
-          return a.requiresAction ? -1 : 1;
-        }
-        if (a.unread !== b.unread) {
-          return a.unread ? -1 : 1;
-        }
-      }
-      return Date.parse(b.createdAt ?? "0") - Date.parse(a.createdAt ?? "0");
-    });
-    return ordered;
-  }
-
-  const applicationInboxItems = sortInboxItems(
-    requests.map((request) => {
-      const key = teacherRequestNotificationKey(request);
-      return {
-        id: request.id,
-        key,
-        kind: "application" as const,
-        title: request.student?.full_name?.trim() || "Student",
-        subtitle: applicationMessage(request),
-        meta: `${request.program?.title ?? "Class"} · ${timeAgo(request.admission_completed_at ?? request.reviewed_at ?? request.requested_at)}`,
-        createdAt: request.admission_completed_at ?? request.reviewed_at ?? request.requested_at,
-        unread: teacherRequestShouldBeUnread(request, seenRequestIds),
-        requiresAction: request.status === "pending",
-        request,
-      };
-    }),
-  );
-  const otherInboxItems = sortInboxItems([
-    ...withdrawals.map((request) => {
-      const key = studentWithdrawalNotificationKey(request);
-      return {
-        id: request.id,
-        key,
-        kind: "withdrawal" as const,
-        title: request.student?.full_name?.trim() || "Student",
-        subtitle: request.status === "pending" ? "Withdrawal requires review" : `Withdrawal was ${request.status}`,
-        meta: `${request.program?.title ?? "Class"} · ${timeAgo(request.reviewed_at ?? request.requested_at)}`,
-        createdAt: request.reviewed_at ?? request.requested_at,
-        unread: !seenRequestIds.has(key),
-        requiresAction: request.status === "pending",
-        request,
-      };
-    }),
-    ...instructorNotifications
-      .filter((notification) => !dismissedNotificationIds.has(teacherInstructorNotificationKey(notification)))
-      .map((notification) => {
-        const key = teacherInstructorNotificationKey(notification);
-        const instructorName = notification.instructor?.full_name?.trim() || notification.instructor?.email || "Instructor";
-        return {
-          id: notification.id,
-          key,
-          kind: "instructor" as const,
-          title: instructorName,
-          subtitle: notification.event_type === "resigned" ? "Instructor resigned" : "Instructor joined",
-          meta: `${notification.program?.title ?? "Class"} · ${timeAgo(notification.created_at ?? "")}`,
-          createdAt: notification.created_at ?? "",
-          unread: !seenRequestIds.has(key),
-          requiresAction: false as const,
-          notification,
-        };
-      }),
-    ...trackSwitchRequests
-      .filter((request) => !dismissedNotificationIds.has(trackSwitchNotificationKey(request)))
-      .map((request) => {
-      const key = trackSwitchNotificationKey(request);
-      return {
-        id: request.id,
-        key,
-        kind: "switch" as const,
-        title: request.student?.full_name?.trim() || "Student",
-        subtitle: request.status === "pending" ? "Schedule switch requires review" : `Schedule switch was ${request.status}`,
-        meta: `${request.program?.title ?? "Class"} · ${timeAgo(request.requested_at)}`,
-        createdAt: request.requested_at,
-        unread: !seenRequestIds.has(key),
-        requiresAction: request.status === "pending",
-        request,
-      };
-    }),
-  ]);
-  const visibleInboxItems = tab === "requests" ? applicationInboxItems : otherInboxItems;
-  const applicationUnreadCount = applicationInboxItems.filter((item) => item.unread).length;
-  const otherUnreadCount = otherInboxItems.filter((item) => item.unread).length;
-
-  function openInboxItem(item: TeacherInboxMessageItem) {
-    // Read/unread is separate from "requires action": opening marks the item read, while the
-    // pending underlying request keeps the row active and keeps the nav/home attention state.
-    markSeenOptimistically([item.key]);
-    if (item.kind === "application") {
-      window.dispatchEvent(new CustomEvent("tareeqah:nav-preview", { detail: { fromPath: pathname, kind: "subpage" } }));
-      setReviewTarget({ programId: item.request.program_id, requestId: item.request.id });
-      return;
-    }
-    window.dispatchEvent(new CustomEvent("tareeqah:nav-preview", { detail: { fromPath: pathname, kind: "subpage" } }));
-    setDrawerItem(item);
-  }
-
-  function closeInboxDrawer() {
-    setDrawerItem(null);
-    window.dispatchEvent(new CustomEvent("tareeqah:nav-preview", { detail: { fromPath: pathname, kind: "inbox" } }));
-  }
-
-  function closeReviewTarget() {
-    setReviewTarget(null);
-    window.dispatchEvent(new CustomEvent("tareeqah:nav-preview", { detail: { fromPath: pathname, kind: "inbox" } }));
-  }
-
-  return (
-    <div className="bg-[var(--workspace)]">
-      <EditorToast toast={toast} onClose={() => setToast(null)} />
-      <div className="md:hidden">
-        <FloatingInboxTabs
-          tabs={[
-            { id: "requests", label: "Applications", badge: applicationUnreadCount, actionRequired: applicationInboxItems.some((item) => item.requiresAction) },
-            { id: "other", label: "Other", badge: otherUnreadCount, actionRequired: otherInboxItems.some((item) => item.requiresAction) },
-          ]}
-          value={tab}
-          onChange={(value) => changeTab(value as TeacherInboxTab)}
-        />
-      </div>
-      <div className="space-y-4 p-4">
-        {error ? (
-          <EmptyState title="Could not load teacher inbox" text={error} onRetry={() => window.location.reload()} />
-        ) : loading ? (
-          <InboxLoadingPanel label={tab === "other" ? "Loading messages" : "Loading applications"} />
-        ) : (
-          <section className="space-y-3">
-            <div className="flex items-center justify-between gap-3 px-1">
-              <div>
-                <h2 className="text-[15px] font-semibold text-[#26323A]">{tab === "requests" ? "Applications" : "Other"}</h2>
-                <p className="mt-0.5 text-xs text-[#6B747B]">{visibleInboxItems.length ? `${visibleInboxItems.length} messages` : "No messages"}</p>
-              </div>
-              <div className="flex shrink-0 items-center gap-2">
-                <select
-                  value={sortMode}
-                  onChange={(event) => setSortMode(event.target.value as TeacherInboxSortMode)}
-                  className="h-9 rounded-full border border-[#D6DCE0] bg-white px-3 text-xs font-semibold text-[#52616A] outline-none"
-                  aria-label="Inbox sort"
-                >
-                  <option value="newest">Newest first</option>
-                  <option value="unread">Unread first</option>
-                </select>
-                <button
-                  type="button"
-                  onClick={() => void refetch()}
-                  className="flex h-9 w-9 items-center justify-center rounded-full bg-[#EEF6F7] text-[#17624F] transition-colors hover:bg-[#DCEFF4]"
-                  aria-label="Refresh inbox"
-                  title="Refresh inbox"
-                >
-                  <RefreshIcon />
-                </button>
-              </div>
-            </div>
-            {visibleInboxItems.length ? (
-              <div className="space-y-2">
-                {visibleInboxItems.map((item) => (
-                  <TeacherInboxMessageRow key={item.key} item={item} onOpen={() => openInboxItem(item)} onClear={() => clearInboxItem(item)} />
-                ))}
-              </div>
-            ) : (
-              <MiniEmpty text="Messages will appear here." />
-            )}
-          </section>
-        )}
-      </div>
-      {drawerItem ? (
-        <TeacherInboxMessageDrawer
-          item={drawerItem}
-          slug={slug}
-          tracksById={allTracksById}
-          busyWithdrawalId={busyWithdrawalId}
-          busySwitchRequestId={switchRequestBusyId}
-          onClose={closeInboxDrawer}
-          onApproveWithdrawal={(request) => {
-            void reviewWithdrawal(request, "approved").then((ok) => {
-              if (ok) closeInboxDrawer();
-            });
-          }}
-          onRejectWithdrawal={(request) => {
-            void reviewWithdrawal(request, "rejected").then((ok) => {
-              if (ok) closeInboxDrawer();
-            });
-          }}
-          onApproveTrackSwitch={(request) => {
-            void decideTrackSwitchRequest(request.id, "approved").then((ok) => {
-              if (ok) closeInboxDrawer();
-            });
-          }}
-          onRejectTrackSwitch={(request) => {
-            void decideTrackSwitchRequest(request.id, "rejected").then((ok) => {
-              if (ok) closeInboxDrawer();
-            });
-          }}
-        />
-      ) : null}
-      {reviewTarget ? (
-        <ApplicationReviewOverlay
-          programId={reviewTarget.programId}
-          slug={slug}
-          mode="teacher"
-          requestId={reviewTarget.requestId}
-          onClose={closeReviewTarget}
-          onChanged={refetch}
-        />
-      ) : null}
-    </div>
-  );
-}
-
 export function TeacherAnnouncementData({ slug, programId }: { slug: string; programId: string }) {
   const [program, setProgram] = useState<Program | null>(null);
   const [tracks, setTracks] = useState<ProgramTrack[]>([]);
   const [announcements, setAnnouncements] = useState<AnnouncementWithContext[]>([]);
   const [readersByAnnouncementId, setReadersByAnnouncementId] = useState<Record<string, Profile[]>>({});
   const [message, setMessage] = useState("");
+  const [attachments, setAttachments] = useState<MessageAttachment[]>([]);
   const [selectedAnnouncementFeedValue, setSelectedAnnouncementFeedValue] = useState(announcementTargetValue(programId, null));
   const [selectedAnnouncementTrackIds, setSelectedAnnouncementTrackIds] = useState<string[]>([]);
+  const [composeOpen, setComposeOpen] = useState(false);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -5801,9 +3952,9 @@ export function TeacherAnnouncementData({ slug, programId }: { slug: string; pro
     setTracks(activeTracks);
     setSelectedAnnouncementFeedValue((current) => {
       const target = parseAnnouncementTargetValue(current);
-      return target.programId === programRow.id && (!target.trackId || activeTracks.some((track) => track.id === target.trackId))
+      return target.programId === programRow.id && target.trackId && activeTracks.some((track) => track.id === target.trackId)
         ? current
-        : announcementTargetValue(programRow.id, null);
+        : announcementTargetValue(programRow.id, activeTracks[0]?.id ?? null);
     });
     setSelectedAnnouncementTrackIds((current) => {
       const activeTrackIds = activeTracks.map((track) => track.id);
@@ -5830,7 +3981,7 @@ export function TeacherAnnouncementData({ slug, programId }: { slug: string; pro
   }, [programId, slug]);
 
   async function sendAnnouncement() {
-    if (!currentUserId || !program || !message.trim()) {
+    if (!currentUserId || !program || (!message.trim() && attachments.length === 0)) {
       return;
     }
 
@@ -5847,6 +3998,7 @@ export function TeacherAnnouncementData({ slug, programId }: { slug: string; pro
         program_id: program.id,
         author_profile_id: currentUserId,
         message: message.trim(),
+        attachments: attachments as unknown as Json,
         target_program_track_ids: targetTrackIds,
       })
       .select("id")
@@ -5858,6 +4010,8 @@ export function TeacherAnnouncementData({ slug, programId }: { slug: string; pro
     }
 
     setMessage("");
+    setAttachments([]);
+    setComposeOpen(false);
     setSelectedAnnouncementTrackIds(tracks.map((track) => track.id));
     window.dispatchEvent(new Event("tareeqah:notifications-changed"));
     if (inserted) {
@@ -5883,88 +4037,376 @@ export function TeacherAnnouncementData({ slug, programId }: { slug: string; pro
     : announcements;
 
   return (
-    <section className="space-y-4 bg-[var(--workspace)] p-4">
-      {program ? (
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-[#6B747B]">Class</p>
-          <h2 className="mt-1 text-2xl font-semibold leading-8 text-[#26323A]">{program.title}</h2>
-          <p className="mt-1 text-sm text-[#6B747B]">{scheduleSummary(program.schedule, program.schedule_notes).full}</p>
-        </div>
-      ) : null}
-      <div className="rounded-[24px] border border-[#E1E8EC] bg-white p-4">
-        <div className="flex items-center justify-between gap-3">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-[#6B747B]">Previous Announcements</p>
-            <h3 className="mt-1 text-lg font-semibold text-[#26323A]">Feed</h3>
+    <section className="space-y-6 bg-[var(--workspace)] p-4 pb-28 text-[#26323A]">
+      <div className="px-1">
+        {!composeOpen ? (
+          <button
+            type="button"
+            onClick={() => setComposeOpen(true)}
+            className="flex min-h-12 w-full items-center justify-center rounded-[12px] bg-[#17624F] px-4 text-sm font-semibold text-white shadow-[0_10px_22px_rgba(23,98,79,0.16)]"
+          >
+            Compose New Announcement
+          </button>
+        ) : (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-lg font-semibold">Compose New Announcement</h2>
+              <button type="button" onClick={() => setComposeOpen(false)} className="rounded-full bg-[#EEF3F5] px-3 py-1.5 text-xs font-semibold text-[#52616A]">
+                Close
+              </button>
+            </div>
+            {tracks.length ? (
+              <div className="rounded-[18px] bg-[#F7FAFB] p-2">
+                <div className="mb-2 grid grid-cols-2 gap-1.5">
+                  <button type="button" onClick={() => setSelectedAnnouncementTrackIds(tracks.map((track) => track.id))} className="min-h-8 rounded-[10px] bg-[#EAF7F1] px-2 text-xs font-semibold text-[#17624F]">
+                    Select all
+                  </button>
+                  <button type="button" onClick={() => setSelectedAnnouncementTrackIds([])} className="min-h-8 rounded-[10px] bg-[#EEF2F4] px-2 text-xs font-semibold text-[#52616A]">
+                    Deselect all
+                  </button>
+                </div>
+                <div className="grid gap-1">
+                  {tracks.map((track) => (
+                    <RosterTrackOption
+                      key={track.id}
+                      checked={selectedAnnouncementTrackIds.includes(track.id)}
+                      label={track.name}
+                      onClick={() =>
+                        setSelectedAnnouncementTrackIds((current) =>
+                          current.includes(track.id) ? current.filter((trackId) => trackId !== track.id) : [...current, track.id],
+                        )
+                      }
+                    />
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            <textarea
+              value={message}
+              onChange={(event) => setMessage(event.target.value)}
+              placeholder="Write an announcement..."
+              className="min-h-28 w-full resize-none rounded-[16px] border border-[#B9C3C8] bg-white px-3 py-2 text-sm text-[#26323A] outline-none focus:border-[#2F8FB3]"
+            />
+            <MessageAttachmentComposer programId={programId} attachments={attachments} onChange={setAttachments} onError={(nextError) => setError(nextError || null)} />
+            <div className="flex justify-end">
+              <button type="button" onClick={sendAnnouncement} disabled={(!message.trim() && attachments.length === 0) || (tracks.length > 0 && selectedAnnouncementTrackIds.length === 0)} className="inline-flex min-h-10 items-center justify-center rounded-lg bg-[#17624F] px-5 text-sm font-semibold text-white hover:bg-[#0F4537] disabled:opacity-50">
+                Send
+              </button>
+            </div>
           </div>
+        )}
+      </div>
+
+      <div className="space-y-3">
+        <h2 className="px-1 text-2xl font-semibold leading-8">Announcements History</h2>
+        {tracks.length ? (
           <select
             value={selectedAnnouncementFeedValue}
             onChange={(event) => setSelectedAnnouncementFeedValue(event.target.value)}
-            className="h-10 min-w-0 rounded-full border border-[#D6DCE0] bg-white px-3 text-xs font-semibold text-[#52616A] outline-none focus:border-[#2F8FB3]"
+            className="h-12 w-full rounded-[14px] border border-[#D6DCE0] bg-white px-4 text-sm font-semibold text-[#52616A] outline-none focus:border-[#2F8FB3]"
           >
-            {program ? <option value={announcementTargetValue(program.id, null)}>All tracks</option> : null}
-            {program
-              ? tracks.map((track) => (
-                  <option key={track.id} value={announcementTargetValue(program.id, track.id)}>
-                    {track.name}
-                  </option>
-                ))
-              : null}
+            {tracks.map((track) => (
+              <option key={track.id} value={announcementTargetValue(program?.id ?? programId, track.id)}>
+                {track.name}
+              </option>
+            ))}
           </select>
-        </div>
-        <div className="mt-4">
-          <ProgramAnnouncementFeed program={program} announcements={visibleAnnouncements} readersByAnnouncementId={readersByAnnouncementId} viewer="teacher" />
-        </div>
-      </div>
-      <div className="rounded-[24px] border border-[#E1E8EC] bg-white p-4">
-        <p className="text-xs font-semibold uppercase tracking-wide text-[#6B747B]">New Announcement</p>
-        <h3 className="mt-1 text-lg font-semibold text-[#26323A]">Compose</h3>
-        {tracks.length ? (
-          <div className="mt-3 rounded-[18px] bg-[#F7FAFB] p-2">
-            <div className="mb-2 grid grid-cols-2 gap-1.5">
-              <button type="button" onClick={() => setSelectedAnnouncementTrackIds(tracks.map((track) => track.id))} className="min-h-8 rounded-[10px] bg-[#EAF7F1] px-2 text-xs font-semibold text-[#17624F]">
-                Select all
-              </button>
-              <button type="button" onClick={() => setSelectedAnnouncementTrackIds([])} className="min-h-8 rounded-[10px] bg-[#EEF2F4] px-2 text-xs font-semibold text-[#52616A]">
-                Deselect all
-              </button>
-            </div>
-            <div className="grid gap-1">
-              {tracks.map((track) => (
-                <RosterTrackOption
-                  key={track.id}
-                  checked={selectedAnnouncementTrackIds.includes(track.id)}
-                  label={track.name}
-                  onClick={() =>
-                    setSelectedAnnouncementTrackIds((current) =>
-                      current.includes(track.id) ? current.filter((trackId) => trackId !== track.id) : [...current, track.id],
-                    )
-                  }
-                />
-              ))}
-            </div>
-          </div>
         ) : null}
-        <textarea
-          value={message}
-          onChange={(event) => setMessage(event.target.value)}
-          placeholder="Write an announcement..."
-          className="mt-3 min-h-24 w-full resize-none rounded-[16px] border border-[#B9C3C8] bg-white px-3 py-2 text-sm text-[#26323A] outline-none focus:border-[#2F8FB3]"
-        />
-        <div className="mt-2 flex justify-end">
-          <button type="button" onClick={sendAnnouncement} disabled={tracks.length > 0 && selectedAnnouncementTrackIds.length === 0} className="inline-flex min-h-10 items-center justify-center rounded-lg bg-[#17624F] px-5 text-sm font-semibold text-white hover:bg-[#0F4537] disabled:opacity-50">
-            Send
-          </button>
-        </div>
+        <ProgramAnnouncementFeed program={program} announcements={visibleAnnouncements} readersByAnnouncementId={readersByAnnouncementId} viewer="teacher" />
       </div>
     </section>
   );
 }
 
-const scheduleDayOptions = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"] as const;
-function formatDayAbbreviation(day: string) {
-  return day.slice(0, 3);
+function MessageAttachmentComposer({
+  programId,
+  attachments,
+  onChange,
+  disabled = false,
+  onError,
+}: {
+  programId: string;
+  attachments: MessageAttachment[];
+  onChange: (attachments: MessageAttachment[]) => void;
+  disabled?: boolean;
+  onError: (message: string) => void;
+}) {
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const [recording, setRecording] = useState(false);
+  const [preparingVoiceNote, setPreparingVoiceNote] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const canRecord = typeof window !== "undefined" && typeof navigator !== "undefined" && Boolean(navigator.mediaDevices?.getUserMedia) && typeof MediaRecorder !== "undefined";
+
+  async function addFile(file: File, options: { preparingVoiceNote?: boolean } = {}) {
+    setUploading(true);
+    setPreparingVoiceNote(Boolean(options.preparingVoiceNote));
+    onError("");
+    try {
+      const result = await uploadMessageAttachment(programId, file);
+      if (result.error || !result.attachment) {
+        onError(result.error ?? "Could not upload attachment.");
+        return;
+      }
+      onChange([...attachments, result.attachment]);
+    } catch {
+      onError("Could not upload attachment.");
+    } finally {
+      setUploading(false);
+      setPreparingVoiceNote(false);
+    }
+  }
+
+  async function startRecording() {
+    if (!canRecord || disabled || uploading) {
+      return;
+    }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const recorder = new MediaRecorder(stream);
+      chunksRef.current = [];
+      streamRef.current = stream;
+      recorderRef.current = recorder;
+      recorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          chunksRef.current.push(event.data);
+        }
+      };
+      recorder.onstop = () => {
+        const blob = new Blob(chunksRef.current, { type: recorder.mimeType || "audio/webm" });
+        const file = new File([blob], `voice-note-${Date.now()}.webm`, { type: blob.type || "audio/webm" });
+        stream.getTracks().forEach((track) => track.stop());
+        streamRef.current = null;
+        recorderRef.current = null;
+        chunksRef.current = [];
+        setRecording(false);
+        setRecordingSeconds(0);
+        void addFile(file, { preparingVoiceNote: true });
+      };
+      recorder.start();
+      setRecordingSeconds(0);
+      setRecording(true);
+    } catch {
+      onError("Microphone access was not allowed.");
+    }
+  }
+
+  function stopRecording() {
+    recorderRef.current?.stop();
+    streamRef.current?.getTracks().forEach((track) => track.stop());
+  }
+
+  useEffect(() => {
+    if (!recording) {
+      return;
+    }
+    const startedAt = Date.now();
+    const interval = window.setInterval(() => {
+      setRecordingSeconds(Math.max(0, Math.floor((Date.now() - startedAt) / 1000)));
+    }, 500);
+    return () => window.clearInterval(interval);
+  }, [recording]);
+
+  useEffect(() => {
+    return () => {
+      streamRef.current?.getTracks().forEach((track) => track.stop());
+    };
+  }, []);
+
+  return (
+    <div className="space-y-2">
+      <input
+        ref={fileInputRef}
+        type="file"
+        className="hidden"
+        accept="audio/*,image/*,application/pdf,text/plain"
+        onChange={(event) => {
+          const file = event.target.files?.[0];
+          event.target.value = "";
+          if (file) {
+            void addFile(file);
+          }
+        }}
+      />
+      {attachments.length ? (
+        <div className="grid gap-2">
+          {attachments.map((attachment) =>
+            attachment.kind === "audio" ? (
+              <VoiceAttachmentPreview
+                key={attachment.id}
+                attachment={attachment}
+                disabled={disabled || uploading}
+                onRemove={() => onChange(attachments.filter((item) => item.id !== attachment.id))}
+              />
+            ) : (
+              <div key={attachment.id} className="flex items-center gap-2 rounded-[14px] border border-[#DDE6EA] bg-white px-3 py-2">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#EEF6F7] text-[#2F8FB3]" aria-hidden>
+                  {attachment.kind === "image" ? <PhotoIcon className="h-4 w-4" /> : <FileIcon />}
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-xs font-semibold text-[#26323A]">{attachmentDisplayName(attachment)}</p>
+                  <p className="text-[11px] text-[#7B858C]">{attachmentMetaLabel(attachment)}</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => onChange(attachments.filter((item) => item.id !== attachment.id))}
+                  className="flex h-8 w-8 items-center justify-center rounded-full bg-[#F6EDEA] text-[#C83F31]"
+                  aria-label={`Remove ${attachmentDisplayName(attachment)}`}
+                  disabled={disabled || uploading}
+                >
+                  <XIcon />
+                </button>
+              </div>
+            ),
+          )}
+        </div>
+      ) : null}
+      {preparingVoiceNote ? (
+        <div className="flex items-center gap-2 rounded-[14px] border border-[#DDE6EA] bg-white px-3 py-2">
+          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#EEF6F7] text-[#2F8FB3]" aria-hidden>
+            <MicIcon />
+          </span>
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-xs font-semibold text-[#26323A]">Voice note</p>
+            <p className="text-[11px] text-[#7B858C]">Preparing audio...</p>
+          </div>
+          <span className="h-5 w-5 animate-spin rounded-full border-2 border-[#DDEFF4] border-t-[#2F8FB3]" aria-hidden />
+        </div>
+      ) : null}
+      {recording ? (
+        <div className="flex min-h-10 items-center justify-between rounded-[14px] border border-[#F0C2BA] bg-[#FFF4F2] px-3 text-xs font-semibold text-[#B63A2F]">
+          <span className="inline-flex items-center gap-2">
+            <span className="h-2.5 w-2.5 animate-pulse rounded-full bg-[#C83F31]" aria-hidden />
+            Recording {formatRecordingDuration(recordingSeconds)}
+          </span>
+          <button type="button" onClick={stopRecording} className="flex h-8 w-8 items-center justify-center rounded-full bg-white text-[#B63A2F] shadow-sm" aria-label="Stop recording">
+            <StopRecordingIcon />
+          </button>
+        </div>
+      ) : null}
+      <div className="flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={() => fileInputRef.current?.click()}
+          disabled={disabled || uploading || recording}
+          className="inline-flex min-h-9 items-center gap-2 rounded-full bg-[#EEF6F7] px-3 text-xs font-semibold text-[#17624F] disabled:opacity-50"
+        >
+          <PaperclipIcon />
+          {uploading ? "Uploading..." : "Attach file"}
+        </button>
+        {canRecord ? (
+          <button
+            type="button"
+            onClick={recording ? stopRecording : startRecording}
+            disabled={disabled || uploading}
+            className={cn("inline-flex min-h-9 items-center gap-2 rounded-full px-3 text-xs font-semibold disabled:opacity-50", recording ? "bg-[#C83F31] text-white" : "bg-[#26323A] text-white")}
+          >
+            <MicIcon />
+            {recording ? formatRecordingDuration(recordingSeconds) : "Voice note"}
+          </button>
+        ) : null}
+      </div>
+    </div>
+  );
 }
+
+function VoiceAttachmentPreview({ attachment, disabled, onRemove }: { attachment: MessageAttachment; disabled: boolean; onRemove: () => void }) {
+  const audioRef = useRef<HTMLAudioElement>(null);
+  const [playing, setPlaying] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [duration, setDuration] = useState(0);
+  const playableDuration = Number.isFinite(duration) && duration > 0 ? duration : 0;
+  const progress = playableDuration ? Math.min(100, Math.max(0, (currentTime / playableDuration) * 100)) : 0;
+
+  function togglePlayback() {
+    const audio = audioRef.current;
+    if (!audio) {
+      return;
+    }
+    if (audio.paused) {
+      void audio.play();
+      return;
+    }
+    audio.pause();
+  }
+
+  return (
+    <div className="rounded-[14px] border border-[#DDE6EA] bg-white px-3 py-2">
+      <audio
+        ref={audioRef}
+        src={attachment.url}
+        preload="metadata"
+        onLoadedMetadata={(event) => setDuration(event.currentTarget.duration)}
+        onTimeUpdate={(event) => setCurrentTime(event.currentTarget.currentTime)}
+        onPlay={() => setPlaying(true)}
+        onPause={() => setPlaying(false)}
+        onEnded={() => {
+          setPlaying(false);
+          setCurrentTime(0);
+        }}
+      />
+      <div className="flex items-center gap-2">
+        <button type="button" onClick={togglePlayback} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#17624F] text-white disabled:opacity-50" disabled={disabled} aria-label={playing ? "Pause voice note" : "Play voice note"}>
+          {playing ? <PauseIcon /> : <PlayIcon />}
+        </button>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center justify-between gap-2">
+            <p className="truncate text-xs font-semibold text-[#26323A]">Voice note</p>
+            <p className="shrink-0 text-[11px] font-semibold text-[#7B858C]">
+              {formatRecordingDuration(Math.floor(currentTime))} / {playableDuration ? formatRecordingDuration(Math.floor(playableDuration)) : "--:--"}
+            </p>
+          </div>
+          <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-[#E8EEF1]">
+            <div className="h-full rounded-full bg-[#2F8FB3]" style={{ width: `${progress}%` }} />
+          </div>
+        </div>
+        <button type="button" onClick={onRemove} className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#F6EDEA] text-[#C83F31]" aria-label="Remove voice note" disabled={disabled}>
+          <XIcon />
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export function MessageAttachmentList({ attachments }: { attachments: MessageAttachment[] }) {
+  if (!attachments.length) {
+    return null;
+  }
+  return (
+    <div className="mt-3 grid gap-2">
+      {attachments.map((attachment) => (
+        <div key={attachment.id} className="overflow-hidden rounded-[14px] border border-[#DDE6EA] bg-white">
+          {attachment.kind === "image" ? (
+            <a href={attachment.url} target="_blank" rel="noreferrer" className="block">
+              <img src={attachment.url} alt={attachmentDisplayName(attachment)} className="max-h-72 w-full object-cover" />
+            </a>
+          ) : attachment.kind === "audio" ? (
+            <div className="space-y-2 px-3 py-3">
+              <div className="flex items-center gap-2 text-xs font-semibold text-[#26323A]">
+                <MicIcon />
+                <span className="min-w-0 truncate">{attachmentDisplayName(attachment)}</span>
+                <span className="ml-auto shrink-0 text-[11px] font-medium text-[#7B858C]">{formatAttachmentSize(attachment.size)}</span>
+              </div>
+              <audio controls src={attachment.url} className="w-full" />
+            </div>
+          ) : (
+            <a href={attachment.url} target="_blank" rel="noreferrer" className="flex min-h-12 items-center gap-3 px-3 py-2 text-sm font-semibold text-[#17624F]">
+              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#EEF6F7]" aria-hidden>
+                <FileIcon />
+              </span>
+              <span className="min-w-0 flex-1 truncate">{attachmentDisplayName(attachment)}</span>
+              <span className="shrink-0 text-xs text-[#7B858C]">{formatAttachmentSize(attachment.size)}</span>
+            </a>
+          )}
+        </div>
+      ))}
+    </div>
+  );
+}
+
 const scheduleTimeOptions = Array.from({ length: 33 }, (_, index) => {
   const totalMinutes = 6 * 60 + index * 30;
   const hours = Math.floor(totalMinutes / 60);
@@ -6852,6 +5294,8 @@ export function TeacherProgramCreateData({ slug }: { slug: string }) {
   const [tagDraft, setTagDraft] = useState("");
   const [tagRows, setTagRows] = useState<string[]>([]);
   const [description, setDescription] = useState("");
+  const [summaryVisible, setSummaryVisible] = useState(false);
+  const [descriptionVisible, setDescriptionVisible] = useState(false);
   const [thumbnailUrl, setThumbnailUrl] = useState("");
   const [thumbnailFile, setThumbnailFile] = useState<File | null>(null);
   const [allAges, setAllAges] = useState(false);
@@ -6861,8 +5305,6 @@ export function TeacherProgramCreateData({ slug }: { slug: string }) {
   const [roomVisible, setRoomVisible] = useState(false);
   const [eventTimeVisible, setEventTimeVisible] = useState(false);
   const [audienceGender, setAudienceGender] = useState("all");
-  const [billingMonthsTouched, setBillingMonthsTouched] = useState(false);
-  const [billingMonthsConfirm, setBillingMonthsConfirm] = useState<{ suggested: number; chosen: number } | null>(null);
   const [isPaid, setIsPaid] = useState(false);
   const [price, setPrice] = useState("");
   const [offersMonthlyPayment, setOffersMonthlyPayment] = useState(true);
@@ -6901,7 +5343,14 @@ export function TeacherProgramCreateData({ slug }: { slug: string }) {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const thumbnailInputRef = useRef<HTMLInputElement | null>(null);
-  const pricingDurationMonths = builderStatus.billingDurationMonths || (builderStatus.durationType === "fixed_months" ? String(builderStatus.durationMonths || monthsBetweenDates(builderStatus.startDate, builderStatus.endDate) || "") : "");
+  // Annual pricing is compared against one year of monthly payments: 12 months for an
+  // ongoing program (which bills annually, not for a known total length), or the program's
+  // actual fixed duration for a fixed-length program (its annual price is a one-time lump
+  // sum covering that whole length, not a yearly renewal).
+  const pricingDurationMonths =
+    builderStatus.durationType === "ongoing"
+      ? "12"
+      : builderStatus.billingDurationMonths || String(builderStatus.durationMonths || monthsBetweenDates(builderStatus.startDate, builderStatus.endDate) || "");
 
   useEffect(() => {
     async function loadDefaults() {
@@ -7102,7 +5551,14 @@ export function TeacherProgramCreateData({ slug }: { slug: string }) {
       return;
     }
     if (effectiveBuilderStatus.publicationStatus !== "draft" && effectiveBuilderStatus.paymentKind === "tareeqah" && !usesPerTrackPricing && savedOffersAnnualPayment && Number(annualPrice || "0") <= 0) {
-      setToast({ tone: "error", message: effectiveBuilderStatus.programType === "event" ? "Add a valid one-time price before publishing." : "Add a valid Pay in Full price before publishing." });
+      setToast({
+        tone: "error",
+        message: effectiveBuilderStatus.programType === "event"
+          ? "Add a valid one-time price before publishing."
+          : effectiveBuilderStatus.durationType === "ongoing"
+            ? "Add a valid annual subscription price before publishing."
+            : "Add a valid Pay in Full price before publishing.",
+      });
       setBuilderStep("pricing");
       return;
     }
@@ -7376,10 +5832,10 @@ export function TeacherProgramCreateData({ slug }: { slug: string }) {
     }
   }
 
-  // Suggest a billing-cycle count from the date range until the director types their own value —
-  // once touched, their number wins even if the dates change slightly afterward.
+  // Billing-cycle count is purely derived from the date range for a fixed-duration program —
+  // not directly editable, so it always tracks the current start/end dates.
   useEffect(() => {
-    if (builderStatus.durationType !== "fixed_months" || billingMonthsTouched) {
+    if (builderStatus.durationType !== "fixed_months") {
       return;
     }
     const estimate = estimateBillingMonths(builderStatus.startDate, builderStatus.endDate);
@@ -7388,7 +5844,7 @@ export function TeacherProgramCreateData({ slug }: { slug: string }) {
     }
     setBuilderStatus((current) => (current.billingDurationMonths === String(estimate) ? current : { ...current, billingDurationMonths: String(estimate) }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [builderStatus.durationType, builderStatus.startDate, builderStatus.endDate, billingMonthsTouched]);
+  }, [builderStatus.durationType, builderStatus.startDate, builderStatus.endDate]);
 
   const billingMonthsFieldVisible =
     builderStatus.paymentKind === "tareeqah" && builderStatus.programType !== "event" && offersMonthlyPayment && builderStatus.durationType === "fixed_months" && builderStatus.billingEndBehavior === "fixed_months";
@@ -7486,14 +5942,6 @@ export function TeacherProgramCreateData({ slug }: { slug: string }) {
         setMissingFieldsModal({ fields: missingOnThisStep, allowContinue: true });
         return;
       }
-      if (builderStep === "pricing" && billingMonthsTouched && billingMonthsFieldVisible) {
-        const suggested = estimateBillingMonths(builderStatus.startDate, builderStatus.endDate);
-        const chosen = Number(builderStatus.billingDurationMonths || "0");
-        if (suggested != null && chosen && chosen !== suggested) {
-          setBillingMonthsConfirm({ suggested, chosen });
-          return;
-        }
-      }
       const index = programBuilderSteps.findIndex((step) => step.id === builderStep);
       setBuilderStep(programBuilderSteps[Math.min(programBuilderSteps.length - 1, index + 1)]?.id ?? "review");
       scrollBuilderToTop();
@@ -7522,16 +5970,10 @@ export function TeacherProgramCreateData({ slug }: { slug: string }) {
       <ProgramBuilderStepper activeStep={builderStep} />
       <ProgramBuilderActionBar busy={busy} builderStep={builderStep} onBack={goToPreviousStep} onContinueOrPublish={handleContinueOrPublishClick} />
 
-      <section className="rounded-2xl border border-[#DDE7EA] bg-white p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[#7B858C]">Program Builder</p>
-            <h1 className="mt-2 text-2xl font-semibold text-[#26323A]">{programBuilderSteps.find((step) => step.id === builderStep)?.label}</h1>
-          </div>
-          <ProgramStatusBadge status={builderStatus.publicationStatus} />
-        </div>
+      <h1 className="px-1 text-2xl font-semibold text-[#26323A]">{programBuilderSteps.find((step) => step.id === builderStep)?.label}</h1>
 
-        {builderStep === "schedule" ? (
+      {builderStep === "schedule" ? (
+        <section className="rounded-2xl border border-[#DDE7EA] bg-white p-4">
           <ProgramTimingFields
             builderStatus={builderStatus}
             setBuilderStatus={setBuilderStatus}
@@ -7542,10 +5984,11 @@ export function TeacherProgramCreateData({ slug }: { slug: string }) {
             noRegistrationDeadline={noRegistrationDeadline}
             setNoRegistrationDeadline={setNoRegistrationDeadline}
           />
-        ) : null}
-
-        {builderStep === "pricing" ? (
-          <div className="mt-5 grid gap-3 md:grid-cols-2">
+        </section>
+      ) : null}
+      {builderStep === "pricing" ? (
+        <section className="rounded-2xl border border-[#DDE7EA] bg-white p-4">
+          <div className="grid gap-3 md:grid-cols-2">
             <label className="block">
               <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-[#6B747B]">{formatRequiredLabel("How payments are handled", true)}</span>
               <select value={builderStatus.paymentKind} onChange={(event) => { const value = event.target.value as ProgramBuilderStatus["paymentKind"]; setBuilderStatus((current) => ({ ...current, paymentKind: value })); setIsPaid(value === "tareeqah"); }} className="h-10 w-full rounded-[8px] border border-[#B9C3C8] bg-white px-3 text-sm font-medium text-[#26323A] outline-none focus:border-[#2F8FB3]">
@@ -7555,22 +5998,14 @@ export function TeacherProgramCreateData({ slug }: { slug: string }) {
             </label>
             {billingMonthsFieldVisible ? (
               <label className="block">
-                <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-[#6B747B]">Number of billing months</span>
-                <input
-                  value={builderStatus.billingDurationMonths}
-                  onChange={(event) => {
-                    setBillingMonthsTouched(true);
-                    setBuilderStatus((current) => ({ ...current, billingDurationMonths: event.target.value.replace(/\D/g, "") }));
-                  }}
-                  className="h-10 w-full rounded-[8px] border border-[#B9C3C8] bg-white px-3 text-sm font-medium text-[#26323A] outline-none focus:border-[#2F8FB3]"
-                />
+                <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-[#6B747B]">Billing months</span>
                 <BillingMonthsHint
                   startDate={builderStatus.startDate}
                   endDate={builderStatus.endDate}
                   chosenMonths={builderStatus.billingDurationMonths}
                 />
               </label>
-            ) : builderStatus.paymentKind === "tareeqah" && builderStatus.durationType === "ongoing" && builderStatus.programType !== "event" && offersMonthlyPayment ? (
+            ) : builderStatus.paymentKind === "tareeqah" && builderStatus.durationType === "ongoing" && builderStatus.programType !== "event" && (offersMonthlyPayment || offersAnnualPayment) ? (
               <label className="block">
                 <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-[#6B747B]">Number of billing months</span>
                 <input value="Ongoing — billed until cancelled" disabled className="h-10 w-full rounded-[8px] border border-[#D6DCE0] bg-[#F1F4F5] px-3 text-sm font-medium text-[#8A949B] outline-none" />
@@ -7592,21 +6027,7 @@ export function TeacherProgramCreateData({ slug }: { slug: string }) {
             ) : null}
             <ProgramApplicationAvailabilityFields builderStatus={builderStatus} setBuilderStatus={setBuilderStatus} />
           </div>
-        ) : null}
-      </section>
-
-      {billingMonthsConfirm ? (
-        <BillingMonthsConfirmModal
-          suggested={billingMonthsConfirm.suggested}
-          chosen={billingMonthsConfirm.chosen}
-          onCancel={() => setBillingMonthsConfirm(null)}
-          onConfirm={() => {
-            setBillingMonthsConfirm(null);
-            const index = programBuilderSteps.findIndex((step) => step.id === builderStep);
-            setBuilderStep(programBuilderSteps[Math.min(programBuilderSteps.length - 1, index + 1)]?.id ?? "review");
-            scrollBuilderToTop();
-          }}
-        />
+        </section>
       ) : null}
 
       {builderStep === "basics" ? (
@@ -7627,9 +6048,31 @@ export function TeacherProgramCreateData({ slug }: { slug: string }) {
                 <option value="event">One-time event</option>
               </select>
             </label>
-            <EditBox label="Short summary / tagline" value={builderStatus.summary} onChange={(value) => setBuilderStatus((current) => ({ ...current, summary: value }))} />
             <p className="-mt-2 text-xs leading-5 text-[#6B747B]">Public title is what parents and students see.</p>
-            <EditBox label="Description" value={description} onChange={setDescription} multiline />
+            {summaryVisible || builderStatus.summary.trim() ? (
+              <div className="space-y-1.5">
+                <EditBox label="Short summary / tagline" value={builderStatus.summary} onChange={(value) => setBuilderStatus((current) => ({ ...current, summary: value }))} />
+                <button type="button" onClick={() => { setSummaryVisible(false); setBuilderStatus((current) => ({ ...current, summary: "" })); }} className="justify-self-start text-sm font-semibold text-[#C0392B]">
+                  Remove summary
+                </button>
+              </div>
+            ) : (
+              <button type="button" onClick={() => setSummaryVisible(true)} className="justify-self-start text-sm font-semibold text-[#2F8FB3]">
+                Add short summary / tagline
+              </button>
+            )}
+            {descriptionVisible || description.trim() ? (
+              <div className="space-y-1.5">
+                <EditBox label="Description" value={description} onChange={setDescription} multiline />
+                <button type="button" onClick={() => { setDescriptionVisible(false); setDescription(""); }} className="justify-self-start text-sm font-semibold text-[#C0392B]">
+                  Remove description
+                </button>
+              </div>
+            ) : (
+              <button type="button" onClick={() => setDescriptionVisible(true)} className="justify-self-start text-sm font-semibold text-[#2F8FB3]">
+                Add description
+              </button>
+            )}
             <div className="grid gap-3">
               <EditBox label="Location name" required value={builderStatus.location} onChange={(value) => setBuilderStatus((current) => ({ ...current, location: value }))} />
               <EditBox label="Location address" required value={builderStatus.room} onChange={(value) => setBuilderStatus((current) => ({ ...current, room: value }))} />
@@ -7789,6 +6232,8 @@ export function TeacherProgramSettingsData({ slug, programId, returnHref }: { sl
   const [loading, setLoading] = useState(true);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [summaryVisible, setSummaryVisible] = useState(false);
+  const [descriptionVisible, setDescriptionVisible] = useState(false);
   const [thumbnailUrl, setThumbnailUrl] = useState("");
   const [allAges, setAllAges] = useState(true);
   const [ageStart, setAgeStart] = useState("");
@@ -7797,8 +6242,6 @@ export function TeacherProgramSettingsData({ slug, programId, returnHref }: { sl
   const [roomVisible, setRoomVisible] = useState(false);
   const [eventTimeVisible, setEventTimeVisible] = useState(false);
   const [audienceGender, setAudienceGender] = useState("");
-  const [billingMonthsTouched, setBillingMonthsTouched] = useState(false);
-  const [billingMonthsConfirm, setBillingMonthsConfirm] = useState<{ suggested: number; chosen: number } | null>(null);
   const [isPaid, setIsPaid] = useState(false);
   const [price, setPrice] = useState("");
   const [offersMonthlyPayment, setOffersMonthlyPayment] = useState(true);
@@ -7839,7 +6282,14 @@ export function TeacherProgramSettingsData({ slug, programId, returnHref }: { sl
   const loadedDirectorRef = useRef<string | null>(null);
   const startDateChangeModalRef = useRef<HTMLDivElement>(null);
   useModalFocusTrap(startDateChangeModalRef, startDateChangeConfirmOpen, () => setStartDateChangeConfirmOpen(false));
-  const pricingDurationMonths = builderStatus.billingDurationMonths || (builderStatus.durationType === "fixed_months" ? String(builderStatus.durationMonths || monthsBetweenDates(builderStatus.startDate, builderStatus.endDate) || "") : "");
+  // Annual pricing is compared against one year of monthly payments: 12 months for an
+  // ongoing program (which bills annually, not for a known total length), or the program's
+  // actual fixed duration for a fixed-length program (its annual price is a one-time lump
+  // sum covering that whole length, not a yearly renewal).
+  const pricingDurationMonths =
+    builderStatus.durationType === "ongoing"
+      ? "12"
+      : builderStatus.billingDurationMonths || String(builderStatus.durationMonths || monthsBetweenDates(builderStatus.startDate, builderStatus.endDate) || "");
 
   useEffect(() => {
     const supabase = createSupabaseBrowserClient();
@@ -7940,6 +6390,8 @@ export function TeacherProgramSettingsData({ slug, programId, returnHref }: { sl
         const nextInstructorContactPhone = detailResult.data?.instructor_contact_phone ?? directorProfile?.phone_number ?? directorProfile?.teacher_whatsapp_number ?? "";
         setNoRegistrationDeadline(!programRow.registration_deadline_at);
         setRoomVisible(Boolean(programRow.room_area));
+        setSummaryVisible(Boolean(programRow.summary?.trim()));
+        setDescriptionVisible(Boolean(programRow.description?.trim()));
         setEventTimeVisible(programRow.program_type === "event" && Boolean((sessionResult.data ?? [])[0]));
         setEventDate((sessionResult.data ?? [])[0]?.session_date ?? programRow.start_date ?? "");
         setBuilderStatus({
@@ -8056,10 +6508,10 @@ export function TeacherProgramSettingsData({ slug, programId, returnHref }: { sl
     loadedDirectorRef.current = selectedDirectorId;
   }, [directorOptions, isAdminEditor, loading, selectedDirectorId]);
 
-  // Suggest a billing-cycle count from the date range until the director types their own value —
-  // once touched, their number wins even if the dates change slightly afterward.
+  // Billing-cycle count is purely derived from the date range for a fixed-duration program —
+  // not directly editable, so it always tracks the current start/end dates.
   useEffect(() => {
-    if (builderStatus.durationType !== "fixed_months" || billingMonthsTouched) {
+    if (builderStatus.durationType !== "fixed_months") {
       return;
     }
     const estimate = estimateBillingMonths(builderStatus.startDate, builderStatus.endDate);
@@ -8068,7 +6520,7 @@ export function TeacherProgramSettingsData({ slug, programId, returnHref }: { sl
     }
     setBuilderStatus((current) => (current.billingDurationMonths === String(estimate) ? current : { ...current, billingDurationMonths: String(estimate) }));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [builderStatus.durationType, builderStatus.startDate, builderStatus.endDate, billingMonthsTouched]);
+  }, [builderStatus.durationType, builderStatus.startDate, builderStatus.endDate]);
 
   const billingMonthsFieldVisible =
     builderStatus.paymentKind === "tareeqah" && builderStatus.programType !== "event" && offersMonthlyPayment && builderStatus.durationType === "fixed_months" && builderStatus.billingEndBehavior === "fixed_months";
@@ -8225,7 +6677,7 @@ export function TeacherProgramSettingsData({ slug, programId, returnHref }: { sl
       return;
     }
     if (effectiveBuilderStatus.publicationStatus !== "draft" && effectiveBuilderStatus.paymentKind === "tareeqah" && !usesPerTrackPricing && savedOffersAnnualPayment && Number(annualPrice || "0") <= 0) {
-      setToast({ tone: "error", message: "Add a valid Pay in Full price before publishing." });
+      setToast({ tone: "error", message: effectiveBuilderStatus.durationType === "ongoing" ? "Add a valid annual subscription price before publishing." : "Add a valid Pay in Full price before publishing." });
       setBuilderStep("pricing");
       return;
     }
@@ -8577,14 +7029,6 @@ export function TeacherProgramSettingsData({ slug, programId, returnHref }: { sl
         setMissingFieldsModal({ fields: missingOnThisStep, allowContinue: true });
         return;
       }
-      if (builderStep === "pricing" && billingMonthsTouched && billingMonthsFieldVisible) {
-        const suggested = estimateBillingMonths(builderStatus.startDate, builderStatus.endDate);
-        const chosen = Number(builderStatus.billingDurationMonths || "0");
-        if (suggested != null && chosen && chosen !== suggested) {
-          setBillingMonthsConfirm({ suggested, chosen });
-          return;
-        }
-      }
       const index = programBuilderSteps.findIndex((step) => step.id === builderStep);
       setBuilderStep(programBuilderSteps[Math.min(programBuilderSteps.length - 1, index + 1)]?.id ?? "review");
       scrollBuilderToTop();
@@ -8606,16 +7050,10 @@ export function TeacherProgramSettingsData({ slug, programId, returnHref }: { sl
     <>
       <ProgramBuilderStepper activeStep={builderStep} />
       <ProgramBuilderActionBar busy={busy} builderStep={builderStep} onBack={goToPreviousStep} onContinueOrPublish={handleContinueOrPublishClick} />
-      <section className="rounded-2xl border border-[#DDE7EA] bg-white p-4">
-        <div className="flex items-start justify-between gap-3">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-[0.24em] text-[#7B858C]">Program Builder</p>
-            <h1 className="mt-2 text-2xl font-semibold text-[#26323A]">{programBuilderSteps.find((step) => step.id === builderStep)?.label}</h1>
-          </div>
-          <ProgramStatusBadge status={builderStatus.publicationStatus} />
-        </div>
+      <h1 className="px-1 text-2xl font-semibold text-[#26323A]">{programBuilderSteps.find((step) => step.id === builderStep)?.label}</h1>
 
-        {builderStep === "schedule" ? (
+      {builderStep === "schedule" ? (
+        <section className="rounded-2xl border border-[#DDE7EA] bg-white p-4">
           <ProgramTimingFields
             builderStatus={builderStatus}
             setBuilderStatus={setBuilderStatus}
@@ -8627,10 +7065,12 @@ export function TeacherProgramSettingsData({ slug, programId, returnHref }: { sl
             setNoRegistrationDeadline={setNoRegistrationDeadline}
             startDateLocked={startDateLocked}
           />
-        ) : null}
+        </section>
+      ) : null}
 
-        {builderStep === "pricing" ? (
-          <div className="mt-5 grid gap-3 md:grid-cols-2">
+      {builderStep === "pricing" ? (
+        <section className="rounded-2xl border border-[#DDE7EA] bg-white p-4">
+          <div className="grid gap-3 md:grid-cols-2">
             <label className="block">
               <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-[#6B747B]">{formatRequiredLabel("How payments are handled", true)}</span>
               <select value={builderStatus.paymentKind} onChange={(event) => { const value = event.target.value as ProgramBuilderStatus["paymentKind"]; setBuilderStatus((current) => ({ ...current, paymentKind: value })); setIsPaid(value === "tareeqah"); }} className="h-10 w-full rounded-[8px] border border-[#B9C3C8] bg-white px-3 text-sm font-medium text-[#26323A] outline-none focus:border-[#2F8FB3]">
@@ -8640,22 +7080,14 @@ export function TeacherProgramSettingsData({ slug, programId, returnHref }: { sl
             </label>
             {billingMonthsFieldVisible ? (
               <label className="block">
-                <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-[#6B747B]">Number of billing months</span>
-                <input
-                  value={builderStatus.billingDurationMonths}
-                  onChange={(event) => {
-                    setBillingMonthsTouched(true);
-                    setBuilderStatus((current) => ({ ...current, billingDurationMonths: event.target.value.replace(/\D/g, "") }));
-                  }}
-                  className="h-10 w-full rounded-[8px] border border-[#B9C3C8] bg-white px-3 text-sm font-medium text-[#26323A] outline-none focus:border-[#2F8FB3]"
-                />
+                <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-[#6B747B]">Billing months</span>
                 <BillingMonthsHint
                   startDate={builderStatus.startDate}
                   endDate={builderStatus.endDate}
                   chosenMonths={builderStatus.billingDurationMonths}
                 />
               </label>
-            ) : builderStatus.paymentKind === "tareeqah" && builderStatus.durationType === "ongoing" && builderStatus.programType !== "event" && offersMonthlyPayment ? (
+            ) : builderStatus.paymentKind === "tareeqah" && builderStatus.durationType === "ongoing" && builderStatus.programType !== "event" && (offersMonthlyPayment || offersAnnualPayment) ? (
               <label className="block">
                 <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-[#6B747B]">Number of billing months</span>
                 <input value="Ongoing — billed until cancelled" disabled className="h-10 w-full rounded-[8px] border border-[#D6DCE0] bg-[#F1F4F5] px-3 text-sm font-medium text-[#8A949B] outline-none" />
@@ -8677,22 +7109,8 @@ export function TeacherProgramSettingsData({ slug, programId, returnHref }: { sl
             ) : null}
             <ProgramApplicationAvailabilityFields builderStatus={builderStatus} setBuilderStatus={setBuilderStatus} />
           </div>
-        ) : null}
-
-        {billingMonthsConfirm ? (
-          <BillingMonthsConfirmModal
-            suggested={billingMonthsConfirm.suggested}
-            chosen={billingMonthsConfirm.chosen}
-            onCancel={() => setBillingMonthsConfirm(null)}
-            onConfirm={() => {
-              setBillingMonthsConfirm(null);
-              const index = programBuilderSteps.findIndex((step) => step.id === builderStep);
-              setBuilderStep(programBuilderSteps[Math.min(programBuilderSteps.length - 1, index + 1)]?.id ?? "review");
-              scrollBuilderToTop();
-            }}
-          />
-        ) : null}
-      </section>
+        </section>
+      ) : null}
     </>
   );
 
@@ -8752,8 +7170,30 @@ export function TeacherProgramSettingsData({ slug, programId, returnHref }: { sl
                 <option value="event">One-time event</option>
               </select>
             </label>
-            <EditBox label="Short summary / tagline" value={builderStatus.summary} onChange={(value) => setBuilderStatus((current) => ({ ...current, summary: value }))} />
-            <EditBox label="Description" value={description} onChange={setDescription} multiline />
+            {summaryVisible || builderStatus.summary.trim() ? (
+              <div className="space-y-1.5">
+                <EditBox label="Short summary / tagline" value={builderStatus.summary} onChange={(value) => setBuilderStatus((current) => ({ ...current, summary: value }))} />
+                <button type="button" onClick={() => { setSummaryVisible(false); setBuilderStatus((current) => ({ ...current, summary: "" })); }} className="justify-self-start text-sm font-semibold text-[#C0392B]">
+                  Remove summary
+                </button>
+              </div>
+            ) : (
+              <button type="button" onClick={() => setSummaryVisible(true)} className="justify-self-start text-sm font-semibold text-[#2F8FB3]">
+                Add short summary / tagline
+              </button>
+            )}
+            {descriptionVisible || description.trim() ? (
+              <div className="space-y-1.5">
+                <EditBox label="Description" value={description} onChange={setDescription} multiline />
+                <button type="button" onClick={() => { setDescriptionVisible(false); setDescription(""); }} className="justify-self-start text-sm font-semibold text-[#C0392B]">
+                  Remove description
+                </button>
+              </div>
+            ) : (
+              <button type="button" onClick={() => setDescriptionVisible(true)} className="justify-self-start text-sm font-semibold text-[#2F8FB3]">
+                Add description
+              </button>
+            )}
             <div className="grid gap-3">
               <EditBox label="Location name" required value={builderStatus.location} onChange={(value) => setBuilderStatus((current) => ({ ...current, location: value }))} />
               <EditBox label="Location address" required value={builderStatus.room} onChange={(value) => setBuilderStatus((current) => ({ ...current, room: value }))} />
@@ -9217,6 +7657,7 @@ function computeProgramBuilderMissingFields(input: {
   }
 
   if (input.paymentKind === "tareeqah") {
+    const annualPriceLabel = input.durationType === "ongoing" ? "Annual subscription price" : "Pay in Full price";
     const perTrackPricingEnabled =
       input.programType === "recurring" &&
       input.schedulePattern === "weekly" &&
@@ -9227,11 +7668,11 @@ function computeProgramBuilderMissingFields(input: {
         missing.push({ label: "Monthly price for every track", step: "pricing" });
       }
       if (input.offersAnnualPayment && input.trackRows.some((track) => !(Number(track.priceAnnual) > 0))) {
-        missing.push({ label: "Pay in Full price for every track", step: "pricing" });
+        missing.push({ label: `${annualPriceLabel} for every track`, step: "pricing" });
       }
     } else {
       if (input.offersMonthlyPayment && !(Number(input.price) > 0)) missing.push({ label: "Monthly price", step: "pricing" });
-      if (input.offersAnnualPayment && !(Number(input.annualPrice) > 0)) missing.push({ label: "Pay in Full price", step: "pricing" });
+      if (input.offersAnnualPayment && !(Number(input.annualPrice) > 0)) missing.push({ label: annualPriceLabel, step: "pricing" });
     }
   }
   if (input.coverPriceLabelEnabled && !input.coverPriceLabel.trim()) missing.push({ label: "Price tag label", step: "pricing" });
@@ -9278,40 +7719,6 @@ function MissingFieldsModal({
               Continue Anyway
             </button>
           ) : null}
-        </div>
-      </div>
-    </div>,
-    document.body,
-  );
-}
-
-function BillingMonthsConfirmModal({
-  suggested,
-  chosen,
-  onCancel,
-  onConfirm,
-}: {
-  suggested: number;
-  chosen: number;
-  onCancel: () => void;
-  onConfirm: () => void;
-}) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  useModalFocusTrap(containerRef, true, onCancel);
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#26323A]/35 px-5 backdrop-blur-sm">
-      <div ref={containerRef} role="dialog" aria-modal="true" tabIndex={-1} className="w-full max-w-md rounded-[24px] bg-white p-5 text-[#26323A] shadow-[0_24px_60px_rgba(38,50,58,0.22)] outline-none">
-        <h2 className="text-lg font-semibold">Double-check billing months</h2>
-        <p className="mt-2 text-sm leading-6 text-[#52616A]">
-          You set <span className="font-semibold text-[#26323A]">{chosen} billing month{chosen === 1 ? "" : "s"}</span> — each enrolled student will be charged {chosen} time{chosen === 1 ? "" : "s"} for their monthly subscription. Based on the program dates, that is different from the suggested {suggested} month{suggested === 1 ? "" : "s"}.
-        </p>
-        <div className="mt-5 flex justify-end gap-2">
-          <button type="button" onClick={onCancel} className="min-h-10 rounded-[10px] border border-[#C9D3D8] bg-white px-4 text-sm font-semibold text-[#26323A]">
-            Change it
-          </button>
-          <button type="button" onClick={onConfirm} className="min-h-10 rounded-[10px] bg-[#17624F] px-4 text-sm font-semibold text-white">
-            Continue with {chosen}
-          </button>
         </div>
       </div>
     </div>,
@@ -9607,7 +8014,7 @@ function ProgramBuilderStepper({
 }) {
   const activeIndex = programBuilderSteps.findIndex((step) => step.id === activeStep);
   return (
-    <nav className="rounded-2xl border border-[#DDE7EA] bg-white px-2 py-3 sm:px-4" aria-label="Program builder steps">
+    <nav className="px-1 py-1" aria-label="Program builder steps">
       <ol className="grid grid-cols-5 items-center gap-1 sm:gap-2">
         {programBuilderSteps.map((step, index) => {
           const active = step.id === activeStep;
@@ -9617,8 +8024,8 @@ function ProgramBuilderStepper({
               {index > 0 ? <span className={cn("absolute right-1/2 top-1/2 hidden h-px w-full -translate-y-1/2 sm:block", complete || active ? "bg-[#17624F]" : "bg-[#DDE7EA]")} aria-hidden /> : null}
               <div
                 className={cn(
-                  "relative z-10 flex min-w-0 items-center justify-center gap-2 rounded-full bg-white px-1 py-1.5 text-xs font-semibold transition sm:px-2",
-                  active ? "bg-[#E6F3EE] text-[#17624F]" : "text-[#6B747B]",
+                  "relative z-10 flex min-w-0 items-center justify-center gap-2 bg-[var(--workspace)] px-1 py-1.5 text-xs font-semibold transition sm:px-2",
+                  active ? "text-[#17624F]" : "text-[#6B747B]",
                 )}
               >
                 <span className={cn("flex h-7 w-7 items-center justify-center rounded-full border text-xs", active || complete ? "border-[#17624F] bg-[#17624F] text-white" : "border-[#C9D3D8] bg-white text-[#7B858C]")}>
@@ -9743,7 +8150,7 @@ type ProgramEditorFieldsProps = {
   isEditMode?: boolean;
 };
 
-function programStatusBadgeToneClass(tone: "neutral" | "positive" | "warning" | "danger") {
+export function programStatusBadgeToneClass(tone: "neutral" | "positive" | "warning" | "danger") {
   switch (tone) {
     case "positive":
       return "bg-[#E3F5EE] text-[#228763]";
@@ -10008,16 +8415,6 @@ function ProgramEditorFields({
   const weeklySessionLibrary = useMemo(() => uniqueScheduleRows(trackRows.flatMap((track) => track.sessions)), [trackRows]);
   const isOngoingDuration = builderStatus?.durationType === "ongoing";
 
-  useEffect(() => {
-    if (!isOngoingDuration || !offersAnnualPayment) {
-      return;
-    }
-    const timeout = window.setTimeout(() => {
-      setOffersAnnualPayment(false);
-    }, 0);
-    return () => window.clearTimeout(timeout);
-  }, [isOngoingDuration, offersAnnualPayment, setOffersAnnualPayment]);
-
   function setPerTrackPricingEnabled(enabled: boolean) {
     setTrackRows((current) =>
       current.map((track) => ({
@@ -10086,9 +8483,11 @@ function ProgramEditorFields({
   const [topicsVisible, setTopicsVisible] = useState(false);
   const [requirementsVisible, setRequirementsVisible] = useState(false);
   const [policiesVisible, setPoliciesVisible] = useState(false);
+  const [credentialsVisible, setCredentialsVisible] = useState(false);
   const showTopicsField = topicsVisible || Boolean(topicsIntro.trim());
   const showRequirementsField = requirementsVisible || Boolean(requirementsText.trim());
   const showPoliciesField = policiesVisible || Boolean(policiesText.trim());
+  const showCredentialsField = credentialsVisible || Boolean(instructorCredentials.trim());
 
   function removeLearningSection() {
     setLearningVisible(false);
@@ -10185,7 +8584,7 @@ function ProgramEditorFields({
                     onChange={() => setBuilderStatus((current) => ({ ...current, publicationStatus: current.publicationStatus === "draft" ? "draft" : "published" }))}
                   />
                   <span>
-                    Show on student class list
+                    Show on {builderStatus.location.trim() || "masjid"} Program page
                     <span className="mt-1 block text-xs font-medium leading-5 text-[#6B747B]">Appears on the public masjid classes page.</span>
                   </span>
                 </label>
@@ -10261,9 +8660,8 @@ function ProgramEditorFields({
         ) : null}
 
         <aside className="rounded-2xl border border-[#C8DCE2] bg-white p-4 shadow-[0_14px_34px_rgba(38,50,58,0.10)]">
-          <p className="text-2xl font-semibold text-[#26323A]">{isPaid ? formatPrice(Math.round(Number(price || "0") * 100)) : "Free"}</p>
-          <ProgramScheduleOptionsDisplay tracks={previewTracks} fallbackSchedule={previewTracks[0] ? scheduleSummary(previewTracks[0].schedule, null).full : "Schedule TBA"} />
-          {program ? <ProgramPaymentOptionsDisplay program={program} /> : null}
+          <ProgramScheduleOptionsDisplay tracks={previewTracks} program={program} fallbackSchedule={previewTracks[0] ? scheduleSummary(previewTracks[0].schedule, null).full : "Schedule TBA"} />
+          {program ? <ProgramPaymentOptionsDisplay program={program} tracks={previewTracks} /> : null}
           <button type="button" disabled className="mt-4 flex min-h-12 w-full items-center justify-center rounded-full bg-[#248B72] px-4 text-sm font-semibold text-white opacity-70 md:w-auto md:px-10">
             Request Enrollment
           </button>
@@ -10626,7 +9024,7 @@ function ProgramEditorFields({
               </RowIconButton>
             }
           >
-            <p className="-mt-1 mb-3 text-xs leading-5 text-[#6B747B]">Create each real class meeting once, then choose which tracks include it.</p>
+            <p className="-mt-1 mb-3 text-xs leading-5 text-[#6B747B]">Add all meeting times, then build tracks from them </p>
             <div className="overflow-hidden rounded-xl border border-[#E1E8EC] bg-[#FAFCFC]">
               <div className="grid grid-cols-[28px_1fr_auto] gap-2 border-b border-[#E1E8EC] bg-[#F3F7F8] px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-[#7B858C]">
                 <span />
@@ -10856,7 +9254,18 @@ function ProgramEditorFields({
         {showBasics ? <EditorFieldSection title="Director Information">
           <div className="space-y-3">
             <EditBox label="Display name" value={instructorDisplayName} onChange={setInstructorDisplayName} />
-            <EditBox label="Credentials (optional)" value={instructorCredentials} onChange={setInstructorCredentials} />
+            {showCredentialsField ? (
+              <div className="space-y-1.5">
+                <EditBox label="Credentials (optional)" value={instructorCredentials} onChange={setInstructorCredentials} />
+                <button type="button" onClick={() => { setCredentialsVisible(false); setInstructorCredentials(""); }} className="justify-self-start text-sm font-semibold text-[#C0392B]">
+                  Remove credentials
+                </button>
+              </div>
+            ) : (
+              <button type="button" onClick={() => setCredentialsVisible(true)} className="justify-self-start text-sm font-semibold text-[#2F8FB3]">
+                Add credentials
+              </button>
+            )}
             <div>
               <EditBox label="Contact phone" required={!contactPhoneOmitted} disabled={contactPhoneOmitted} value={contactPhoneOmitted ? "" : instructorContactPhone} onChange={setInstructorContactPhone} />
               {setContactPhoneOmitted ? (
@@ -10889,7 +9298,6 @@ function ProgramEditorFields({
                   <option value="name_only">Name only</option>
                   <option value="none">Neither</option>
                 </select>
-                <p className="mt-1 text-xs leading-5 text-[#7B858C]">Controls what appears on the class cover in browse/enrolled lists. The Program Director section on the public page always shows full details.</p>
               </label>
             ) : null}
           </div>
@@ -10936,22 +9344,19 @@ function ProgramEditorFields({
                   {formatMonthlyCycle(price, durationMonthsForPricing) ? <p className="mt-1 text-xs leading-5 text-[#6B747B]">{formatMonthlyCycle(price, durationMonthsForPricing)}</p> : null}
                 </div>
               ) : null}
-              {!isOngoingDuration ? (
-                <>
-                  <label className="flex items-center gap-2 text-sm font-medium text-[#26323A]">
-                    <input type="checkbox" checked={offersAnnualPayment} onChange={(event) => setOffersAnnualPayment(event.target.checked)} />
-                    Offer Pay in Full
-                  </label>
-                  {offersAnnualPayment && !perTrackPricingEnabled ? (
-                    <div className="space-y-2">
-                      <EditBox label="Pay in Full price" required value={annualPrice} onChange={setAnnualPrice} />
-                      {offersMonthlyPayment && formatAnnualSavings(price, annualPrice, durationMonthsForPricing) ? <p className="inline-flex rounded-full bg-[#E9F4F8] px-3 py-1 text-xs font-semibold text-[#2F6077]">{formatAnnualSavings(price, annualPrice, durationMonthsForPricing)}</p> : null}
-                    </div>
+              <label className="flex items-center gap-2 text-sm font-medium text-[#26323A]">
+                <input type="checkbox" checked={offersAnnualPayment} onChange={(event) => setOffersAnnualPayment(event.target.checked)} />
+                {isOngoingDuration ? "Offer annual subscription" : "Offer Pay in Full"}
+              </label>
+              {offersAnnualPayment && !perTrackPricingEnabled ? (
+                <div className="space-y-2">
+                  <EditBox label={isOngoingDuration ? "Annual price" : "Pay in Full price"} required value={annualPrice} onChange={setAnnualPrice} />
+                  {isOngoingDuration ? (
+                    <p className="text-xs leading-5 text-[#6B747B]">Bills once a year and renews automatically until the family cancels — same as monthly, just yearly.</p>
                   ) : null}
-                </>
-              ) : (
-                <p className="text-xs leading-5 text-[#6B747B]">Ongoing programs can only offer monthly subscriptions. Pay in Full is not supported.&quot; is selected.</p>
-              )}
+                  {offersMonthlyPayment && formatAnnualSavings(price, annualPrice, durationMonthsForPricing) ? <p className="inline-flex rounded-full bg-[#E9F4F8] px-3 py-1 text-xs font-semibold text-[#2F6077]">{formatAnnualSavings(price, annualPrice, durationMonthsForPricing)}</p> : null}
+                </div>
+              ) : null}
               {perTrackPricingEnabled ? (
                 <div className="divide-y divide-[#E6ECEF] rounded-[8px] border border-[#E1E8EC]">
                   {trackRows.map((track) => (
@@ -10969,10 +9374,10 @@ function ProgramEditorFields({
                             {formatMonthlyCycle(track.priceMonthly ?? "", durationMonthsForPricing) ? <p className="mt-1 text-xs leading-5 text-[#6B747B]">{formatMonthlyCycle(track.priceMonthly ?? "", durationMonthsForPricing)}</p> : null}
                           </div>
                         ) : null}
-                        {offersAnnualPayment && !isOngoingDuration ? (
+                        {offersAnnualPayment ? (
                           <div className="space-y-2">
                             <EditBox
-                              label="Pay in Full price"
+                              label={isOngoingDuration ? "Annual price" : "Pay in Full price"}
                               required
                               value={track.priceAnnual ?? ""}
                               onChange={(value) => setTrackRows((current) => current.map((item) => item.id === track.id ? { ...item, priceAnnual: value, pricingOverrideEnabled: true } : item))}
@@ -11599,6 +10004,7 @@ type TeacherRosterSnapshot = {
   program: Program | null;
   tracks: ProgramTrack[];
   trackDaysById: Map<string, string[]>;
+  trackSessionKeysById: Map<string, string[]>;
   availableRosterDays: string[];
   students: Array<{ enrollment: Enrollment; profile: StudentDisplay | null; parent?: ParentDisplay | null; subscription?: ProgramSubscription | null; trackIds: string[] }>;
   waitlist: RequestWithContext[];
@@ -11611,6 +10017,7 @@ const emptyTeacherRosterSnapshot: TeacherRosterSnapshot = {
   program: null,
   tracks: [],
   trackDaysById: new Map(),
+  trackSessionKeysById: new Map(),
   availableRosterDays: [],
   students: [],
   waitlist: [],
@@ -11626,11 +10033,14 @@ export function TeacherStudentsData({ slug, programId }: { slug: string; program
   const originStudentId = searchParams.get("studentId");
   const sessionTrackIdParam = searchParams.get("trackId");
   const sessionDayParam = searchParams.get("day");
+  const sessionStartParam = searchParams.get("start");
+  const sessionEndParam = searchParams.get("end");
   const [mosque, setMosque] = useState<Mosque | null>(null);
   const [program, setProgram] = useState<Program | null>(null);
   const [students, setStudents] = useState<Array<{ enrollment: Enrollment; profile: StudentDisplay | null; parent?: ParentDisplay | null; subscription?: ProgramSubscription | null; trackIds: string[] }>>([]);
   const [tracks, setTracks] = useState<ProgramTrack[]>([]);
   const [trackDaysById, setTrackDaysById] = useState<Map<string, string[]>>(new Map());
+  const [trackSessionKeysById, setTrackSessionKeysById] = useState<Map<string, string[]>>(new Map());
   const [selectedRosterTrackIds, setSelectedRosterTrackIds] = useState<string[]>(() => (sessionTrackIdParam ? [sessionTrackIdParam] : []));
   const [selectedRosterDays, setSelectedRosterDays] = useState<string[]>(() => (sessionDayParam ? [sessionDayParam] : [...scheduleDayOptions]));
   const [sessionFilterActive, setSessionFilterActive] = useState(Boolean(sessionTrackIdParam || sessionDayParam));
@@ -11718,27 +10128,61 @@ export function TeacherStudentsData({ slug, programId }: { slug: string; program
     ]);
     const sessionById = new Map((sessionRows ?? []).map((session) => [session.id, session]));
     const nextTrackDaysById = new Map<string, string[]>();
+    const nextTrackSessionKeysById = new Map<string, string[]>();
     for (const track of activeTrackRows) {
-      const linkedDays = (trackSessionRows ?? [])
+      const linkedRows = (trackSessionRows ?? [])
         .filter((link) => link.program_track_id === track.id)
         .map((link) => sessionById.get(link.program_session_id))
         .filter((session): session is ProgramSession => Boolean(session))
-        .map((session) => scheduleRowFromProgramSession(session).day);
+        .map(scheduleRowFromProgramSession);
+      const linkedDays = linkedRows.map((row) => row.day);
       const fallbackDays = parseProgramSchedule(track.schedule).map((row) => row.day);
+      const fallbackRows = parseProgramSchedule(track.schedule);
+      const sessionRowsForTrack = linkedRows.length ? linkedRows : fallbackRows;
       nextTrackDaysById.set(track.id, Array.from(new Set(linkedDays.length ? linkedDays : fallbackDays)));
+      nextTrackSessionKeysById.set(track.id, Array.from(new Set(sessionRowsForTrack.map(rosterSessionKey))));
     }
     const availableRosterDays = Array.from(new Set(Array.from(nextTrackDaysById.values()).flat()));
 
     const studentIds = Array.from(new Set([...(enrollmentRows ?? []).map((enrollment) => enrollment.student_profile_id), ...(waitlistRows ?? []).map((request) => request.student_profile_id)]));
     const enrollmentIds = (enrollmentRows ?? []).map((enrollment) => enrollment.id);
-    const [{ data: enrollmentTrackRows }, { data: subscriptionRows }] = await Promise.all([
+    const [{ data: enrollmentTrackRows }, { data: subscriptionRows }, { data: completedRequestRows }] = await Promise.all([
       enrollmentIds.length
         ? supabase.from("enrollment_tracks").select("enrollment_id, program_track_id").in("enrollment_id", enrollmentIds)
         : Promise.resolve({ data: [] as Array<{ enrollment_id: string; program_track_id: string }> }),
       studentIds.length
         ? supabase.from("program_subscriptions").select("*").eq("program_id", programData.id).in("student_profile_id", studentIds)
         : Promise.resolve({ data: [] as ProgramSubscription[] }),
+      studentIds.length
+        ? supabase
+            .from("enrollment_requests")
+            .select("id, student_profile_id, program_track_id, reviewed_at, requested_at")
+            .eq("program_id", programData.id)
+            .eq("status", "approved")
+            .in("student_profile_id", studentIds)
+            .order("reviewed_at", { ascending: false })
+        : Promise.resolve({ data: [] as Array<Pick<EnrollmentRequest, "id" | "student_profile_id" | "program_track_id" | "reviewed_at" | "requested_at">> }),
     ]);
+    const completedRequestIds = (completedRequestRows ?? []).map((request) => request.id);
+    const { data: completedRequestTrackRows } = completedRequestIds.length
+      ? await supabase.from("enrollment_request_tracks").select("enrollment_request_id, program_track_id").in("enrollment_request_id", completedRequestIds)
+      : { data: [] as Array<{ enrollment_request_id: string; program_track_id: string }> };
+    const fallbackTrackIdsByStudentId = new Map<string, string[]>();
+    const requestTrackIdsByRequestId = new Map<string, string[]>();
+    for (const row of completedRequestTrackRows ?? []) {
+      requestTrackIdsByRequestId.set(row.enrollment_request_id, [...(requestTrackIdsByRequestId.get(row.enrollment_request_id) ?? []), row.program_track_id]);
+    }
+    for (const request of completedRequestRows ?? []) {
+      if (fallbackTrackIdsByStudentId.has(request.student_profile_id)) {
+        continue;
+      }
+      const trackIds = [...(requestTrackIdsByRequestId.get(request.id) ?? []), ...(request.program_track_id ? [request.program_track_id] : [])].filter(
+        (trackId, index, all) => Boolean(trackId) && all.indexOf(trackId) === index,
+      );
+      if (trackIds.length) {
+        fallbackTrackIdsByStudentId.set(request.student_profile_id, trackIds);
+      }
+    }
     const { data: profileRows } = studentIds.length
       ? await supabase.from("profiles").select("id, full_name, email, phone_number, avatar_url, age, gender, date_of_birth, account_type").in("id", studentIds)
       : { data: [] as StudentDisplay[] };
@@ -11759,23 +10203,28 @@ export function TeacherStudentsData({ slug, programId }: { slug: string; program
       program: programData,
       tracks: activeTrackRows,
       trackDaysById: nextTrackDaysById,
+      trackSessionKeysById: nextTrackSessionKeysById,
       availableRosterDays,
       currentUserId: userId,
-      students: (enrollmentRows ?? []).map((enrollment) => ({
-        enrollment,
-        trackIds: (enrollmentTrackRows ?? [])
-          .filter((row) => row.enrollment_id === enrollment.id)
-          .map((row) => row.program_track_id)
-          .filter(Boolean)
-          .concat(enrollment.program_track_id ? [enrollment.program_track_id] : [])
-          .filter((trackId, index, all) => all.indexOf(trackId) === index),
-        profile: (profileRows ?? []).find((profile) => profile.id === enrollment.student_profile_id) ?? null,
-        subscription: (subscriptionRows ?? []).find((subscription) => subscription.student_profile_id === enrollment.student_profile_id) ?? null,
-        parent:
-          ((parentRows ?? []).find(
-            (parent) => parent.id === (linkRows ?? []).find((link) => link.child_profile_id === enrollment.student_profile_id)?.parent_profile_id,
-          ) as ParentDisplay | undefined) ?? null,
-      })),
+      students: (enrollmentRows ?? [])
+        .filter((enrollment) => isCurrentEnrollmentStatus(enrollment.status))
+        .map((enrollment) => ({
+          enrollment,
+          trackIds: [
+            ...(enrollmentTrackRows ?? [])
+              .filter((row) => row.enrollment_id === enrollment.id)
+              .map((row) => row.program_track_id)
+              .filter(Boolean),
+            ...(enrollment.program_track_id ? [enrollment.program_track_id] : []),
+            ...(fallbackTrackIdsByStudentId.get(enrollment.student_profile_id) ?? []),
+          ].filter((trackId, index, all) => all.indexOf(trackId) === index),
+          profile: (profileRows ?? []).find((profile) => profile.id === enrollment.student_profile_id) ?? null,
+          subscription: (subscriptionRows ?? []).find((subscription) => subscription.student_profile_id === enrollment.student_profile_id) ?? null,
+          parent:
+            ((parentRows ?? []).find(
+              (parent) => parent.id === (linkRows ?? []).find((link) => link.child_profile_id === enrollment.student_profile_id)?.parent_profile_id,
+            ) as ParentDisplay | undefined) ?? null,
+        })),
       waitlist: (waitlistRows ?? []).map((request) => ({
         ...request,
         program: programData,
@@ -11797,6 +10246,7 @@ export function TeacherStudentsData({ slug, programId }: { slug: string; program
     setProgram(rosterSnapshot.program);
     setTracks(rosterSnapshot.tracks);
     setTrackDaysById(rosterSnapshot.trackDaysById);
+    setTrackSessionKeysById(rosterSnapshot.trackSessionKeysById);
     setCurrentUserId(rosterSnapshot.currentUserId);
     setStudents(rosterSnapshot.students);
     setWaitlist(rosterSnapshot.waitlist);
@@ -11872,12 +10322,29 @@ export function TeacherStudentsData({ slug, programId }: { slug: string; program
       setError(noticeError.message);
     }
 
+    const { data: actorProfile } = await supabase.from("profiles").select("full_name, email").eq("id", currentUserId).maybeSingle();
+    const actorName = actorProfile?.full_name?.trim() || actorProfile?.email?.trim() || "Director";
+    await supabase.from("program_finance_audit_events").insert({
+      program_id: program.id,
+      student_profile_id: studentId,
+      actor_profile_id: currentUserId,
+      event_type: "student_removed",
+      summary: `${actorName} removed ${targetStudent?.profile?.full_name || "Student"} from ${program.title}.`,
+      metadata: {},
+    });
+
     window.dispatchEvent(new Event("tareeqah:notifications-changed"));
+    const refreshedRoster = await fetchTeacherRoster();
+    await refetchRoster();
+    const stillVisible = refreshedRoster.students.some((student) => student.enrollment.student_profile_id === studentId);
     setBusyStudentId(null);
+    if (stillVisible) {
+      setError("The student was updated, but they are still appearing in the active roster. Try refreshing the page.");
+      return;
+    }
     setKickTarget(null);
     setShowKickMessage(false);
     setKickMessage("");
-    await refetchRoster();
   }
 
   async function reviewWaitlistedRequest(
@@ -11922,6 +10389,16 @@ export function TeacherStudentsData({ slug, programId }: { slug: string; program
     }
     return map;
   }, [trackDaysById, tracks]);
+  const activeSessionKey = useMemo(() => {
+    if (!sessionFilterActive || !sessionDayParam || !sessionStartParam) {
+      return null;
+    }
+    const normalizedDay = normalizeScheduleDay(sessionDayParam);
+    if (!normalizedDay) {
+      return null;
+    }
+    return rosterSessionKey({ day: normalizedDay, start: sessionStartParam, end: sessionEndParam || sessionStartParam });
+  }, [sessionDayParam, sessionEndParam, sessionFilterActive, sessionStartParam]);
   const rosterDayOptions = useMemo(() => {
     const days = Array.from(new Set(Array.from(trackDayMap.values()).flat()));
     return scheduleDayOptions.filter((day) => days.includes(day));
@@ -11942,6 +10419,9 @@ export function TeacherStudentsData({ slug, programId }: { slug: string; program
           (student.trackIds ?? []).some((trackId) => selectedRosterTrackIds.includes(trackId));
         if (!trackMatches) {
           return false;
+        }
+        if (activeSessionKey) {
+          return (student.trackIds ?? []).some((trackId) => (trackSessionKeysById.get(trackId) ?? []).includes(activeSessionKey));
         }
         const dayMatches =
           tracks.length === 0 ||
@@ -11984,7 +10464,7 @@ export function TeacherStudentsData({ slug, programId }: { slug: string; program
         return sortDirection === "asc" ? comparison : -comparison;
       });
     return sorted;
-  }, [genderFilter, rosterDayOptions, selectedRosterDays, selectedRosterTrackIds, sortDirection, studentSearch, studentSort, studentView, students, trackDayMap, tracks]);
+  }, [activeSessionKey, genderFilter, rosterDayOptions, selectedRosterDays, selectedRosterTrackIds, sortDirection, studentSearch, studentSort, studentView, students, trackDayMap, trackSessionKeysById, tracks]);
   const familyGroups = useMemo(() => {
     const groups = new Map<string, { parent: ParentDisplay | null; children: TeacherStudentItem[] }>();
     for (const student of filteredStudents) {
@@ -12040,7 +10520,7 @@ export function TeacherStudentsData({ slug, programId }: { slug: string; program
       ) : null}
       {sessionFilterActive ? (
         <div className="mb-4 flex items-center justify-between gap-3 rounded-full bg-[#EEF6F7] px-4 py-2 text-sm font-semibold text-[#2F8FB3]">
-          <span>Filtered to {sessionDayParam ?? "that"}&apos;s session</span>
+          <span>Filtered to {sessionDayParam ?? "that"}&apos;s session{sessionStartParam ? ` at ${formatClockLabel(sessionStartParam)}` : ""}</span>
           <button
             type="button"
             onClick={() => {
@@ -12066,33 +10546,20 @@ export function TeacherStudentsData({ slug, programId }: { slug: string; program
                   <h2 className="text-lg font-semibold text-[#26323A]">{program.title}</h2>
                 </div>
                 <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-[#52616A] shadow-[0_4px_12px_rgba(38,50,58,0.06)]">
-                  {students.filter((student) => student.enrollment.status === "active").length} active
+                  {students.filter((student) => isCurrentEnrollmentStatus(student.enrollment.status)).length} active
                 </span>
               </div>
               <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
                 {tracks.map((track) => {
-                  const activeCount = students.filter((student) => student.enrollment.status === "active" && student.trackIds.includes(track.id)).length;
+                  const activeCount = students.filter((student) => isCurrentEnrollmentStatus(student.enrollment.status) && student.trackIds.includes(track.id)).length;
                   const capacity = track.capacity ?? null;
                   const atCapacity = capacity != null && activeCount >= capacity;
-                  const days = trackDayMap.get(track.id) ?? [];
                   return (
-                    <div key={track.id} className="rounded-[18px] border border-[#E1E8EC] bg-white p-3">
-                      <div className="flex items-start justify-between gap-3">
-                        <p className="min-w-0 truncate text-sm font-semibold text-[#26323A]">{track.name}</p>
-                        <span className={cn("shrink-0 rounded-full px-2 py-0.5 text-[11px] font-semibold", atCapacity ? "bg-[#FBEAE7] text-[#C0392B]" : "bg-[#EAF7F1] text-[#17624F]")}>
-                          {capacity == null ? "No cap" : `${activeCount}/${capacity}`}
-                        </span>
-                      </div>
-                      <div className="mt-3 grid grid-cols-2 gap-2 text-xs">
-                        <div className="rounded-[12px] bg-[#F7FAFB] px-2.5 py-2">
-                          <p className="font-semibold text-[#26323A]">{activeCount}</p>
-                          <p className="mt-0.5 font-medium text-[#7B858C]">Active students</p>
-                        </div>
-                        <div className="rounded-[12px] bg-[#F7FAFB] px-2.5 py-2">
-                          <p className="font-semibold text-[#26323A]">{days.length ? days.map(formatDayAbbreviation).join(", ") : "—"}</p>
-                          <p className="mt-0.5 font-medium text-[#7B858C]">Meeting days</p>
-                        </div>
-                      </div>
+                    <div key={track.id} className="flex min-h-14 items-center justify-between gap-3 rounded-[16px] border border-[#E1E8EC] bg-white px-3 py-2.5">
+                      <p className="min-w-0 truncate text-sm font-semibold text-[#26323A]">{track.name}</p>
+                      <span className={cn("shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold", atCapacity ? "bg-[#FBEAE7] text-[#C0392B]" : "bg-[#EAF7F1] text-[#17624F]")}>
+                        {capacity == null ? `${activeCount} / no limit` : `${activeCount} / ${capacity} spots`}
+                      </span>
                     </div>
                   );
                 })}
@@ -12519,34 +10986,6 @@ async function updateTaxReceiptStatus(
   return { ok: true };
 }
 
-async function downloadFinanceExport(programId: string, programTitle: string): Promise<{ ok: true } | { ok: false; error: string }> {
-  const supabase = createSupabaseBrowserClient();
-  const { data: sessionData } = await supabase.auth.getSession();
-  const token = sessionData.session?.access_token;
-  if (!token) {
-    return { ok: false, error: "Please sign in again to continue." };
-  }
-
-  const response = await fetch(`/api/programs/${programId}/finance/export`, {
-    headers: { authorization: `Bearer ${token}` },
-  });
-  if (!response.ok) {
-    const result = (await response.json().catch(() => ({}))) as { error?: string };
-    return { ok: false, error: result.error ?? "Could not export payments." };
-  }
-
-  const blob = await response.blob();
-  const url = URL.createObjectURL(blob);
-  const anchor = document.createElement("a");
-  anchor.href = url;
-  anchor.download = `${programTitle.replace(/[^a-z0-9]+/gi, "-").toLowerCase() || "payments"}.csv`;
-  document.body.appendChild(anchor);
-  anchor.click();
-  anchor.remove();
-  URL.revokeObjectURL(url);
-  return { ok: true };
-}
-
 function TaxReceiptStatusControl({
   programId,
   payment,
@@ -12612,6 +11051,7 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
   const [program, setProgram] = useState<Program | null>(null);
   const [rows, setRows] = useState<FinanceEnrollmentRow[]>([]);
   const [auditEvents, setAuditEvents] = useState<ProgramFinanceAuditEvent[]>([]);
+  const [auditActorsById, setAuditActorsById] = useState<Record<string, Profile>>({});
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [paymentFilter, setPaymentFilter] = useState("all");
@@ -12624,8 +11064,6 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
   const [noteTarget, setNoteTarget] = useState<FinanceEnrollmentRow | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [exportBusy, setExportBusy] = useState(false);
-  const [exportError, setExportError] = useState<string | null>(null);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
@@ -12634,16 +11072,6 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
     return () => window.clearTimeout(timeout);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [programId, slug, mode]);
-
-  async function handleExport() {
-    setExportBusy(true);
-    setExportError(null);
-    const result = await downloadFinanceExport(programId, program?.title ?? "payments");
-    setExportBusy(false);
-    if (!result.ok) {
-      setExportError(result.error);
-    }
-  }
 
   async function loadFinanceRows() {
     setLoading(true);
@@ -12691,6 +11119,7 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
       setProgram(programRow);
       setRows([]);
       setAuditEvents([]);
+      setAuditActorsById({});
       setError("Finance access has not been enabled for this class.");
       setLoading(false);
       return;
@@ -12715,6 +11144,7 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
       ? await supabase.from("parent_child_links").select("child_profile_id, parent_profile_id").eq("mosque_id", mosque.id).in("child_profile_id", studentIds)
       : { data: [] as Array<{ child_profile_id: string; parent_profile_id: string }> };
     const reviewerIds = Array.from(new Set((requestRows ?? []).map((request) => request.reviewed_by).filter(Boolean) as string[]));
+    const auditActorIds = Array.from(new Set((auditRows ?? []).map((event) => event.actor_profile_id).filter(Boolean) as string[]));
     const parentIds = Array.from(
       new Set([
         ...(linkRows ?? []).map((link) => link.parent_profile_id),
@@ -12723,7 +11153,7 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
         ...(paymentTermsRows ?? []).map((terms) => terms.parent_profile_id).filter(Boolean) as string[],
       ]),
     );
-    const profileIds = Array.from(new Set([...studentIds, ...parentIds, ...reviewerIds]));
+    const profileIds = Array.from(new Set([...studentIds, ...parentIds, ...reviewerIds, ...auditActorIds]));
     const { data: profileRows } = profileIds.length
       ? await supabase.from("profiles").select("id, full_name, email, phone_number, avatar_url, age, gender, date_of_birth, account_type").in("id", profileIds)
       : { data: [] as StudentDisplay[] };
@@ -12754,6 +11184,7 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
       }),
     );
     setAuditEvents(auditRows ?? []);
+    setAuditActorsById(Object.fromEntries(((profileRows ?? []) as Profile[]).filter((profile) => auditActorIds.includes(profile.id)).map((profile) => [profile.id, profile])));
     setLoading(false);
   }
 
@@ -12833,17 +11264,6 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
         <SearchIcon />
         <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search students, parents, status" className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-[#26323A] outline-none placeholder:text-[#9AA4AA]" />
       </label>
-      <div className="flex items-center justify-between gap-2">
-        <p className="text-xs font-semibold text-[#C0392B]">{exportError}</p>
-        <button
-          type="button"
-          onClick={() => void handleExport()}
-          disabled={exportBusy}
-          className="ml-auto inline-flex min-h-9 items-center gap-1.5 rounded-full border border-[#D6DCE0] bg-white px-3 text-xs font-semibold text-[#26323A] disabled:opacity-60"
-        >
-          {exportBusy ? "Exporting..." : "Download CSV"}
-        </button>
-      </div>
       <div className="flex flex-wrap gap-3">
         <FinanceSelect label="Enrollment" value={statusFilter} options={["active", "kicked", "withdrawn"]} onChange={setStatusFilter} />
         <FinanceSelect
@@ -12945,7 +11365,7 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
                     {event.event_type === "manual_note" ? (
                       <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold", programStatusBadgeToneClass("neutral"))}>Note</span>
                     ) : null}
-                    <p className="text-sm font-semibold text-[#26323A]">{event.summary}</p>
+                    <p className="text-sm font-semibold text-[#26323A]">{financeAuditSummaryWithActor(event, auditActorsById)}</p>
                   </div>
                   <p className="mt-0.5 text-xs text-[#7B858C]">{formatFinanceDate(event.created_at)} - {event.event_type.replace(/_/g, " ")}</p>
                 </div>
@@ -13409,6 +11829,7 @@ function FinanceDetailsDrawer({
   const [eventsLoading, setEventsLoading] = useState(true);
   const containerRef = useRef<HTMLDivElement>(null);
   useModalFocusTrap(containerRef, true, onClose);
+  useHideMobileChromeWhileMounted();
 
   useEffect(() => {
     let cancelled = false;
@@ -13676,6 +12097,7 @@ function FinanceAddNoteModal({
 
   const containerRef = useRef<HTMLDivElement>(null);
   useModalFocusTrap(containerRef, true, onClose);
+  useHideMobileChromeWhileMounted();
   return createPortal(
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#26323A]/35 px-5 backdrop-blur-sm">
       <div ref={containerRef} role="dialog" aria-modal="true" tabIndex={-1} className="w-full max-w-md rounded-[28px] bg-white p-5 text-[#26323A] shadow-[0_24px_70px_rgba(38,50,58,0.22)] outline-none">
@@ -13722,16 +12144,7 @@ function FinanceWorkflowBlock({ title, text, children }: { title: string; text: 
   );
 }
 
-type ApplicationRow = {
-  request: EnrollmentRequest;
-  student: StudentDisplay | null;
-  parent: ParentDisplay | null;
-  track: ProgramTrack | null;
-  subscription: ProgramSubscription | null;
-  approver: Profile | null;
-};
-
-function applicationPaymentPlanLabel(row: { request: EnrollmentRequest; track: ProgramTrack | null }, program: Program | null) {
+export function applicationPaymentPlanLabel(row: { request: EnrollmentRequest; track: ProgramTrack | null }, program: Program | null) {
   if (!program?.is_paid) {
     return "Free";
   }
@@ -13741,7 +12154,7 @@ function applicationPaymentPlanLabel(row: { request: EnrollmentRequest; track: P
   return row.request.payment_type === "annual" ? "Pay in Full" : "Monthly subscription";
 }
 
-function applicationListedPrice(row: { request: EnrollmentRequest; track: ProgramTrack | null }, program: Program | null) {
+export function applicationListedPrice(row: { request: EnrollmentRequest; track: ProgramTrack | null }, program: Program | null) {
   if (row.request.payment_bypassed) {
     return row.request.payment_bypass_external ? "Paid externally" : "Waived";
   }
@@ -13755,22 +12168,12 @@ function applicationListedPrice(row: { request: EnrollmentRequest; track: Progra
   return formatPrice(cents);
 }
 
-const APPLICATION_ACTION_LABELS: Record<ApplicationRowAction, string> = {
-  view: "View Application",
-  approve: "Approve",
-  waitlist: "Waitlist",
-  reject: "Reject",
-  cancel_approval: "Undo Approval",
-  change_price: "Change Approved Price",
-  copy_confirmation_link: "Copy registration link",
-  reopen: "Reopen Application",
-};
-
 export function ProgramApplicationsData({ slug, programId, mode = "teacher" }: { slug: string; programId: string; mode?: "teacher" | "admin" }) {
   const searchParams = useSearchParams();
   const [program, setProgram] = useState<Program | null>(null);
   const [rows, setRows] = useState<ApplicationRow[]>([]);
   const [auditEvents, setAuditEvents] = useState<ProgramFinanceAuditEvent[]>([]);
+  const [auditActorsById, setAuditActorsById] = useState<Record<string, Profile>>({});
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [payStatusFilter, setPayStatusFilter] = useState("all");
@@ -13841,6 +12244,7 @@ export function ProgramApplicationsData({ slug, programId, mode = "teacher" }: {
       setProgram(programRow);
       setRows([]);
       setAuditEvents([]);
+      setAuditActorsById({});
       setError("You don't have permission to manage applications for this class.");
       setLoading(false);
       return;
@@ -13868,7 +12272,8 @@ export function ProgramApplicationsData({ slug, programId, mode = "teacher" }: {
     const studentIds = Array.from(new Set([...(requestRows ?? []).map((row) => row.student_profile_id), ...(switchRows ?? []).map((row) => row.student_profile_id)]));
     const parentIds = Array.from(new Set((requestRows ?? []).map((row) => row.parent_profile_id).filter(Boolean) as string[]));
     const reviewerIds = Array.from(new Set((requestRows ?? []).map((row) => row.reviewed_by).filter(Boolean) as string[]));
-    const profileIds = Array.from(new Set([...studentIds, ...parentIds, ...reviewerIds]));
+    const auditActorIds = Array.from(new Set((auditRows ?? []).map((event) => event.actor_profile_id).filter(Boolean) as string[]));
+    const profileIds = Array.from(new Set([...studentIds, ...parentIds, ...reviewerIds, ...auditActorIds]));
     const { data: profileRows } = profileIds.length
       ? await supabase.from("profiles").select("id, full_name, email, phone_number, avatar_url, age, gender, date_of_birth, account_type").in("id", profileIds)
       : { data: [] as StudentDisplay[] };
@@ -13886,6 +12291,7 @@ export function ProgramApplicationsData({ slug, programId, mode = "teacher" }: {
       })),
     );
     setAuditEvents(auditRows ?? []);
+    setAuditActorsById(Object.fromEntries(((profileRows ?? []) as Profile[]).filter((profile) => auditActorIds.includes(profile.id)).map((profile) => [profile.id, profile])));
     setTrackSwitchRequests(
       (switchRows ?? []).map((request) => ({
         ...request,
@@ -14156,7 +12562,7 @@ export function ProgramApplicationsData({ slug, programId, mode = "teacher" }: {
                   {event.event_type === "manual_note" ? (
                     <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold", programStatusBadgeToneClass("neutral"))}>Note</span>
                   ) : null}
-                  <p className="text-sm font-semibold text-[#26323A]">{event.summary}</p>
+                  <p className="text-sm font-semibold text-[#26323A]">{financeAuditSummaryWithActor(event, auditActorsById)}</p>
                 </div>
                 <p className="mt-0.5 text-xs text-[#7B858C]">{formatFinanceDate(event.created_at)} - {event.event_type.replace(/_/g, " ")}</p>
               </div>
@@ -14178,778 +12584,6 @@ export function ProgramApplicationsData({ slug, programId, mode = "teacher" }: {
         />
       ) : null}
     </section>
-  );
-}
-
-/**
- * Self-contained "open an application on top of whatever page you're on" overlay.
- * Independently loads the one enrollment_request by id (rather than requiring the
- * caller's full rows array), so it can be mounted from the Applications table AND the
- * Inbox without either needing to know about the other. Owns its own decision/change-price
- * /confirm-action modal state; on any successful action it awaits the caller's onChanged
- * (so the underlying list re-fetches and the item is already reclassified as "past") before
- * closing, matching the existing per-row action wiring in ProgramApplicationsData.
- */
-function ApplicationReviewOverlay({
-  programId,
-  slug,
-  mode,
-  requestId,
-  onClose,
-  onChanged,
-}: {
-  programId: string;
-  slug: string;
-  mode: "teacher" | "admin";
-  requestId: string;
-  onClose: () => void;
-  onChanged: () => Promise<void> | void;
-}) {
-  const [program, setProgram] = useState<Program | null>(null);
-  const [row, setRow] = useState<ApplicationRow | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [decisionAction, setDecisionAction] = useState<"approved" | "waitlisted" | "rejected" | null>(null);
-  const [decisionBusy, setDecisionBusy] = useState(false);
-  const [changePriceOpen, setChangePriceOpen] = useState(false);
-  const [confirmAction, setConfirmAction] = useState<"cancel_approval" | "reopen" | null>(null);
-  const [toast, setToast] = useState<EditorToastState | null>(null);
-  const [closing, setClosing] = useState(false);
-  const [trackEnrolledCount, setTrackEnrolledCount] = useState<number | null>(null);
-
-  useEffect(() => {
-    window.dispatchEvent(new CustomEvent("tareeqah:overlay-chrome", { detail: { hidden: true } }));
-    return () => {
-      window.dispatchEvent(new CustomEvent("tareeqah:overlay-chrome", { detail: { hidden: false } }));
-    };
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    async function load() {
-      setLoading(true);
-      setError(null);
-      const supabase = createSupabaseBrowserClient();
-      const [{ data: programRow }, { data: request, error: requestError }, { data: trackLinkRows }] = await Promise.all([
-        supabase.from("programs").select("*").eq("id", programId).maybeSingle(),
-        supabase.from("enrollment_requests").select("*").eq("id", requestId).maybeSingle(),
-        supabase.from("enrollment_request_tracks").select("program_track_id").eq("enrollment_request_id", requestId),
-      ]);
-      if (cancelled) {
-        return;
-      }
-      if (requestError || !request || !programRow) {
-        setError(requestError?.message ?? "Application not found.");
-        setLoading(false);
-        return;
-      }
-
-      const linkedTrackIds = (trackLinkRows ?? []).map((linkRow) => linkRow.program_track_id);
-      const primaryTrackId = request.program_track_id ?? linkedTrackIds[0] ?? null;
-      let trackRow: ProgramTrack | null = null;
-      let nextTrackEnrolledCount: number | null = null;
-      if (primaryTrackId) {
-        const trackResult = await supabase.from("program_tracks").select("*").eq("id", primaryTrackId).maybeSingle();
-        trackRow = trackResult.data ?? null;
-        const { data: activeEnrollments } = await supabase.from("enrollments").select("id").eq("program_id", programId).eq("status", "active");
-        const activeEnrollmentIds = (activeEnrollments ?? []).map((enrollment) => enrollment.id);
-        nextTrackEnrolledCount = activeEnrollmentIds.length
-          ? (await supabase.from("enrollment_tracks").select("enrollment_id").eq("program_track_id", primaryTrackId).in("enrollment_id", activeEnrollmentIds)).data?.length ?? 0
-          : 0;
-      }
-      const { data: subscriptionRow } = await supabase
-        .from("program_subscriptions")
-        .select("*")
-        .eq("program_id", programId)
-        .eq("student_profile_id", request.student_profile_id)
-        .maybeSingle();
-      const profileIds = Array.from(new Set([request.student_profile_id, request.parent_profile_id, request.reviewed_by].filter(Boolean))) as string[];
-      const { data: profileRows } = profileIds.length
-        ? await supabase.from("profiles").select("id, full_name, email, phone_number, avatar_url, age, gender, date_of_birth, account_type").in("id", profileIds)
-        : { data: [] as StudentDisplay[] };
-
-      if (cancelled) {
-        return;
-      }
-      setProgram(programRow);
-      setRow({
-        request,
-        student: (profileRows ?? []).find((profile) => profile.id === request.student_profile_id) as StudentDisplay | null,
-        parent: request.parent_profile_id ? ((profileRows ?? []).find((profile) => profile.id === request.parent_profile_id) as ParentDisplay | undefined) ?? null : null,
-        track: trackRow,
-        subscription: subscriptionRow ?? null,
-        approver: request.reviewed_by ? ((profileRows ?? []).find((profile) => profile.id === request.reviewed_by) as Profile | undefined) ?? null : null,
-      });
-      setTrackEnrolledCount(nextTrackEnrolledCount);
-      setLoading(false);
-    }
-
-    const timeout = window.setTimeout(() => {
-      void load();
-    }, 0);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timeout);
-    };
-  }, [programId, requestId]);
-
-  async function handleCopyConfirmationLink() {
-    const url = `${window.location.origin}/m/${slug}/registration/${requestId}`;
-    try {
-      await navigator.clipboard.writeText(url);
-      setToast({ tone: "success", message: "Registration confirmation link copied." });
-    } catch {
-      setToast({ tone: "error", message: "Could not copy link." });
-    }
-  }
-
-  function handleAction(action: ApplicationRowAction) {
-    if (action === "approve") {
-      setDecisionAction("approved");
-      return;
-    }
-    if (action === "waitlist") {
-      setDecisionAction("waitlisted");
-      return;
-    }
-    if (action === "reject") {
-      setDecisionAction("rejected");
-      return;
-    }
-    if (action === "cancel_approval" || action === "reopen") {
-      setConfirmAction(action);
-      return;
-    }
-    if (action === "change_price") {
-      setChangePriceOpen(true);
-      return;
-    }
-    if (action === "copy_confirmation_link") {
-      void handleCopyConfirmationLink();
-    }
-  }
-
-  async function closeAfterChange() {
-    setClosing(true);
-    onClose();
-    await onChanged();
-  }
-
-  if (loading) {
-    return createPortal(
-      <div className="fixed inset-0 z-[2147483647] flex justify-end bg-[#26323A]/35 backdrop-blur-sm">
-        <div className="flex h-full w-full max-w-md items-center justify-center bg-white">
-          <InboxLoadingPanel label="Loading application" />
-        </div>
-      </div>,
-      document.body,
-    );
-  }
-
-  if (error || !program || !row) {
-    return createPortal(
-      <div className="fixed inset-0 z-[2147483647] flex justify-end bg-[#26323A]/35 backdrop-blur-sm">
-        <div className="flex h-full w-full max-w-md flex-col bg-white p-5">
-          <button type="button" onClick={onClose} className="self-end text-sm font-semibold text-[#6B747B]">
-            Close
-          </button>
-          <div className="flex flex-1 items-center justify-center">
-            <EmptyState title="Could not load application" text={error ?? "This application could not be found."} />
-          </div>
-        </div>
-      </div>,
-      document.body,
-    );
-  }
-
-  return (
-    <>
-      <EditorToast toast={toast} onClose={() => setToast(null)} />
-      <ApplicationDetailsDrawer row={row} program={program} slug={slug} mode={mode} trackEnrolledCount={trackEnrolledCount} onClose={onClose} onAction={handleAction} />
-      {decisionAction ? (
-        <ApplicationDecisionModal
-          target={{ request: { ...row.request, program, student: row.student, parent: row.parent, track: row.track }, action: decisionAction }}
-          busy={decisionBusy || closing}
-          onClose={() => {
-            if (!decisionBusy) {
-              setDecisionAction(null);
-            }
-          }}
-          onSubmit={async (options) => {
-            setDecisionBusy(true);
-            const endpoint = decisionAction === "approved" ? "approve" : decisionAction === "waitlisted" ? "waitlist" : "reject";
-            const result = await callApplicationAction(programId, requestId, endpoint, options);
-            setDecisionBusy(false);
-            if (!result.ok) {
-              setToast({ tone: "error", message: result.error });
-              return;
-            }
-            setDecisionAction(null);
-            void closeAfterChange();
-          }}
-        />
-      ) : null}
-      {changePriceOpen ? (
-        <ApplicationChangePriceModal
-          row={row}
-          program={program}
-          onClose={() => setChangePriceOpen(false)}
-          onSuccess={() => {
-            setChangePriceOpen(false);
-            void closeAfterChange();
-          }}
-        />
-      ) : null}
-      {confirmAction ? (
-        <ApplicationConfirmActionModal
-          row={row}
-          action={confirmAction}
-          program={program}
-          onClose={() => setConfirmAction(null)}
-          onSuccess={() => {
-            setConfirmAction(null);
-            void closeAfterChange();
-          }}
-        />
-      ) : null}
-    </>
-  );
-}
-
-function ApplicationDetailsDrawer({
-  row,
-  program,
-  slug,
-  mode,
-  trackEnrolledCount = null,
-  onClose,
-  onAction,
-}: {
-  row: ApplicationRow;
-  program: Program;
-  slug: string;
-  mode: "teacher" | "admin";
-  trackEnrolledCount?: number | null;
-  onClose: () => void;
-  onAction: (action: ApplicationRowAction) => void;
-}) {
-  const [studentEvents, setStudentEvents] = useState<ProgramFinanceAuditEvent[] | null>(null);
-  const [eventsLoading, setEventsLoading] = useState(true);
-
-  useEffect(() => {
-    let cancelled = false;
-    const timeout = window.setTimeout(() => {
-      setEventsLoading(true);
-      const supabase = createSupabaseBrowserClient();
-      void supabase
-        .from("program_finance_audit_events")
-        .select("*")
-        .eq("program_id", program.id)
-        .eq("student_profile_id", row.request.student_profile_id)
-        .order("created_at", { ascending: false })
-        .limit(50)
-        .then(({ data }) => {
-          if (cancelled) {
-            return;
-          }
-          setStudentEvents(data ?? []);
-          setEventsLoading(false);
-        });
-    }, 0);
-    return () => {
-      cancelled = true;
-      window.clearTimeout(timeout);
-    };
-  }, [program.id, row.request.student_profile_id]);
-
-  const status = getApplicationStatus(row.request);
-  const payStatus = getApplicationPaymentStatus(row.request, program, row.subscription);
-  const basePath = mode === "admin" ? `/m/${slug}/admin/programs` : `/m/${slug}/teacher/classes`;
-  const availableActions = getApplicationRowActions(status).filter((action) => action !== "view");
-  const decisionActions = availableActions.filter((action): action is "approve" | "waitlist" | "reject" => action === "approve" || action === "waitlist" || action === "reject");
-  const secondaryActions = availableActions.filter((action) => action !== "approve" && action !== "waitlist" && action !== "reject");
-
-  const containerRef = useRef<HTMLDivElement>(null);
-  useModalFocusTrap(containerRef, true, onClose);
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex justify-end bg-[#26323A]/35 backdrop-blur-sm">
-      <div ref={containerRef} role="dialog" aria-modal="true" tabIndex={-1} className="flex h-full w-full max-w-md flex-col bg-white text-[#26323A] shadow-[0_24px_70px_rgba(38,50,58,0.22)] outline-none">
-        <div className="flex shrink-0 items-center justify-between border-b border-[#EEF2F4] px-4 py-3">
-          <div>
-            <p className="text-xs font-semibold uppercase tracking-wide text-[#6B747B]">{program.title}</p>
-            <h2 className="mt-0.5 text-base font-semibold">{row.student?.full_name || "Student"}</h2>
-          </div>
-          <button type="button" onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-full bg-[#F1F5F6] text-[#26323A] hover:bg-[#E3ECEF]">
-            <XIcon />
-          </button>
-        </div>
-
-        <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-          <div className="space-y-3 text-xs">
-            <div className="flex items-center justify-between">
-              <span className="text-[#6B747B]">Application status</span>
-              <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-semibold", programStatusBadgeToneClass(applicationStatusTone(status)))}>
-                {getApplicationRowStatusLabel(status, payStatus)}
-              </span>
-            </div>
-
-            <section className="space-y-1.5">
-              <h3 className="text-xs font-semibold text-[#26323A]">Applicant Information</h3>
-              <div className="grid gap-1 rounded-[12px] border border-[#E1E8EC] bg-[#FAFCFC] p-2.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-[#6B747B]">Student type</span>
-                  <span className="font-semibold">{row.parent ? "Child Student" : "Adult Student"}</span>
-                </div>
-                {row.parent ? (
-                  <>
-                    <div className="flex items-center justify-between">
-                      <span className="text-[#6B747B]">Child</span>
-                      <span className="font-semibold">{row.student?.full_name || "—"}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-[#6B747B]">Child Age</span>
-                      <span className="font-semibold">{displayAge(row.student)}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-[#6B747B]">Gender</span>
-                      <span className="font-semibold">{row.student?.gender || "—"}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-[#6B747B]">Parent</span>
-                      <span className="font-semibold">{row.parent.full_name || "—"}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-[#6B747B]">Parent Email</span>
-                      <span className="font-semibold">{row.parent.email || "—"}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-[#6B747B]">Parent Phone</span>
-                      <span className="font-semibold">{row.parent.phone_number || "—"}</span>
-                    </div>
-                  </>
-                ) : (
-                  <>
-                    <div className="flex items-center justify-between">
-                      <span className="text-[#6B747B]">Student</span>
-                      <span className="font-semibold">{row.student?.full_name || "—"}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-[#6B747B]">Email</span>
-                      <span className="font-semibold">{row.student?.email || "—"}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-[#6B747B]">Phone</span>
-                      <span className="font-semibold">{row.student?.phone_number || "—"}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-[#6B747B]">Age</span>
-                      <span className="font-semibold">{displayAge(row.student)}</span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-[#6B747B]">Gender</span>
-                      <span className="font-semibold">{row.student?.gender || "—"}</span>
-                    </div>
-                  </>
-                )}
-              </div>
-            </section>
-
-            <section className="space-y-1.5">
-              <h3 className="text-xs font-semibold text-[#26323A]">Program Details</h3>
-              <div className="grid gap-1 rounded-[12px] border border-[#E1E8EC] bg-[#FAFCFC] p-2.5">
-                {isPaymentStatusMeaningful(row.request, program) ? (
-                  <div className="flex items-center justify-between">
-                    <span className="text-[#6B747B]">Payment status</span>
-                    <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-semibold", programStatusBadgeToneClass(paymentStatusTone(payStatus)))}>
-                      {PAYMENT_STATUS_LABELS[payStatus]}
-                    </span>
-                  </div>
-                ) : null}
-                <div className="flex items-center justify-between">
-                  <span className="text-[#6B747B]">Track/Schedule</span>
-                  <span className="font-semibold">{row.track ? row.track.name : "—"}</span>
-                </div>
-                {row.track ? (
-                  <div className="flex items-center justify-between">
-                    <span className="text-[#6B747B]">Schedule</span>
-                    <span className="font-semibold">{scheduleSummary(row.track.schedule, null).full}</span>
-                  </div>
-                ) : null}
-                {row.track?.capacity != null ? (
-                  <div className="flex items-center justify-between">
-                    <span className="text-[#6B747B]">Track capacity</span>
-                    <span className={cn("font-semibold", trackEnrolledCount != null && trackEnrolledCount >= row.track.capacity ? "text-[#C0392B]" : "text-[#26323A]")}>
-                      {trackEnrolledCount ?? "—"} / {row.track.capacity}
-                    </span>
-                  </div>
-                ) : null}
-                <div className="flex items-center justify-between">
-                  <span className="text-[#6B747B]">Location</span>
-                  <span className="font-semibold">{row.track?.location || program.location || "—"}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-[#6B747B]">Payment plan</span>
-                  <span className="font-semibold">{applicationPaymentPlanLabel(row, program)}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-[#6B747B]">Listed price</span>
-                  <span className="font-semibold">{applicationListedPrice(row, program)}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-[#6B747B]">Submitted</span>
-                  <span className="font-semibold">{formatFinanceDate(row.request.requested_at)}</span>
-                </div>
-                {row.request.reviewed_at ? (
-                  <div className="flex items-center justify-between">
-                    <span className="text-[#6B747B]">Reviewed</span>
-                    <span className="font-semibold">
-                      {formatFinanceDate(row.request.reviewed_at)} by {row.approver?.full_name || row.approver?.email || "staff"}
-                    </span>
-                  </div>
-                ) : null}
-                {row.request.decision_note ? (
-                  <div className="pt-1">
-                    <p className="text-[#6B747B]">Decision note</p>
-                    <p className="mt-0.5 font-semibold">{row.request.decision_note}</p>
-                  </div>
-                ) : null}
-              </div>
-            </section>
-
-            <section className="space-y-1.5">
-              <h3 className="text-xs font-semibold text-[#26323A]">Audit Trail</h3>
-              {eventsLoading ? (
-                <div className="rounded-[12px] border border-dashed border-[#D6DCE0] bg-[#F8FAFB] p-2.5 font-semibold text-[#6B747B]">Loading activity...</div>
-              ) : !studentEvents?.length ? (
-                <div className="rounded-[12px] border border-dashed border-[#D6DCE0] bg-[#F8FAFB] p-2.5 font-semibold text-[#6B747B]">No activity for this application yet.</div>
-              ) : (
-                <div className="divide-y divide-[#EEF2F4]">
-                  {studentEvents.map((event) => (
-                    <div key={event.id} className="py-2">
-                      <div className="flex items-center gap-2">
-                        {event.event_type === "manual_note" ? (
-                          <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold", programStatusBadgeToneClass("neutral"))}>Note</span>
-                        ) : null}
-                        <p className="font-semibold text-[#26323A]">{event.summary}</p>
-                      </div>
-                      <p className="mt-0.5 text-[11px] text-[#7B858C]">{formatFinanceDate(event.created_at)}</p>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </section>
-          </div>
-        </div>
-
-        {availableActions.length ? (
-          <div className="shrink-0 space-y-2 border-t border-[#EEF2F4] px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3">
-            {decisionActions.length ? (
-              <div className={cn("grid gap-2", decisionActions.length === 3 ? "grid-cols-3" : decisionActions.length === 2 ? "grid-cols-2" : "grid-cols-1")}>
-                {decisionActions.map((action) => (
-                  <button
-                    key={action}
-                    type="button"
-                    onClick={() => onAction(action)}
-                    className={cn(
-                      "min-h-9 rounded-[9px] px-2 text-xs font-semibold transition-colors",
-                      action === "approve"
-                        ? "bg-[#E2F6E8] text-[#258A43] hover:bg-[#D4F0DD]"
-                        : action === "waitlist"
-                          ? "bg-[#FFF4D6] text-[#8A6418] hover:bg-[#FFE9A8]"
-                          : "bg-[#FCE8E4] text-[#C83F31] hover:bg-[#F9D8D1]",
-                    )}
-                  >
-                    {APPLICATION_ACTION_LABELS[action]}
-                  </button>
-                ))}
-              </div>
-            ) : null}
-            {secondaryActions.length ? (
-              <div className="space-y-2">
-                {secondaryActions.map((action) => (
-                  <button
-                    key={action}
-                    type="button"
-                    onClick={() => onAction(action)}
-                    className={cn(
-                      "flex min-h-10 w-full items-center justify-center gap-2 rounded-[9px] px-3 text-xs font-semibold transition-colors",
-                      action === "change_price"
-                        ? "bg-[#E7F3F8] text-[#257B9C] hover:bg-[#DDEEF6]"
-                        : action === "cancel_approval"
-                          ? "bg-[#FFF4D6] text-[#8A6418] hover:bg-[#FFE9A8]"
-                          : "border border-[#D6DCE0] bg-white text-[#26323A] hover:bg-[#F7FAFB]",
-                    )}
-                  >
-                    {action === "copy_confirmation_link" ? <CopyIcon /> : null}
-                    {APPLICATION_ACTION_LABELS[action]}
-                  </button>
-                ))}
-              </div>
-            ) : null}
-          </div>
-        ) : null}
-
-        {status === "completed_enrolled" ? (
-          <div className="shrink-0 border-t border-[#EEF2F4] px-4 py-3">
-            <Link href={`${basePath}/${program.id}/students?from=applications&studentId=${row.request.student_profile_id}`} className="text-xs font-semibold text-[#17624F] hover:underline">
-              View student in class list →
-            </Link>
-          </div>
-        ) : null}
-      </div>
-    </div>,
-    document.body,
-  );
-}
-
-
-function ApplicationChangePriceModal({
-  row,
-  program,
-  onClose,
-  onSuccess,
-}: {
-  row: ApplicationRow;
-  program: Program;
-  onClose: () => void;
-  onSuccess: () => void;
-}) {
-  const isAnnual = row.request.payment_type === "annual";
-  const [paymentType, setPaymentType] = useState<"monthly" | "annual">(isAnnual ? "annual" : "monthly");
-  const initialCents = isAnnual
-    ? row.request.approved_price_annual_cents ?? program.price_annual_cents ?? 0
-    : row.request.approved_price_monthly_cents ?? program.price_monthly_cents ?? 0;
-  const [price, setPrice] = useState((initialCents / 100).toFixed(2).replace(/\.00$/, ""));
-  const [bypassPayment, setBypassPayment] = useState(row.request.payment_bypassed);
-  const [bypassExternal, setBypassExternal] = useState(row.request.payment_bypass_external);
-  const [note, setNote] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const paymentOptions = programPaymentOptions(program);
-  const allowedTypes = paymentOptions.length ? paymentOptions.map((option) => option.type) : (["monthly"] as PaymentType[]);
-
-  async function handleSave() {
-    setError(null);
-    if (bypassPayment) {
-      setBusy(true);
-      const result = await callApplicationAction(program.id, row.request.id, "waive", {
-        external: bypassExternal,
-        note: note.trim() || undefined,
-      });
-      setBusy(false);
-      if (!result.ok) {
-        setError(result.error);
-        return;
-      }
-      onSuccess();
-      onClose();
-      return;
-    }
-
-    const cents = Math.round(parseFloat(price) * 100);
-    if (!cents || Number.isNaN(cents) || cents < 50) {
-      setError("Enter a valid price.");
-      return;
-    }
-    setBusy(true);
-    const result = await callApplicationAction(program.id, row.request.id, "change-price", {
-      paymentType,
-      priceMonthlyCents: paymentType === "monthly" ? cents : null,
-      priceAnnualCents: paymentType === "annual" ? cents : null,
-      note: note.trim() || undefined,
-    });
-    setBusy(false);
-    if (!result.ok) {
-      setError(result.error);
-      return;
-    }
-    onSuccess();
-    onClose();
-  }
-
-  const containerRef = useRef<HTMLDivElement>(null);
-  useModalFocusTrap(containerRef, true, onClose);
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#26323A]/35 px-5 backdrop-blur-sm">
-      <div ref={containerRef} role="dialog" aria-modal="true" tabIndex={-1} className="w-full max-w-md rounded-[28px] bg-white p-5 text-[#26323A] shadow-[0_24px_70px_rgba(38,50,58,0.22)] outline-none">
-        <p className="text-xs font-semibold uppercase tracking-wide text-[#6B747B]">{program.title}</p>
-        <h2 className="mt-1 text-xl font-semibold">Change Approved Price</h2>
-        <p className="mt-2 text-sm leading-6 text-[#6B747B]">
-          {row.student?.full_name || "Student"} - Updates the price shown on Registration Confirmation. Already-completed payments are unaffected.
-        </p>
-
-        <label className="mt-4 flex items-center gap-2 text-sm font-semibold text-[#26323A]">
-          <input type="checkbox" checked={bypassPayment} onChange={(event) => setBypassPayment(event.target.checked)} disabled={busy} />
-          Bypass payment process
-        </label>
-
-        {bypassPayment ? (
-          <div className="mt-3 grid grid-cols-2 gap-2">
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => setBypassExternal(false)}
-              className={cn(
-                "min-h-10 rounded-[9px] px-2 text-xs font-semibold transition-colors disabled:opacity-60",
-                !bypassExternal ? "bg-[#EEF3F5] text-[#26323A]" : "bg-white text-[#6B747B] ring-1 ring-inset ring-[#D6DCE0]",
-              )}
-            >
-              Waived — no payment
-            </button>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={() => setBypassExternal(true)}
-              className={cn(
-                "min-h-10 rounded-[9px] px-2 text-xs font-semibold transition-colors disabled:opacity-60",
-                bypassExternal ? "bg-[#E2F6E8] text-[#258A43]" : "bg-white text-[#6B747B] ring-1 ring-inset ring-[#D6DCE0]",
-              )}
-            >
-              Paid externally
-            </button>
-          </div>
-        ) : (
-          <div className="mt-3 grid grid-cols-[1fr_auto] gap-2">
-            <input
-              value={price}
-              onChange={(event) => setPrice(event.target.value)}
-              disabled={busy}
-              inputMode="decimal"
-              className="h-11 rounded-[10px] border border-[#B9C3C8] px-3 text-sm font-semibold outline-none focus:border-[#2F8FB3] disabled:opacity-60"
-            />
-            {allowedTypes.length > 1 ? (
-              <div className="grid grid-cols-2 overflow-hidden rounded-[10px] border border-[#D6DCE0]">
-                {allowedTypes.map((type) => (
-                  <button
-                    key={type}
-                    type="button"
-                    disabled={busy}
-                    onClick={() => setPaymentType(type)}
-                    className={cn("px-3 text-xs font-semibold disabled:opacity-60", paymentType === type ? "bg-[#17624F] text-white" : "bg-white text-[#52616A]")}
-                  >
-                    {type === "monthly" ? "Monthly" : "Pay in Full"}
-                  </button>
-                ))}
-              </div>
-            ) : null}
-          </div>
-        )}
-
-        <textarea
-          value={note}
-          onChange={(event) => setNote(event.target.value)}
-          disabled={busy}
-          rows={2}
-          placeholder="Internal note (optional)"
-          className="mt-3 w-full rounded-[14px] border border-[#B9C3C8] px-3 py-2 text-sm font-semibold outline-none focus:border-[#2F8FB3] disabled:opacity-60"
-        />
-
-        <div className="mt-5 flex items-center justify-between gap-3">
-          <p className="flex-1 text-xs font-semibold text-[#C0392B]">{error ?? ""}</p>
-          <div className="flex shrink-0 gap-2">
-            <button type="button" onClick={onClose} disabled={busy} className="min-h-10 px-3 text-sm font-semibold text-[#6B747B] disabled:opacity-50">Close</button>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={handleSave}
-              className="min-h-10 rounded-[10px] bg-[#26323A] px-4 text-sm font-semibold text-white transition-opacity disabled:opacity-50"
-            >
-              {busy ? "Saving..." : bypassPayment ? "Save" : "Save Price"}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>,
-    document.body,
-  );
-}
-
-function ApplicationConfirmActionModal({
-  row,
-  action,
-  program,
-  onClose,
-  onSuccess,
-}: {
-  row: ApplicationRow;
-  action: "cancel_approval" | "reopen";
-  program: Program;
-  onClose: () => void;
-  onSuccess: () => void;
-}) {
-  const [note, setNote] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const config = {
-    cancel_approval: {
-      title: "Undo Approval",
-      text: "This moves the application back to pending review. It does not affect any active enrollment.",
-      endpoint: "cancel-approval" as const,
-      confirmLabel: "Undo Approval",
-    },
-    reopen: {
-      title: "Reopen Application",
-      text: "This moves the rejected application back to pending review.",
-      endpoint: "reopen" as const,
-      confirmLabel: "Reopen Application",
-    },
-  }[action];
-
-  async function handleConfirm() {
-    setBusy(true);
-    setError(null);
-    const result = await callApplicationAction(program.id, row.request.id, config.endpoint, {
-      note: note.trim() || undefined,
-    });
-    setBusy(false);
-    if (!result.ok) {
-      setError(result.error);
-      return;
-    }
-    onSuccess();
-    onClose();
-  }
-
-  const containerRef = useRef<HTMLDivElement>(null);
-  useModalFocusTrap(containerRef, true, onClose);
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#26323A]/35 px-5 backdrop-blur-sm">
-      <div ref={containerRef} role="dialog" aria-modal="true" tabIndex={-1} className="w-full max-w-md rounded-[28px] bg-white p-5 text-[#26323A] shadow-[0_24px_70px_rgba(38,50,58,0.22)] outline-none">
-        <p className="text-xs font-semibold uppercase tracking-wide text-[#6B747B]">{program.title}</p>
-        <h2 className="mt-1 text-xl font-semibold">{config.title}</h2>
-        <p className="mt-2 text-sm leading-6 text-[#6B747B]">{row.student?.full_name || "Student"} - {config.text}</p>
-
-        {action !== "reopen" ? (
-          <textarea
-            value={note}
-            onChange={(event) => setNote(event.target.value)}
-            disabled={busy}
-            rows={3}
-            placeholder="Internal note (optional)"
-            className="mt-4 w-full rounded-[14px] border border-[#B9C3C8] px-3 py-2 text-sm font-semibold outline-none focus:border-[#2F8FB3] disabled:opacity-60"
-          />
-        ) : null}
-
-        <div className="mt-5 flex items-center justify-between gap-3">
-          <p className="flex-1 text-xs font-semibold text-[#C0392B]">{error ?? ""}</p>
-          <div className="flex shrink-0 gap-2">
-            <button type="button" onClick={onClose} disabled={busy} className="min-h-10 px-3 text-sm font-semibold text-[#6B747B] disabled:opacity-50">Close</button>
-            <button
-              type="button"
-              disabled={busy}
-              onClick={handleConfirm}
-              className="min-h-10 rounded-[10px] bg-[#26323A] px-4 text-sm font-semibold text-white transition-opacity disabled:opacity-50"
-            >
-              {busy ? "Saving..." : config.confirmLabel}
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>,
-    document.body,
   );
 }
 
@@ -15209,21 +12843,11 @@ function financeNextBillingLabel(row: FinanceEnrollmentRow) {
 }
 
 function formatFinanceShortDate(value: string | null | undefined) {
-  if (!value) {
-    return "—";
-  }
-  return new Date(value).toLocaleDateString("en-US", { month: "short", day: "numeric" });
+  return formatShortDate(value);
 }
 
 function formatDurationDate(value: string | null | undefined) {
-  if (!value) {
-    return "—";
-  }
-  // Parse as local midnight (matching monthsBetweenDates) rather than letting a bare "YYYY-MM-DD"
-  // parse as UTC midnight, which shifted the displayed date back a day in negative-UTC-offset
-  // timezones (e.g. a Sep 1 start_date rendering as "Aug 31").
-  const parsed = value.includes("T") ? new Date(value) : new Date(`${value}T00:00:00`);
-  return parsed.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  return formatDateOnly(value);
 }
 
 function hasActiveRecurringSubscription(subscription: ProgramSubscription | null | undefined) {
@@ -15255,14 +12879,6 @@ function financeMonthlyAmountCents(row: FinanceEnrollmentRow, program: Program |
     return 0;
   }
   return row.request?.approved_price_monthly_cents ?? program.price_monthly_cents ?? 0;
-}
-
-function formatCurrencyAmount(cents: number | null) {
-  return new Intl.NumberFormat("en-CA", {
-    style: "currency",
-    currency: "CAD",
-    maximumFractionDigits: 0,
-  }).format((cents ?? 0) / 100);
 }
 
 function financeAuditFallbackSummary(row: FinanceEnrollmentRow, program: Program) {
@@ -15298,11 +12914,20 @@ function financeAuditFallbackSummary(row: FinanceEnrollmentRow, program: Program
   return `${student} was admitted into ${program.title}.`;
 }
 
-function formatFinanceDate(value: string | null | undefined) {
-  if (!value) {
-    return "Not synced";
+function financeAuditSummaryWithActor(event: ProgramFinanceAuditEvent, actorsById: Record<string, Profile>) {
+  if (!event.actor_profile_id) {
+    return event.summary;
   }
-  return new Date(value).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  const actor = actorsById[event.actor_profile_id];
+  const actorName = actor?.full_name?.trim() || actor?.email?.trim();
+  if (!actorName || event.summary.toLowerCase().includes(actorName.toLowerCase())) {
+    return event.summary;
+  }
+  return `${actorName}: ${event.summary}`;
+}
+
+export function formatFinanceDate(value: string | null | undefined) {
+  return formatFullDate(value);
 }
 
 function mosqueProgramsQueryKey(slug: string) {
@@ -15751,6 +13376,7 @@ function useAdminProgramsWithTracks(slug: string) {
 type StudentEnrollmentsResult = {
   enrolledProgramIds: string[];
   programOwnerLabels: Record<string, string[]>;
+  programOwnerLabelsByTrackId: Record<string, Record<string, string[]>>;
   programTracksByProgramId: Record<string, ProgramTrack[]>;
   accountType: string | null;
   viewerProfiles: StudentDisplay[];
@@ -15759,10 +13385,59 @@ type StudentEnrollmentsResult = {
 const emptyStudentEnrollmentsResult: StudentEnrollmentsResult = {
   enrolledProgramIds: [],
   programOwnerLabels: {},
+  programOwnerLabelsByTrackId: {},
   programTracksByProgramId: {},
   accountType: null,
   viewerProfiles: [],
 };
+
+async function loadEnrollmentTrackRows(
+  supabase: ReturnType<typeof createSupabaseBrowserClient>,
+  enrollments: Array<{ id: string }>,
+) {
+  const enrollmentIds = enrollments.map((enrollment) => enrollment.id);
+  if (!enrollmentIds.length) {
+    return [] as Array<{ enrollment_id: string; program_track_id: string }>;
+  }
+
+  const { data } = await supabase
+    .from("enrollment_tracks")
+    .select("enrollment_id, program_track_id")
+    .in("enrollment_id", enrollmentIds);
+
+  return (data ?? []) as Array<{ enrollment_id: string; program_track_id: string }>;
+}
+
+function getProgramOwnerLabelsByTrackId(
+  enrollments: EnrollmentTrackSelection[],
+  enrollmentTrackRows: Array<{ enrollment_id: string; program_track_id: string }>,
+  labelByStudentId: Map<string, string>,
+) {
+  const trackIdsByEnrollmentId = new Map<string, string[]>();
+  for (const row of enrollmentTrackRows) {
+    trackIdsByEnrollmentId.set(row.enrollment_id, [...(trackIdsByEnrollmentId.get(row.enrollment_id) ?? []), row.program_track_id]);
+  }
+
+  const next: Record<string, Record<string, string[]>> = {};
+  for (const enrollment of enrollments) {
+    const label = labelByStudentId.get(enrollment.student_profile_id);
+    if (!label) {
+      continue;
+    }
+
+    const trackIds = [
+      ...(trackIdsByEnrollmentId.get(enrollment.id) ?? []),
+      ...(enrollment.program_track_id ? [enrollment.program_track_id] : []),
+    ].filter((trackId, index, all) => all.indexOf(trackId) === index);
+
+    for (const trackId of trackIds) {
+      next[enrollment.program_id] = next[enrollment.program_id] ?? {};
+      next[enrollment.program_id][trackId] = Array.from(new Set([...(next[enrollment.program_id][trackId] ?? []), label]));
+    }
+  }
+
+  return next;
+}
 
 async function fetchStudentEnrollments(slug: string, userId: string | null): Promise<StudentEnrollmentsResult> {
   if (!userId) {
@@ -15785,31 +13460,38 @@ async function fetchStudentEnrollments(slug: string, userId: string | null): Pro
       return { ...emptyStudentEnrollmentsResult, accountType: nextAccountType, viewerProfiles: possibleProfiles };
     }
 
-    const { data } = await supabase.from("enrollments").select("id, program_id, student_profile_id").in("student_profile_id", possibleIds);
+    const { data } = await supabase.from("enrollments").select("id, program_id, student_profile_id, program_track_id, created_at, status").in("student_profile_id", possibleIds);
+    const activeRows = ((data ?? []) as EnrollmentTrackSelection[]).filter((row) => isCurrentEnrollmentStatus(row.status));
     const childNameById = new Map(possibleProfiles.map((student) => [student.id, student.id === userId ? (student.full_name?.trim() || "You") : (student.full_name?.trim() || "Child")]));
     const owners: Record<string, string[]> = {};
-    for (const row of data ?? []) {
+    for (const row of activeRows) {
       const childName = childNameById.get(row.student_profile_id);
       if (!childName) {
         continue;
       }
       owners[row.program_id] = Array.from(new Set([...(owners[row.program_id] ?? []), childName]));
     }
-    const trackMap = await loadEnrollmentTrackMap(supabase, data ?? []);
+    const enrollmentTrackRows = await loadEnrollmentTrackRows(supabase, activeRows);
+    const trackMap = await loadEnrollmentTrackMap(supabase, activeRows, enrollmentTrackRows);
+    const ownerLabelsByTrackId = getProgramOwnerLabelsByTrackId(activeRows, enrollmentTrackRows, childNameById);
     return {
       enrolledProgramIds: Object.keys(owners),
       programOwnerLabels: owners,
+      programOwnerLabelsByTrackId: ownerLabelsByTrackId,
       programTracksByProgramId: trackMap,
       accountType: nextAccountType,
       viewerProfiles: possibleProfiles,
     };
   }
 
-  const { data } = await supabase.from("enrollments").select("id, program_id").eq("student_profile_id", userId);
-  const trackMap = await loadEnrollmentTrackMap(supabase, data ?? []);
+  const { data } = await supabase.from("enrollments").select("id, program_id, student_profile_id, program_track_id, created_at, status").eq("student_profile_id", userId);
+  const activeRows = ((data ?? []) as EnrollmentTrackSelection[]).filter((row) => isCurrentEnrollmentStatus(row.status));
+  const enrollmentTrackRows = await loadEnrollmentTrackRows(supabase, activeRows);
+  const trackMap = await loadEnrollmentTrackMap(supabase, activeRows, enrollmentTrackRows);
   return {
-    enrolledProgramIds: (data ?? []).map((row) => row.program_id),
+    enrolledProgramIds: activeRows.map((row) => row.program_id),
     programOwnerLabels: {},
+    programOwnerLabelsByTrackId: {},
     programTracksByProgramId: trackMap,
     accountType: nextAccountType,
     viewerProfiles: profile ? [profile as StudentDisplay] : [],
@@ -15849,18 +13531,22 @@ function useStudentPrograms(slug: string) {
 
 async function loadEnrollmentTrackMap(
   supabase: ReturnType<typeof createSupabaseBrowserClient>,
-  enrollments: Array<{ id: string; program_id: string }>,
+  enrollments: Array<{ id: string; program_id: string; program_track_id?: string | null }>,
+  providedEnrollmentTracks?: Array<{ enrollment_id: string; program_track_id: string }>,
 ) {
   const enrollmentIds = enrollments.map((enrollment) => enrollment.id);
   if (!enrollmentIds.length) {
     return {};
   }
 
-  const { data: enrollmentTracks } = await supabase
-    .from("enrollment_tracks")
-    .select("enrollment_id, program_track_id")
-    .in("enrollment_id", enrollmentIds);
-  const trackIds = Array.from(new Set((enrollmentTracks ?? []).map((row) => row.program_track_id).filter(Boolean))) as string[];
+  const enrollmentTracks = providedEnrollmentTracks ?? (await loadEnrollmentTrackRows(supabase, enrollments));
+  const legacyEnrollmentTracks = enrollments
+    .filter((enrollment) => Boolean(enrollment.program_track_id))
+    .map((enrollment) => ({ enrollment_id: enrollment.id, program_track_id: enrollment.program_track_id as string }));
+  const allEnrollmentTracks = [...enrollmentTracks, ...legacyEnrollmentTracks].filter(
+    (row, index, all) => all.findIndex((item) => item.enrollment_id === row.enrollment_id && item.program_track_id === row.program_track_id) === index,
+  );
+  const trackIds = Array.from(new Set(allEnrollmentTracks.map((row) => row.program_track_id).filter(Boolean))) as string[];
   if (!trackIds.length) {
     return {};
   }
@@ -15877,7 +13563,7 @@ async function loadEnrollmentTrackMap(
   const enrollmentProgramById = new Map(enrollments.map((enrollment) => [enrollment.id, enrollment.program_id]));
   const next: Record<string, ProgramTrack[]> = {};
 
-  for (const row of enrollmentTracks ?? []) {
+  for (const row of allEnrollmentTracks) {
     const programId = enrollmentProgramById.get(row.enrollment_id);
     const track = trackById.get(row.program_track_id);
     if (!programId || !track) {
@@ -15889,7 +13575,7 @@ async function loadEnrollmentTrackMap(
   return next;
 }
 
-type ApplicantApplicationRow = {
+export type ApplicantApplicationRow = {
   request: EnrollmentRequest;
   program: Program | null;
   track: ProgramTrack | null;
@@ -15898,7 +13584,7 @@ type ApplicantApplicationRow = {
   parent?: ParentDisplay | null;
 };
 
-function applicantRowFromRequest(request: RequestWithContext): ApplicantApplicationRow {
+export function applicantRowFromRequest(request: RequestWithContext): ApplicantApplicationRow {
   return {
     request,
     program: request.program ?? null,
@@ -16004,353 +13690,6 @@ function useApplicantApplications(slug: string) {
   return { rows: result.rows, loading, error: result.error ?? queryError, reload: refetch };
 }
 
-async function fetchParentChildren(
-  supabase: ReturnType<typeof createSupabaseBrowserClient>,
-  slug: string,
-  parentId: string,
-  knownMosqueId?: string,
-) {
-  let mosqueId = knownMosqueId ?? null;
-  if (!mosqueId) {
-    const { data: mosque } = await supabase.from("mosques").select("id").eq("slug", slug).maybeSingle();
-    mosqueId = mosque?.id ?? null;
-  }
-
-  if (!mosqueId) {
-    return { mosqueId: null, children: [] as StudentDisplay[] };
-  }
-
-  const { data: links } = await supabase
-    .from("parent_child_links")
-    .select("child_profile_id")
-    .eq("parent_profile_id", parentId)
-    .eq("mosque_id", mosqueId);
-
-  const childIds = (links ?? []).map((link) => link.child_profile_id);
-  if (childIds.length === 0) {
-    return { mosqueId, children: [] as StudentDisplay[] };
-  }
-
-  const { data: children } = await supabase
-    .from("profiles")
-    .select("id, full_name, email, phone_number, avatar_url, age, gender, date_of_birth, account_type")
-    .in("id", childIds);
-
-  return { mosqueId, children: (children ?? []) as StudentDisplay[] };
-}
-
-export function useStudentNotificationCounts(slug: string) {
-  const pathname = usePathname();
-  const cachedCounts = notificationCountsCache.get(slug);
-  const [announcementCount, setAnnouncementCount] = useState(cachedCounts?.announcementCount ?? 0);
-  const [noteCount, setNoteCount] = useState(cachedCounts?.noteCount ?? 0);
-  const [requestCount, setRequestCount] = useState(cachedCounts?.requestCount ?? 0);
-  const [actionRequired, setActionRequired] = useState(cachedCounts?.actionRequired ?? false);
-
-  useEffect(() => {
-    const supabase = createSupabaseBrowserClient();
-    let active = true;
-
-    function setCounts(nextCounts: NotificationCounts) {
-      notificationCountsCache.set(slug, nextCounts);
-      if (active) {
-        setAnnouncementCount(nextCounts.announcementCount);
-        setNoteCount(nextCounts.noteCount);
-        setRequestCount(nextCounts.requestCount);
-        setActionRequired(nextCounts.actionRequired);
-      }
-    }
-
-    async function load() {
-      if (!slug) {
-        setCounts({ announcementCount: 0, noteCount: 0, requestCount: 0, actionRequired: false });
-        return;
-      }
-
-      const { data: sessionData } = await supabase.auth.getSession();
-      const userId = sessionData.session?.user.id;
-      if (!userId) {
-        setCounts({ announcementCount: 0, noteCount: 0, requestCount: 0, actionRequired: false });
-        return;
-      }
-
-      const { data: mosque } = await supabase.from("mosques").select("id").eq("slug", slug).maybeSingle();
-      if (!mosque) {
-        setCounts({ announcementCount: 0, noteCount: 0, requestCount: 0, actionRequired: false });
-        return;
-      }
-
-      const { data: profile } = await supabase.from("profiles").select("account_type").eq("id", userId).maybeSingle();
-      const { children } = profile?.account_type === "parent" ? await fetchParentChildren(supabase, slug, userId, mosque.id) : { children: [] as StudentDisplay[] };
-      const targetStudentIds = profile?.account_type === "parent" ? children.map((child) => child.id) : [userId];
-      const [{ data: enrollments }, { data: requestRows }, { data: withdrawalRows }, { data: noteRows }] = await Promise.all([
-        targetStudentIds.length
-          ? supabase.from("enrollments").select("id, program_id, student_profile_id, program_track_id, created_at").in("student_profile_id", targetStudentIds)
-          : Promise.resolve({ data: [] as EnrollmentTrackSelection[] }),
-        profile?.account_type === "parent"
-          ? supabase
-              .from("enrollment_requests")
-              .select("*")
-              .eq("mosque_id", mosque.id)
-              .eq("parent_profile_id", userId)
-              .is("student_dismissed_at", null)
-          : supabase
-              .from("enrollment_requests")
-              .select("*")
-              .eq("mosque_id", mosque.id)
-              .eq("student_profile_id", userId)
-              .is("student_dismissed_at", null),
-        profile?.account_type === "parent"
-          ? supabase
-              .from("withdrawal_requests")
-              .select("id, status, reviewed_at, requested_at")
-              .eq("mosque_id", mosque.id)
-              .or(`parent_profile_id.eq.${userId},requested_by.eq.${userId}`)
-              .is("student_dismissed_at", null)
-          : supabase
-              .from("withdrawal_requests")
-              .select("id, status, reviewed_at, requested_at")
-              .eq("mosque_id", mosque.id)
-              .eq("student_profile_id", userId)
-              .is("student_dismissed_at", null),
-        targetStudentIds.length
-          ? supabase.from("program_student_notes").select("id, seen_at").in("student_profile_id", targetStudentIds)
-          : Promise.resolve({ data: [] as Array<{ id: string; seen_at: string | null }> }),
-      ]);
-
-      const { seen: seenRequestIds } = await fetchNotificationState(userId);
-      const nextRequestCount =
-        (requestRows ?? []).filter((request) => !seenRequestIds.has(studentRequestNotificationKey(request))).length +
-        (withdrawalRows ?? []).filter((request) => !seenRequestIds.has(studentWithdrawalNotificationKey(request))).length;
-      const nextNoteCount = (noteRows ?? []).filter((note) => !note.seen_at).length;
-      const nextActionRequired = (requestRows ?? []).some((request) => isApplicationActionRequired(getApplicationStatus(request as EnrollmentRequest)));
-
-      const enrollmentRows = (enrollments ?? []) as EnrollmentTrackSelection[];
-      const enrollmentIds = enrollmentRows.map((enrollment) => enrollment.id);
-      const { data: enrollmentTrackRows } = enrollmentIds.length
-        ? await supabase.from("enrollment_tracks").select("enrollment_id, program_track_id").in("enrollment_id", enrollmentIds)
-        : { data: [] as Array<{ enrollment_id: string; program_track_id: string }> };
-      const enrolledTrackIdsByProgramId = getEnrollmentTrackIdsByProgram(enrollmentRows, enrollmentTrackRows ?? []);
-      const enrolledJoinDatesByProgramId = getEnrollmentJoinDatesByProgram(enrollmentRows);
-      const programIds = enrollmentRows.map((row) => row.program_id);
-      if (programIds.length === 0) {
-        setCounts({ announcementCount: 0, noteCount: nextNoteCount, requestCount: nextRequestCount, actionRequired: nextActionRequired });
-        return;
-      }
-
-      const { data: announcements } = await supabase.from("program_announcements").select("id, program_id, target_program_track_ids, created_at").in("program_id", programIds);
-      const visibleAnnouncements = (announcements ?? []).filter((announcement) =>
-        isAnnouncementVisibleForEnrollment(
-          announcement as Pick<AnnouncementWithContext, "target_program_track_ids" | "created_at">,
-          enrolledTrackIdsByProgramId.get(announcement.program_id),
-          enrolledJoinDatesByProgramId.get(announcement.program_id),
-        ),
-      );
-      const announcementIds = visibleAnnouncements.map((item) => item.id);
-      if (announcementIds.length === 0) {
-        setCounts({ announcementCount: 0, noteCount: nextNoteCount, requestCount: nextRequestCount, actionRequired: nextActionRequired });
-        return;
-      }
-
-      const { data: receipts } = await supabase
-        .from("program_announcement_receipts")
-        .select("announcement_id, read_at, dismissed_at")
-        .eq("profile_id", userId)
-        .in("announcement_id", announcementIds);
-      const readOrDismissed = new Set((receipts ?? []).filter((receipt) => receipt.read_at || receipt.dismissed_at).map((receipt) => receipt.announcement_id));
-      setCounts({ announcementCount: announcementIds.filter((id) => !readOrDismissed.has(id)).length, noteCount: nextNoteCount, requestCount: nextRequestCount, actionRequired: nextActionRequired });
-    }
-
-    void load();
-    window.addEventListener("tareeqah:notifications-changed", load);
-    return () => {
-      active = false;
-      window.removeEventListener("tareeqah:notifications-changed", load);
-    };
-  }, [slug, pathname]);
-
-  return { announcementCount, noteCount, requestCount, totalCount: (announcementCount + noteCount + requestCount || actionRequired) ? Math.max(announcementCount + noteCount + requestCount, 1) : 0, actionRequired };
-}
-
-export function useTeacherNotificationCounts(slug: string) {
-  const pathname = usePathname();
-  const [requestCount, setRequestCount] = useState(0);
-  const [actionRequired, setActionRequired] = useState(false);
-
-  useEffect(() => {
-    const supabase = createSupabaseBrowserClient();
-    let active = true;
-
-    function reset() {
-      if (active) {
-        setRequestCount(0);
-        setActionRequired(false);
-      }
-    }
-
-    async function load() {
-      if (!slug) {
-        reset();
-        return;
-      }
-
-      const { data: sessionData } = await supabase.auth.getSession();
-      const userId = sessionData.session?.user.id;
-      if (!userId) {
-        reset();
-        return;
-      }
-
-      const { data: mosque } = await supabase.from("mosques").select("id").eq("slug", slug).maybeSingle();
-      if (!mosque) {
-        reset();
-        return;
-      }
-
-      const [{ data: mosquePrograms }, { data: assignments }] = await Promise.all([
-        supabase.from("programs").select("id, teacher_profile_id, director_profile_id").eq("mosque_id", mosque.id).eq("is_active", true),
-        supabase.from("program_teachers").select("program_id, role").eq("teacher_profile_id", userId),
-      ]);
-      const directorAssignmentIds = new Set((assignments ?? []).filter((assignment) => assignment.role === "director").map((assignment) => assignment.program_id));
-      const programIds = (mosquePrograms ?? [])
-        .filter((program) => (program.director_profile_id ?? program.teacher_profile_id) === userId || directorAssignmentIds.has(program.id))
-        .map((program) => program.id);
-
-      if (programIds.length === 0) {
-        reset();
-        return;
-      }
-
-      const [{ data: rows }, { data: withdrawalRows }, { data: instructorRows }, { data: instructorEventRows }, { data: trackSwitchRows }] = await Promise.all([
-        supabase
-          .from("enrollment_requests")
-          .select("id, status, requested_at, reviewed_at, admission_completed_at")
-          .in("program_id", programIds)
-          .is("teacher_dismissed_at", null),
-        supabase
-          .from("withdrawal_requests")
-          .select("id, status, reviewed_at, requested_at")
-          .in("program_id", programIds)
-          .eq("status", "pending")
-          .is("teacher_dismissed_at", null),
-        supabase
-          .from("program_teachers")
-          .select("id, teacher_profile_id")
-          .in("program_id", programIds)
-          .eq("role", "instructor")
-          .not("teacher_profile_id", "is", null),
-        supabase
-          .from("program_instructor_events")
-          .select("id, assignment_id, teacher_profile_id, event_type")
-          .in("program_id", programIds),
-        supabase.from("program_track_switch_requests").select("id, status, requested_at").in("program_id", programIds),
-      ]);
-      const { seen: seenIds, dismissed: dismissedIds } = await fetchNotificationState(userId);
-      if (active) {
-        const unseenApplications = (rows ?? []).filter((row) => teacherRequestShouldBeUnread(row, seenIds)).length;
-        const joinedAssignmentIdsWithEvents = new Set((instructorEventRows ?? []).filter((event) => event.event_type === "joined" && event.assignment_id).map((event) => event.assignment_id as string));
-        const eventInstructorNotifications: Array<Pick<InstructorLifecycleNotification, "id" | "event_type" | "teacher_profile_id">> = (instructorEventRows ?? []).map((event) => ({
-          id: event.id,
-          event_type: event.event_type === "resigned" ? "resigned" : "joined",
-          teacher_profile_id: event.teacher_profile_id,
-        }));
-        const fallbackInstructorNotifications = (instructorRows ?? [])
-          .filter((row) => !joinedAssignmentIdsWithEvents.has(row.id))
-          .map((row) => ({ id: row.id, event_type: "joined" as const, teacher_profile_id: row.teacher_profile_id }));
-        const unseenInstructors = [...eventInstructorNotifications, ...fallbackInstructorNotifications]
-          .filter((row) => !dismissedIds.has(teacherInstructorNotificationKey(row)))
-          .filter((row) => !seenIds.has(teacherInstructorNotificationKey(row))).length;
-        const unseenWithdrawals = (withdrawalRows ?? []).filter((row) => !seenIds.has(studentWithdrawalNotificationKey(row))).length;
-        const unseenTrackSwitches = (trackSwitchRows ?? []).filter((row) => !seenIds.has(`track-switch:${row.id}:${row.status}:${row.requested_at}`)).length;
-        setRequestCount(unseenApplications + unseenInstructors + unseenWithdrawals + unseenTrackSwitches);
-        const hasPendingApplication = (rows ?? []).some((row) => row.status === "pending");
-        const hasPendingSwitch = (trackSwitchRows ?? []).some((row) => row.status === "pending");
-        setActionRequired(hasPendingApplication || Boolean((withdrawalRows ?? []).length) || hasPendingSwitch);
-      }
-    }
-
-    void load();
-    window.addEventListener("tareeqah:notifications-changed", load);
-    const {
-      data: { subscription },
-    } = supabase.auth.onAuthStateChange(() => {
-      void load();
-    });
-
-    return () => {
-      active = false;
-      window.removeEventListener("tareeqah:notifications-changed", load);
-      subscription.unsubscribe();
-    };
-  }, [slug, pathname]);
-
-  return { requestCount, actionRequired, totalCount: (requestCount || actionRequired) ? Math.max(requestCount, 1) : 0 };
-}
-
-function FloatingInboxTabs({
-  tabs,
-  value,
-  onChange,
-}: {
-  tabs: Array<{ id: string; label: string; badge?: number; actionRequired?: boolean }>;
-  value: string;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <div className="grid grid-flow-col auto-cols-fr border-b border-[#D6DCE0] bg-[var(--workspace)] px-3">
-        {tabs.map((tab) => {
-          const active = value === tab.id;
-          return (
-            <button
-              key={tab.id}
-              type="button"
-              onClick={() => onChange(tab.id)}
-              className={cn(
-                "relative flex min-h-14 min-w-0 items-center justify-center px-1 text-center text-[17px] font-semibold transition",
-                active ? "border-b-[3px] border-[#2F8FB3] text-[#2F8FB3]" : "text-[#8A949B]",
-              )}
-            >
-              <span className="inline-flex items-center justify-center gap-1.5 whitespace-nowrap text-center">
-                {tab.label}
-                {!tab.badge && tab.actionRequired ? <span className="h-2 w-2 shrink-0 rounded-full bg-[#2F8FB3]" /> : null}
-              </span>
-              {tab.badge ? <NotificationBadge count={tab.badge} className="right-1 top-2" /> : null}
-            </button>
-          );
-        })}
-    </div>
-  );
-}
-
-function NotificationBadge({ count, actionRequired, className = "" }: { count?: number; actionRequired?: boolean; className?: string }) {
-  if (actionRequired) {
-    return <span className={cn("absolute h-3 w-3 rounded-full bg-[#2F8FB3] ring-2 ring-white", className)} />;
-  }
-  if (count) {
-    return (
-      <span className={cn("absolute flex h-5 min-w-5 items-center justify-center rounded-full bg-[#E25241] px-1 text-[11px] font-semibold leading-none text-white shadow-[0_4px_10px_rgba(226,82,65,0.35)] ring-2 ring-white", className)}>
-        {count > 9 ? "9+" : count}
-      </span>
-    );
-  }
-  return null;
-}
-
-function InboxSection({ title, count, children, action }: { title: string; count: number; children: ReactNode; action?: ReactNode }) {
-  return (
-    <section>
-      <div className="mb-2 flex min-h-10 items-center justify-between px-1">
-        <h2 className="text-[15px] font-semibold text-[#26323A]">{title}</h2>
-        <div className="flex items-center gap-2">
-          <span className="min-w-8 rounded-full bg-[#E8F7F2] px-2.5 py-1 text-center text-xs font-semibold text-[#17624F]">{count}</span>
-          {action}
-        </div>
-      </div>
-      <div className="space-y-3">{children}</div>
-    </section>
-  );
-}
-
 function TeacherRequestSection({ title, count, children, action }: { title: string; count: number; children: ReactNode; action?: ReactNode }) {
   return (
     <section>
@@ -16363,14 +13702,6 @@ function TeacherRequestSection({ title, count, children, action }: { title: stri
       </div>
       <div className="space-y-3">{children}</div>
     </section>
-  );
-}
-
-function ClearAllButton({ onClick }: { onClick: () => void }) {
-  return (
-    <button type="button" onClick={onClick} className="px-1.5 py-1 text-xs font-semibold text-[#6B747B] underline-offset-2 transition-colors hover:text-[#26323A] hover:underline">
-      Clear all
-    </button>
   );
 }
 
@@ -16564,67 +13895,6 @@ function TeacherInboxMessageDrawer({
   );
 }
 
-function buildAnnouncementThreads(announcements: AnnouncementWithContext[], enrolledPrograms: Program[] = []) {
-  const byProgram = new Map<string, AnnouncementWithContext[]>();
-  for (const announcement of announcements) {
-    byProgram.set(announcement.program_id, [...(byProgram.get(announcement.program_id) ?? []), announcement]);
-  }
-
-  const programIds = Array.from(new Set([...enrolledPrograms.map((program) => program.id), ...Array.from(byProgram.keys())]));
-
-  return programIds
-    .map((programId) => {
-      const rows = byProgram.get(programId) ?? [];
-      const sorted = rows.slice().sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
-      return {
-        programId,
-        program: sorted[0]?.program ?? enrolledPrograms.find((program) => program.id === programId) ?? null,
-        latest: sorted[0],
-        unreadCount: sorted.filter((announcement) => !announcement.receipt?.read_at).length,
-      };
-    })
-    .sort((a, b) => Date.parse(b.latest?.created_at ?? "0") - Date.parse(a.latest?.created_at ?? "0"));
-}
-
-function buildNoteThreads(notes: StudentNoteWithContext[]) {
-  const byThread = new Map<string, StudentNoteWithContext[]>();
-  for (const note of notes) {
-    const key = `${note.program_id}:${note.student_profile_id}`;
-    byThread.set(key, [...(byThread.get(key) ?? []), note]);
-  }
-
-  return Array.from(byThread.entries())
-    .map(([_key, rows]) => {
-      const sorted = rows.slice().sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
-      const latest = sorted[0];
-      return {
-        programId: latest?.program_id ?? "",
-        studentId: latest?.student_profile_id ?? "",
-        program: latest?.program ?? null,
-        student: latest?.student ?? null,
-        latest,
-        unreadCount: sorted.filter((note) => !note.seen_at).length,
-      };
-    })
-    .filter((thread): thread is { programId: string; studentId: string; program: Program | null; student: StudentDisplay | null; latest: StudentNoteWithContext; unreadCount: number } => Boolean(thread.latest))
-    .sort((a, b) => Date.parse(b.latest.created_at) - Date.parse(a.latest.created_at));
-}
-
-function InboxLoadingPanel({ label }: { label: string }) {
-  return <GenericLoadingState label={label} />;
-}
-
-function GenericLoadingState({ label = "Loading" }: { label?: string }) {
-  return (
-    <div className="flex min-h-64 items-center justify-center bg-[var(--workspace)] px-6 py-10" aria-label={label}>
-      <div className="flex flex-col items-center gap-3 text-center">
-        <span className="h-11 w-11 animate-spin rounded-full border-4 border-[#DDEFF4] border-t-[#2F8FB3]" aria-hidden />
-        <span className="text-sm font-semibold text-[#52616A]">Loading</span>
-      </div>
-    </div>
-  );
-}
-
 function StudentAnnouncementStream({ announcements }: { announcements: AnnouncementWithContext[] }) {
   return (
     <section className="overflow-hidden rounded-2xl border border-[#D6DCE0] bg-white shadow-[0_8px_22px_rgba(38,50,58,0.06)]">
@@ -16639,17 +13909,19 @@ function StudentAnnouncementStream({ announcements }: { announcements: Announcem
   );
 }
 
-function StudentAnnouncementCard({ announcement }: { announcement: AnnouncementWithContext }) {
+export function StudentAnnouncementCard({ announcement }: { announcement: AnnouncementWithContext }) {
+  const attachments = normalizeMessageAttachments(announcement.attachments);
   return (
     <article className="flex gap-3">
       <Avatar src={announcement.author?.avatar_url ?? null} name={announcement.author?.full_name ?? "Teacher"} />
       <div className="min-w-0 flex-1 rounded-2xl rounded-tl-sm border border-[#E1E8EC] bg-[#FAFBFC] p-3 shadow-[0_6px_18px_rgba(38,50,58,0.05)]">
         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
           <h3 className="text-sm font-semibold text-[#26323A]">{announcement.author?.full_name ?? "Teacher"}</h3>
-          <span className="text-xs text-[#6B747B]">{timeAgo(announcement.created_at)}</span>
+          <span className="text-xs text-[#6B747B]">{formatAnnouncementTimestamp(announcement.created_at)}</span>
         </div>
         <p className="mt-0.5 text-xs font-medium text-[#2F8FB3]">{announcement.program?.title ?? "Class announcement"}</p>
-        <p className="mt-2 text-sm leading-6 text-[#26323A]">{announcement.message}</p>
+        {announcement.message.trim() ? <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-[#26323A]">{announcement.message}</p> : null}
+        <MessageAttachmentList attachments={attachments} />
       </div>
     </article>
   );
@@ -16667,10 +13939,10 @@ function ProgramAnnouncementFeed({
   viewer: "teacher" | "student";
 }) {
   return (
-    <section className="space-y-4 bg-white px-4 pb-28 pt-4 text-[#26323A]">
-      {program ? (
+    <section className={cn("space-y-4 text-[#26323A]", viewer === "student" ? "bg-white px-4 pb-28 pt-4" : "")}>
+      {program && viewer === "student" ? (
         <div className="px-1">
-          <p className="text-xs font-semibold uppercase tracking-wide text-[#6B747B]">{viewer === "teacher" ? "Announcement feed" : "Class announcements"}</p>
+          <p className="text-xs font-semibold uppercase tracking-wide text-[#6B747B]">Class announcements</p>
           <h2 className="mt-1 text-2xl font-semibold leading-8">{program.title}</h2>
           <p className="mt-1 text-sm text-[#6B747B]">{scheduleSummary(program.schedule, program.schedule_notes).full}</p>
         </div>
@@ -16765,12 +14037,37 @@ function AnnouncementTrackTargetControls({
   );
 }
 
-function StudentNoteBubble({ note, viewer }: { note: StudentNoteWithContext; viewer: "teacher" | "recipient" }) {
+export function StudentNoteBubble({
+  note,
+  viewer,
+  deleting = false,
+  onDelete,
+}: {
+  note: StudentNoteWithContext;
+  viewer: "teacher" | "recipient";
+  deleting?: boolean;
+  onDelete?: (note: StudentNoteWithContext) => void;
+}) {
   const authorName = note.author?.full_name?.trim() || "Teacher";
   const seen = Boolean(note.seen_at);
+  const attachments = normalizeMessageAttachments(note.attachments);
   return (
     <article className="flex gap-3">
-      <Avatar src={note.author?.avatar_url ?? null} name={authorName} />
+      <div className="flex shrink-0 flex-col items-center gap-2">
+        <Avatar src={note.author?.avatar_url ?? null} name={authorName} />
+        {viewer === "teacher" && onDelete ? (
+          <button
+            type="button"
+            onClick={() => onDelete(note)}
+            disabled={deleting}
+            className="flex h-8 w-8 items-center justify-center rounded-full bg-[#FCE8E4] text-[#C83F31] transition hover:bg-[#F7D4CE] disabled:opacity-50"
+            aria-label="Delete note"
+            title="Delete note"
+          >
+            {deleting ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-[#F3B8AE] border-t-[#C83F31]" aria-hidden /> : <TrashIcon />}
+          </button>
+        ) : null}
+      </div>
       <div className="min-w-0 flex-1 rounded-2xl rounded-tl-sm border border-[#E1E8EC] bg-white p-3 shadow-[0_6px_18px_rgba(38,50,58,0.05)]">
         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
           <h3 className="text-sm font-semibold text-[#26323A]">{authorName}</h3>
@@ -16780,7 +14077,8 @@ function StudentNoteBubble({ note, viewer }: { note: StudentNoteWithContext; vie
           <span className="rounded-full bg-[#F0F3F5] px-2 py-0.5 text-[11px] font-semibold text-[#52616A]">{note.program?.title ?? "Class"}</span>
           <span className="rounded-full bg-[#EAF4F7] px-2 py-0.5 text-[11px] font-semibold text-[#2F6F83]">Subject: {note.student?.full_name ?? "Student"}</span>
         </div>
-        <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-[#26323A]">{note.message}</p>
+        {note.message.trim() ? <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-[#26323A]">{note.message}</p> : null}
+        <MessageAttachmentList attachments={attachments} />
         <div className="mt-2 flex items-center justify-between gap-2 text-xs text-[#6B747B]">
           <span>{seen ? `Seen ${note.seen_at ? timeAgo(note.seen_at) : ""}` : "Not seen"}</span>
           {viewer === "recipient" && !seen ? <span className="font-semibold text-[#2F8FB3]">Marked seen</span> : null}
@@ -16788,232 +14086,6 @@ function StudentNoteBubble({ note, viewer }: { note: StudentNoteWithContext; vie
       </div>
     </article>
   );
-}
-
-function StudentRequestCard({
-  request,
-  viewHref,
-  onDismiss,
-  onViewApplication,
-  viewClassHref,
-}: {
-  request: RequestWithContext;
-  viewHref?: string;
-  onDismiss?: () => void;
-  onViewApplication?: () => void;
-  viewClassHref?: string;
-}) {
-  const statusLabel = studentRequestStatusLabel(request);
-  const statusTime = request.reviewed_at ?? request.requested_at;
-  const childName = request.parent_profile_id ? request.student?.full_name?.trim() : null;
-  const needsConfirmation = Boolean(onViewApplication);
-  const reviewedMessage = request.review_note ?? request.decision_note;
-  const message =
-    request.status === "pending"
-      ? null
-      : reviewedMessage ??
-        (needsConfirmation
-          ? "Your teacher approved this request. Complete registration to activate the class."
-          : request.status === "approved"
-            ? request.payment_bypassed
-              ? "You have been admitted."
-              : "Your request was approved."
-            : request.status === "waitlisted"
-              ? "You have been waitlisted and will be notified once a spot is available."
-              : request.status === "cancelled"
-                ? `You were removed from ${request.program?.title ?? "this class"}.`
-                : null);
-  return (
-    <article className={cn("rounded-xl border border-[#E1E8EC] bg-white p-3", (needsConfirmation || request.payment_bypassed) && "border-[#CFE8D6] bg-[#FBFEFC]", request.status === "waitlisted" && "border-[#FFE3A3] bg-[#FFFDF7]")}>
-      <div className="flex items-start gap-3">
-        <DefaultProfileIcon />
-        <div className="min-w-0 flex-1">
-          <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0">
-              <h3 className="text-sm font-semibold leading-5 text-[#26323A]">{request.program?.title ?? "Class request"}</h3>
-              <p className="mt-0.5 text-xs text-[#6B747B]">
-                {childName ? `${childName} • ` : ""}
-                {statusLabel} • {timeAgo(statusTime)}
-              </p>
-            </div>
-            {onDismiss ? (
-              <button type="button" onClick={onDismiss} className="-mr-1 -mt-1 p-1 text-[#C83F31] transition-colors hover:text-[#9D2E23]" aria-label="Clear notification">
-                <XIcon />
-              </button>
-            ) : null}
-          </div>
-          {message ? <p className="mt-2 text-sm leading-5 text-[#26323A]">{message}</p> : null}
-          {onViewApplication ? (
-            <button
-              type="button"
-              onClick={onViewApplication}
-              className="mt-3 inline-flex min-h-10 w-full items-center justify-center rounded-[6px] bg-[#2E6E52] px-4 text-sm font-semibold !text-white shadow-[0_8px_18px_rgba(46,110,82,0.22)] transition-colors hover:bg-[#265D45] md:w-auto md:px-10"
-            >
-              View Application
-            </button>
-          ) : viewClassHref ? (
-            <Link
-              href={viewClassHref}
-              className="mt-3 inline-flex min-h-10 w-full items-center justify-center rounded-[6px] bg-[#17624F] px-4 text-sm font-semibold !text-white transition-colors hover:bg-[#124F40]"
-            >
-              View Class
-            </Link>
-          ) : null}
-        </div>
-        {viewHref ? <IconActionButton label="View" tone="info" href={viewHref} /> : null}
-      </div>
-    </article>
-  );
-}
-
-function StudentWithdrawalStatusCard({ request, onDismiss, onOpen }: { request: WithdrawalRequestWithContext; onDismiss?: () => void; onOpen?: () => void }) {
-  const statusTime = request.reviewed_at ?? request.requested_at;
-  const studentName = request.student?.full_name?.trim();
-  const statusLabel = request.status === "approved" ? "Withdrawal approved" : request.status === "rejected" ? "Withdrawal rejected" : "Withdrawal pending";
-  const message =
-    request.decision_note ??
-    (request.status === "approved"
-      ? "The student was removed from this class immediately."
-      : request.status === "rejected"
-        ? "The student remains enrolled in this class."
-        : "The teacher will review this withdrawal request.");
-
-  return (
-    <article className={cn("rounded-xl border border-[#E1E8EC] bg-white p-3", request.status === "approved" && "border-[#CFE8D6] bg-[#FBFEFC]", request.status === "rejected" && "border-[#F2D5CF] bg-[#FFFDFC]")}>
-      <div className="flex items-start gap-3">
-        <DefaultProfileIcon />
-        <div className="min-w-0 flex-1">
-          <div className="flex items-start justify-between gap-2">
-            <div className="min-w-0">
-              <h3 className="text-sm font-semibold leading-5 text-[#26323A]">{request.program?.title ?? "Withdrawal request"}</h3>
-              <p className="mt-0.5 text-xs text-[#6B747B]">
-                {studentName ? `${studentName} • ` : ""}
-                {statusLabel} • {timeAgo(statusTime)}
-              </p>
-            </div>
-            {onDismiss ? (
-              <button type="button" onClick={onDismiss} className="-mr-1 -mt-1 p-1 text-[#C83F31] transition-colors hover:text-[#9D2E23]" aria-label="Clear notification">
-                <XIcon />
-              </button>
-            ) : null}
-          </div>
-          <p className="mt-2 text-sm leading-5 text-[#26323A]">{message}</p>
-          {request.reason ? <p className="mt-2 text-xs leading-5 text-[#6B747B]">Reason: {request.reason}</p> : null}
-          {onOpen ? (
-            <button
-              type="button"
-              onClick={onOpen}
-              className="mt-3 inline-flex min-h-9 items-center justify-center rounded-[6px] border border-[#CBD5D9] bg-white px-4 text-xs font-semibold text-[#26323A] transition-colors hover:bg-[#F5F8F9]"
-            >
-              View
-            </button>
-          ) : null}
-        </div>
-      </div>
-    </article>
-  );
-}
-
-function hasIncompletePaidApproval(request: RequestWithContext) {
-  return request.status === "approved" && Boolean(request.program?.is_paid) && !request.payment_bypassed;
-}
-
-function ProtectedPaidApplicationClearModal({
-  count,
-  mode,
-  onCancel,
-  onConfirm,
-}: {
-  count: number;
-  mode: "single" | "all";
-  onCancel: () => void;
-  onConfirm: () => void;
-}) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  useModalFocusTrap(containerRef, true, onCancel);
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#26323A]/35 px-5 backdrop-blur-sm">
-      <div ref={containerRef} role="dialog" aria-modal="true" tabIndex={-1} className="w-full max-w-sm rounded-[28px] bg-white p-6 text-[#26323A] shadow-[0_24px_60px_rgba(38,50,58,0.22)] outline-none">
-        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-[#FFF3D6] text-[#9A6400]">
-          <span className="text-2xl font-semibold">!</span>
-        </div>
-        <h2 className="mt-4 text-xl font-semibold">Uncompleted registration</h2>
-        <p className="mt-2 text-sm leading-6 text-[#6B747B]">
-          {mode === "all" && count > 1
-            ? `${count} approved paid applications still need checkout.`
-            : "This approved paid application still needs checkout."} Clearing the message removes the checkout entry from your inbox, so you will not be able to complete it from here.
-        </p>
-        <div className="mt-6 flex flex-col gap-2">
-          <button type="button" onClick={onCancel} className="min-h-11 rounded-[6px] bg-[#17624F] px-4 text-sm font-semibold text-white">
-            Keep message
-          </button>
-          <button type="button" onClick={onConfirm} className="min-h-11 rounded-[6px] px-4 text-sm font-semibold text-[#A34B16]">
-            Clear anyway
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function PaymentResultModal({ status, slug, onClose }: { status: "success" | "cancelled"; slug: string; onClose: () => void }) {
-  const isSuccess = status === "success";
-  const containerRef = useRef<HTMLDivElement>(null);
-  useModalFocusTrap(containerRef, true, onClose);
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#26323A]/35 px-5 backdrop-blur-sm">
-      <div ref={containerRef} role="dialog" aria-modal="true" tabIndex={-1} className="w-full max-w-sm rounded-[28px] bg-white p-6 text-center shadow-[0_24px_60px_rgba(38,50,58,0.22)] outline-none">
-        <div
-          className={cn(
-            "mx-auto flex h-16 w-16 items-center justify-center rounded-full",
-            isSuccess ? "bg-[#EAF8EF] text-[#2E6E52]" : "bg-[#FCE8E4] text-[#C83F31]",
-          )}
-        >
-          {isSuccess ? <CheckIcon /> : <XIcon />}
-        </div>
-        <h2 className="mt-4 text-xl font-semibold text-[#26323A]">{isSuccess ? "Registration complete" : "Payment cancelled"}</h2>
-        <p className="mt-2 text-sm leading-6 text-[#6B747B]">
-          {isSuccess ? "Your payment went through. Your class should now appear in Classes." : "No payment was completed. You can return here when you are ready."}
-        </p>
-        <div className="mt-6 flex flex-col gap-2">
-          {isSuccess ? (
-            <TransitionLink href={`/m/${slug}/portal/classes`} label="Classes" className="inline-flex min-h-11 items-center justify-center rounded-[6px] bg-[#2E6E52] px-4 text-sm font-semibold !text-white no-underline">
-              Go to Classes
-            </TransitionLink>
-          ) : null}
-          <button type="button" onClick={onClose} className="min-h-11 rounded-[6px] px-4 text-sm font-semibold text-[#6B747B]">
-            {isSuccess ? "Stay in inbox" : "Close"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function PaymentConfirmingModal() {
-  const containerRef = useRef<HTMLDivElement>(null);
-  useModalFocusTrap(containerRef, true);
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#26323A]/35 px-5 backdrop-blur-sm">
-      <div ref={containerRef} role="dialog" aria-modal="true" tabIndex={-1} className="w-full max-w-sm rounded-[28px] bg-white p-6 text-center shadow-[0_24px_60px_rgba(38,50,58,0.22)] outline-none">
-        <div className="mx-auto h-10 w-10 animate-spin rounded-full border-4 border-[#E7F3F8] border-t-[#2F8FB3]" />
-        <h2 className="mt-4 text-xl font-semibold text-[#26323A]">Finishing registration</h2>
-        <p className="mt-2 text-sm leading-6 text-[#6B747B]">Payment succeeded. We are adding the class to your account.</p>
-      </div>
-    </div>
-  );
-}
-
-function studentRequestStatusLabel(request: RequestWithContext) {
-  if (request.status === "cancelled" && request.reviewed_by) {
-    return "Removed";
-  }
-
-  const status = getApplicationStatus(request);
-  const paymentStatus = getApplicationPaymentStatus(request, request.program, null);
-  return getApplicationRowStatusLabel(status, paymentStatus);
 }
 
 function DefaultProfileIcon({ className = "h-6 w-6", compact = false }: { className?: string; compact?: boolean } = {}) {
@@ -17035,75 +14107,81 @@ function DefaultProfileIcon({ className = "h-6 w-6", compact = false }: { classN
   );
 }
 
-function IconActionButton({
-  label,
-  tone,
-  onClick,
-  href,
-  disabled = false,
-}: {
-  label: string;
-  tone: "success" | "danger" | "info";
-  onClick?: () => void;
-  href?: string;
-  disabled?: boolean;
-}) {
-  const className =
-    tone === "success"
-      ? "border-[#2E6E52] bg-[#2E6E52] text-white shadow-[0_6px_14px_rgba(46,110,82,0.18)] hover:bg-[#265D45]"
-      : tone === "danger"
-        ? "border-[#C83F31] bg-[#C83F31] text-white shadow-[0_6px_14px_rgba(200,63,49,0.18)] hover:bg-[#B6372C]"
-        : "border-[#BFDDEC] bg-[#E7F3F8] text-[#257B9C] hover:bg-[#DDEEF6]";
-  if (href) {
-    return (
-      <Link href={href} className={cn("inline-flex min-h-9 items-center justify-center rounded-[5px] border px-3 text-xs font-semibold transition-colors", className)}>
-        {label}
-      </Link>
-    );
-  }
-  return (
-    <button type="button" onClick={onClick} disabled={disabled} className={cn("inline-flex min-h-9 items-center justify-center rounded-[5px] border px-3 text-xs font-semibold transition-colors disabled:opacity-60", className)}>
-      {label}
-    </button>
-  );
-}
-
 function TeacherAnnouncementBubble({ announcement, readers = [], showSeenDetails = false }: { announcement: AnnouncementWithContext; readers?: Profile[]; showSeenDetails?: boolean }) {
   const authorName = announcement.author?.full_name?.trim() || "You";
   const [readersOpen, setReadersOpen] = useState(false);
+  const attachments = normalizeMessageAttachments(announcement.attachments);
 
   return (
-    <article className="flex gap-3">
-      <Avatar src={announcement.author?.avatar_url ?? null} name={authorName} />
-      <div className="min-w-0 flex-1 rounded-2xl rounded-tl-sm border border-[#E1E8EC] bg-white p-3 shadow-[0_6px_18px_rgba(38,50,58,0.05)]">
+    <article className="flex gap-2.5">
+      {announcement.author?.avatar_url ? (
+        <Image src={announcement.author.avatar_url} alt="" width={30} height={30} className="mt-1 h-8 w-8 shrink-0 rounded-full object-cover" />
+      ) : (
+        <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#E7F3F8] text-[11px] font-semibold text-[#2F8FB3]">
+          {initials(authorName)}
+        </div>
+      )}
+      <div className="min-w-0 flex-1 rounded-[20px] rounded-tl-md border border-[#E1E8EC] bg-[#FBFCFD] px-3.5 py-3 shadow-[0_6px_16px_rgba(38,50,58,0.04)]">
         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
           <h3 className="text-sm font-semibold text-[#26323A]">{authorName}</h3>
-          <span className="text-xs text-[#6B747B]">{timeAgo(announcement.created_at)}</span>
+          <span className="text-xs text-[#6B747B]">{formatAnnouncementTimestamp(announcement.created_at)}</span>
         </div>
-        <p className="mt-1 text-xs font-medium text-[#2F8FB3]">{announcement.program?.title ?? "Class announcement"}</p>
-        <p className="mt-2 text-sm leading-6 text-[#26323A]">{announcement.message}</p>
+        {announcement.message.trim() ? <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-[#26323A]">{announcement.message}</p> : null}
+        <MessageAttachmentList attachments={attachments} />
         {showSeenDetails ? (
-          <div className="mt-3 flex items-center justify-between gap-2 text-xs text-[#6B747B]">
-            <span>Seen by {readers.length}</span>
-          </div>
-        ) : null}
-        {showSeenDetails && readersOpen ? (
-          <div className="mt-2 rounded-xl bg-[#F7FAFB] px-3 py-2 text-xs text-[#52616A]">
-            {readers.map((reader) => reader.full_name || reader.email || "Reader").join(", ")}
+          <div className="mt-3 flex justify-end">
+            <button
+              type="button"
+              onClick={() => setReadersOpen(true)}
+              className="text-[11px] font-semibold text-[#2F8FB3] underline-offset-2 transition-colors hover:text-[#246F8D] hover:underline"
+            >
+              Seen by {readers.length}
+            </button>
           </div>
         ) : null}
       </div>
-      {showSeenDetails && readers.length ? (
-        <button
-          type="button"
-          onClick={() => setReadersOpen((value) => !value)}
-          className={cn("mt-10 flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#EEF6F7] text-[#2F8FB3] transition hover:bg-[#DCEFF4]", readersOpen && "bg-[#DCEFF4]")}
-          aria-label="Show announcement readers"
-        >
-          <DefaultProfileIcon className="h-4 w-4" compact />
-        </button>
-      ) : null}
+      {showSeenDetails && readersOpen && typeof document !== "undefined"
+        ? createPortal(<AnnouncementReadersDrawer readers={readers} onClose={() => setReadersOpen(false)} />, document.body)
+        : null}
     </article>
+  );
+}
+
+function AnnouncementReadersDrawer({ readers, onClose }: { readers: Profile[]; onClose: () => void }) {
+  const drawerRef = useRef<HTMLDivElement>(null);
+  useModalFocusTrap(drawerRef, true, onClose);
+  useHideMobileChromeWhileMounted();
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end bg-[#26323A]/35 backdrop-blur-sm">
+      <div ref={drawerRef} role="dialog" aria-modal="true" tabIndex={-1} className="w-full rounded-t-[28px] bg-white p-5 text-[#26323A] shadow-[0_-18px_50px_rgba(38,50,58,0.22)] outline-none">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="text-lg font-semibold">Seen by {readers.length}</h2>
+          <button type="button" onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-full bg-[#EEF3F5] text-[#52616A]" aria-label="Close seen list">
+            <XIcon />
+          </button>
+        </div>
+        <div className="mt-4 max-h-[45vh] space-y-2 overflow-y-auto">
+          {readers.length ? (
+            readers.map((reader) => {
+              const name = reader.full_name || reader.email || "Reader";
+              return (
+                <div key={reader.id} className="flex items-center gap-3 rounded-[14px] bg-[#F7FAFB] px-3 py-2">
+                  {reader.avatar_url ? (
+                    <Image src={reader.avatar_url} alt="" width={28} height={28} className="h-7 w-7 rounded-full object-cover" />
+                  ) : (
+                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#E7F3F8] text-[10px] font-semibold text-[#2F8FB3]">{initials(name)}</span>
+                  )}
+                  <span className="min-w-0 truncate text-sm font-semibold">{name}</span>
+                </div>
+              );
+            })
+          ) : (
+            <p className="rounded-[14px] bg-[#F7FAFB] px-3 py-3 text-sm text-[#6B747B]">No one has seen this announcement yet.</p>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -17435,137 +14513,6 @@ function WithdrawalRequestCard({
         </div>
       ) : null}
     </article>
-  );
-}
-
-function ApplicationDecisionModal({
-  target,
-  busy = false,
-  onClose,
-  onSubmit,
-}: {
-  target: { request: RequestWithContext; action: "approved" | "waitlisted" | "rejected" };
-  busy?: boolean;
-  onClose: () => void;
-  onSubmit: (options: { paymentType?: PaymentType; priceMonthlyCents?: number | null; priceAnnualCents?: number | null; paymentBypassed?: boolean; paymentBypassedExternal?: boolean; note?: string | null }) => void;
-}) {
-  const requestedPaymentType = target.request.payment_type === "annual" ? "annual" : "monthly";
-  const programOptions = target.request.program ? programPaymentOptions(target.request.program) : [];
-  const allowedPaymentTypes = programOptions.length ? programOptions.map((option) => option.type) : (["monthly"] as PaymentType[]);
-  const billingMode = allowedPaymentTypes.includes(requestedPaymentType) ? requestedPaymentType : allowedPaymentTypes[0] ?? "monthly";
-  const defaultPriceCents = requestEffectivePriceCents(billingMode, target.request);
-  const defaultPrice = (defaultPriceCents / 100).toFixed(2).replace(/\.00$/, "");
-  const [price, setPrice] = useState(defaultPrice === "0" ? "" : defaultPrice);
-  const [bypassPayment, setBypassPayment] = useState(false);
-  const [bypassExternal, setBypassExternal] = useState(false);
-  const studentName = target.request.student?.full_name?.trim() || "this student";
-  const title = target.action === "approved" ? "Accept application" : target.action === "waitlisted" ? "Waitlist application" : "Reject application";
-  const defaultNote =
-    target.action === "waitlisted"
-      ? "You have been waitlisted. We will notify you once a spot becomes available."
-      : target.action === "rejected"
-        ? "Your application was not accepted at this time."
-        : bypassPayment
-          ? "Your application was accepted and you have been admitted. Payment By-passed."
-          : "Your application was accepted. Complete checkout to activate enrollment.";
-  const [note, setNote] = useState(defaultNote);
-
-  function submit() {
-    const numericPrice = Math.max(0, Math.round(Number(price || "0") * 100));
-    onSubmit({
-      paymentBypassed: target.action === "approved" ? bypassPayment : false,
-      paymentBypassedExternal: target.action === "approved" && bypassPayment ? bypassExternal : false,
-      paymentType: billingMode,
-      priceMonthlyCents: target.action === "approved" && !bypassPayment && billingMode === "monthly" ? numericPrice : null,
-      priceAnnualCents: target.action === "approved" && !bypassPayment && billingMode === "annual" ? numericPrice : null,
-      note: note.trim() || defaultNote,
-    });
-  }
-
-  const containerRef = useRef<HTMLDivElement>(null);
-  useModalFocusTrap(containerRef, true, onClose);
-  return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#26323A]/35 px-5 backdrop-blur-sm">
-      <div ref={containerRef} role="dialog" aria-modal="true" tabIndex={-1} className="w-full max-w-sm rounded-[28px] bg-white p-5 text-[#26323A] shadow-[0_24px_70px_rgba(38,50,58,0.22)] outline-none">
-        <p className="text-xs font-semibold uppercase tracking-wide text-[#6B747B]">{target.request.program?.title ?? "Class application"}</p>
-        <h2 className="mt-1 text-xl font-semibold">{title}</h2>
-        <p className="mt-2 text-sm leading-6 text-[#6B747B]">{studentName}</p>
-
-        {target.action === "approved" ? (
-          <div className="mt-5 space-y-3">
-            <label className="flex items-center gap-2 text-sm font-semibold text-[#26323A]">
-              <input
-                type="checkbox"
-                checked={bypassPayment}
-                onChange={(event) => {
-                  setBypassPayment(event.target.checked);
-                  if (!event.target.checked) {
-                    setBypassExternal(false);
-                  }
-                }}
-              />
-              Bypass payment process
-            </label>
-            {bypassPayment ? (
-              <div className="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  onClick={() => setBypassExternal(false)}
-                  className={cn(
-                    "min-h-10 rounded-[9px] px-2 text-xs font-semibold transition-colors",
-                    !bypassExternal ? "bg-[#EEF3F5] text-[#26323A]" : "bg-white text-[#6B747B] ring-1 ring-inset ring-[#D6DCE0]",
-                  )}
-                >
-                  No Payment
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setBypassExternal(true)}
-                  className={cn(
-                    "min-h-10 rounded-[9px] px-2 text-xs font-semibold transition-colors",
-                    bypassExternal ? "bg-[#E2F6E8] text-[#258A43]" : "bg-white text-[#6B747B] ring-1 ring-inset ring-[#D6DCE0]",
-                  )}
-                >
-                  Paid externally
-                </button>
-              </div>
-            ) : null}
-            {!bypassPayment ? (
-              <>
-                <div>
-                  <span className="text-xs font-semibold uppercase tracking-wide text-[#6B747B]">Payment plan chosen by applicant</span>
-                  <p className="mt-1 text-sm font-semibold text-[#26323A]">{billingMode === "monthly" ? "Monthly" : "Pay in Full"}</p>
-                </div>
-                <label className="block">
-                  <span className="text-xs font-semibold uppercase tracking-wide text-[#6B747B]">{billingMode === "monthly" ? "Monthly price" : "Pay in Full price"}</span>
-                  <input value={price} onChange={(event) => setPrice(event.target.value)} inputMode="decimal" className="mt-1 h-11 w-full rounded-[10px] border border-[#B9C3C8] px-3 text-sm font-semibold outline-none focus:border-[#2F8FB3]" />
-                </label>
-                {billingMode === "annual" && target.request.program ? <p className="text-xs leading-5 text-[#7B858C]">{annualDealText(target.request.program)}</p> : null}
-              </>
-            ) : null}
-          </div>
-        ) : null}
-
-        <label className="mt-5 block">
-          <span className="text-xs font-semibold uppercase tracking-wide text-[#6B747B]">Message</span>
-          <textarea
-            value={note}
-            onChange={(event) => setNote(event.target.value)}
-            className="mt-1 min-h-28 w-full resize-none rounded-[14px] border border-[#B9C3C8] px-3 py-2 text-sm leading-6 outline-none focus:border-[#2F8FB3]"
-          />
-        </label>
-
-        <div className="mt-5 flex justify-end gap-2">
-          <button type="button" onClick={onClose} disabled={busy} className="min-h-10 px-3 text-sm font-semibold text-[#6B747B] disabled:opacity-50">
-            Cancel
-          </button>
-          <button type="button" onClick={submit} disabled={busy} className="min-h-10 rounded-[10px] bg-[#17624F] px-4 text-sm font-semibold text-white disabled:opacity-60">
-            {busy ? "Working..." : "Confirm"}
-          </button>
-        </div>
-      </div>
-    </div>,
-    document.body,
   );
 }
 
@@ -17998,135 +14945,6 @@ function TeacherFamilyRow({
   );
 }
 
-function StudentInboxThreadList({
-  threads,
-  emptyText,
-}: {
-  threads: Array<{ id: string; title: string; subtitle: string; meta: string; unreadCount: number; onClick: () => void }>;
-  emptyText: string;
-}) {
-  if (!threads.length) {
-    return (
-      <div className="rounded-[18px] bg-[#F7FAFB] px-4 py-6 text-center text-sm font-medium leading-6 text-[#6B747B]">
-        {emptyText}
-      </div>
-    );
-  }
-
-  return (
-    <section className="overflow-hidden rounded-[24px] bg-white shadow-[0_12px_28px_rgba(38,50,58,0.07)] ring-1 ring-[#E4EAEE]">
-      <div className="divide-y divide-[#EEF2F4]">
-        {threads.map((thread) => {
-          const unread = thread.unreadCount > 0;
-          return (
-            <button key={thread.id} type="button" onClick={thread.onClick} className="flex w-full items-center gap-3 px-4 py-4 text-left transition hover:bg-[#F7FAFB]">
-              <span className={cn("h-2.5 w-2.5 shrink-0 rounded-full", unread ? "bg-[#2F8FB3]" : "bg-transparent")} aria-hidden />
-              <span className="min-w-0 flex-1">
-                <span className={cn("block truncate text-[15px] leading-5", unread ? "font-semibold text-[#26323A]" : "font-medium text-[#52616A]")}>{thread.title}</span>
-                <span className="mt-1 block truncate text-sm text-[#6B747B]">{thread.subtitle}</span>
-              </span>
-              <span className="shrink-0 text-right">
-                <span className="block text-xs text-[#8A949B]">{thread.meta}</span>
-                {unread ? <span className="mt-1 inline-flex rounded-full bg-[#E7F3F8] px-2 py-0.5 text-xs font-semibold text-[#2F8FB3]">{thread.unreadCount}</span> : null}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-    </section>
-  );
-}
-
-function StudentInboxThreadView({
-  thread,
-  announcements,
-  notes,
-  hasOlderAnnouncements = false,
-  loadingOlderAnnouncements = false,
-  onLoadOlderAnnouncements,
-  hasOlderNotes = false,
-  loadingOlderNotes = false,
-  onLoadOlderNotes,
-  onBack,
-}: {
-  thread: StudentInboxThread;
-  announcements: AnnouncementWithContext[];
-  notes: StudentNoteWithContext[];
-  hasOlderAnnouncements?: boolean;
-  loadingOlderAnnouncements?: boolean;
-  onLoadOlderAnnouncements?: () => void;
-  hasOlderNotes?: boolean;
-  loadingOlderNotes?: boolean;
-  onLoadOlderNotes?: () => void;
-  onBack: () => void;
-}) {
-  const threadAnnouncements = thread.kind === "announcements"
-    ? announcements
-        .filter((announcement) => announcement.program_id === thread.programId)
-        .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))
-    : [];
-  const threadNotes = thread.kind === "notes"
-    ? notes
-        .filter((note) => note.program_id === thread.programId && note.student_profile_id === thread.studentId)
-        .sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at))
-    : [];
-  const title = thread.kind === "announcements"
-    ? threadAnnouncements[0]?.program?.title ?? "Announcements"
-    : threadNotes[0]?.program?.title ?? "Notes";
-  const subtitle = thread.kind === "notes" ? `For ${threadNotes[0]?.student?.full_name ?? "student"}` : "Class announcements";
-
-  return (
-    <section className="overflow-hidden rounded-[24px] bg-[#F7FAFB] shadow-[0_12px_28px_rgba(38,50,58,0.07)] ring-1 ring-[#E4EAEE]">
-      <div className="flex items-center gap-3 border-b border-[#E1E8EC] bg-white px-4 py-3">
-        <button type="button" onClick={onBack} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#EEF3F5] text-[#26323A] transition active:scale-90 active:bg-[#E1E8EC]" aria-label="Back to inbox">
-          <ChevronLeftIcon />
-        </button>
-        <div className="min-w-0">
-          <h2 className="truncate text-base font-semibold text-[#26323A]">{title}</h2>
-          <p className="truncate text-sm text-[#6B747B]">{subtitle}</p>
-        </div>
-      </div>
-      <div className="max-h-[520px] space-y-3 overflow-y-auto p-4">
-        {thread.kind === "announcements" ? (
-          threadAnnouncements.length ? (
-            <>
-              {threadAnnouncements.map((announcement) => <StudentAnnouncementCard key={announcement.id} announcement={announcement} />)}
-              {hasOlderAnnouncements ? (
-                <button
-                  type="button"
-                  onClick={onLoadOlderAnnouncements}
-                  disabled={loadingOlderAnnouncements}
-                  className="mx-auto flex rounded-full bg-white px-4 py-2 text-sm font-semibold text-[#2F8FB3] shadow-[0_6px_18px_rgba(38,50,58,0.06)] ring-1 ring-[#DDE7EC] transition-colors hover:bg-[#F5FAFC] disabled:cursor-not-allowed disabled:opacity-60"
-                >
-                  {loadingOlderAnnouncements ? "Loading older..." : "Load older"}
-                </button>
-              ) : null}
-            </>
-          ) : (
-            <MiniEmpty text="No announcements in this thread." />
-          )
-        ) : threadNotes.length ? (
-          <>
-            {threadNotes.map((note) => <StudentNoteBubble key={note.id} note={note} viewer="recipient" />)}
-            {hasOlderNotes ? (
-              <button
-                type="button"
-                onClick={onLoadOlderNotes}
-                disabled={loadingOlderNotes}
-                className="mx-auto flex rounded-full bg-white px-4 py-2 text-sm font-semibold text-[#2F8FB3] shadow-[0_6px_18px_rgba(38,50,58,0.06)] ring-1 ring-[#DDE7EC] transition-colors hover:bg-[#F5FAFC] disabled:cursor-not-allowed disabled:opacity-60"
-              >
-                {loadingOlderNotes ? "Loading older..." : "Load older"}
-              </button>
-            ) : null}
-          </>
-        ) : (
-          <MiniEmpty text="No notes in this thread." />
-        )}
-      </div>
-    </section>
-  );
-}
-
 function ChildNoteRecipientPrompt({
   studentName,
   parentName,
@@ -18282,8 +15100,10 @@ function TeacherStudentNotesPage({
 }) {
   const [notes, setNotes] = useState<StudentNoteWithContext[]>([]);
   const [message, setMessage] = useState("");
+  const [attachments, setAttachments] = useState<MessageAttachment[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [deletingNoteId, setDeletingNoteId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const studentName = target.profile?.full_name?.trim() || "Student";
   const recipient = target.parent ?? target.profile;
@@ -18331,7 +15151,7 @@ function TeacherStudentNotesPage({
   }, [program.id, target.enrollment.student_profile_id]);
 
   async function sendNote() {
-    if (!mosque || !currentUserId || !recipient?.id || !message.trim()) {
+    if (!mosque || !currentUserId || !recipient?.id || (!message.trim() && attachments.length === 0)) {
       return;
     }
 
@@ -18349,6 +15169,7 @@ function TeacherStudentNotesPage({
         author_profile_id: currentUserId,
         category: "note",
         message: message.trim(),
+        attachments: attachments as unknown as Json,
       })
       .select("id")
       .single();
@@ -18358,11 +15179,32 @@ function TeacherStudentNotesPage({
       return;
     }
     setMessage("");
+    setAttachments([]);
     window.dispatchEvent(new Event("tareeqah:notifications-changed"));
     if (inserted) {
       void notifyNoteSent(program.id, inserted.id);
     }
     await loadNotes();
+  }
+
+  async function deleteNote(note: StudentNoteWithContext) {
+    if (deletingNoteId) {
+      return;
+    }
+    if (!window.confirm("Delete this note?")) {
+      return;
+    }
+    setDeletingNoteId(note.id);
+    setError(null);
+    const supabase = createSupabaseBrowserClient();
+    const { error: deleteError } = await supabase.from("program_student_notes").delete().eq("id", note.id);
+    setDeletingNoteId(null);
+    if (deleteError) {
+      setError(deleteError.message);
+      return;
+    }
+    setNotes((current) => current.filter((item) => item.id !== note.id));
+    window.dispatchEvent(new Event("tareeqah:notifications-changed"));
   }
 
   return (
@@ -18389,26 +15231,29 @@ function TeacherStudentNotesPage({
             {loading ? (
               <InboxLoadingPanel label="Loading student notes" />
             ) : notes.length ? (
-              notes.map((note) => <StudentNoteBubble key={note.id} note={note} viewer="teacher" />)
+              notes.map((note) => <StudentNoteBubble key={note.id} note={note} viewer="teacher" deleting={deletingNoteId === note.id} onDelete={deleteNote} />)
             ) : (
               <MiniEmpty text="No notes have been sent for this student in this class." />
             )}
           </div>
           <div className="mt-3 flex items-end gap-2 rounded-[28px] border border-[#D6DCE0] bg-[#F8FAFB] px-3 py-2 shadow-[0_10px_24px_rgba(38,50,58,0.08)]">
-            <textarea
-              value={message}
-              onChange={(event) => setMessage(event.target.value)}
-              placeholder="Write a note..."
-              rows={1}
-              className="max-h-32 min-h-10 flex-1 resize-none bg-transparent px-1 py-2 text-sm leading-6 text-[#26323A] outline-none placeholder:text-[#9AA4AA]"
-            />
+            <div className="min-w-0 flex-1 space-y-2">
+              <textarea
+                value={message}
+                onChange={(event) => setMessage(event.target.value)}
+                placeholder="Write a note..."
+                rows={1}
+                className="max-h-32 min-h-10 w-full resize-none bg-transparent px-1 py-2 text-sm leading-6 text-[#26323A] outline-none placeholder:text-[#9AA4AA]"
+              />
+              <MessageAttachmentComposer programId={program.id} attachments={attachments} onChange={setAttachments} disabled={busy} onError={setError} />
+            </div>
             <button
               type="button"
-              disabled={busy || !message.trim()}
+              disabled={busy || (!message.trim() && attachments.length === 0)}
               onClick={sendNote}
               className={cn(
                 "mb-1 flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-colors",
-                message.trim() && !busy ? "bg-[#2F80ED] text-white" : "bg-[#D6DCE0] text-white",
+                (message.trim() || attachments.length > 0) && !busy ? "bg-[#2F80ED] text-white" : "bg-[#D6DCE0] text-white",
               )}
               aria-label="Send note"
             >
@@ -18490,6 +15335,59 @@ function SendUpIcon() {
     <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
       <path d="M12 19V5" />
       <path d="m6.5 10.5 5.5-5.5 5.5 5.5" />
+    </svg>
+  );
+}
+
+function PaperclipIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="m21 10.5-8.6 8.6a5 5 0 0 1-7.1-7.1l9.2-9.2a3.4 3.4 0 0 1 4.8 4.8l-9.2 9.2a1.8 1.8 0 0 1-2.5-2.5l8.6-8.6" />
+    </svg>
+  );
+}
+
+function MicIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M12 14a3 3 0 0 0 3-3V6a3 3 0 0 0-6 0v5a3 3 0 0 0 3 3Z" />
+      <path d="M19 11a7 7 0 0 1-14 0" />
+      <path d="M12 18v3" />
+      <path d="M8 21h8" />
+    </svg>
+  );
+}
+
+function StopRecordingIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor" aria-hidden>
+      <rect x="7" y="7" width="10" height="10" rx="2" />
+    </svg>
+  );
+}
+
+function PlayIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor" aria-hidden>
+      <path d="M8 5.8v12.4c0 .8.9 1.3 1.6.8l9.1-6.2a1 1 0 0 0 0-1.7L9.6 4.9A1 1 0 0 0 8 5.8Z" />
+    </svg>
+  );
+}
+
+function PauseIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="currentColor" aria-hidden>
+      <rect x="7" y="5" width="3.8" height="14" rx="1.4" />
+      <rect x="13.2" y="5" width="3.8" height="14" rx="1.4" />
+    </svg>
+  );
+}
+
+function FileIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.1" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8Z" />
+      <path d="M14 3v5h5" />
     </svg>
   );
 }
@@ -18756,15 +15654,10 @@ function SidebarFact({ label, value }: { label: string; value: string }) {
   );
 }
 
-function ProgramDetailFact({ icon, label, value }: { icon: string; label: string; value: string }) {
+function ProgramDetailFact({ label, value }: { label: string; value: string }) {
   return (
     <div className="flex items-start justify-between gap-4 py-3 text-sm">
-      <dt className="flex items-center gap-2 text-[#6B747B]">
-        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-[#EAF7F1] text-sm" aria-hidden>
-          {icon}
-        </span>
-        {label}
-      </dt>
+      <dt className="text-[#6B747B]">{label}</dt>
       <dd className="max-w-[55%] text-right font-semibold text-[#26323A]">{value}</dd>
     </div>
   );
@@ -18814,21 +15707,13 @@ function trackEffectivePriceCents(track: ProgramTrack, program: Program) {
   return { monthlyCents, annualCents };
 }
 
-function requestEffectivePriceCents(paymentType: PaymentType, request: RequestWithContext) {
-  const useOverride = request.track?.pricing_override_enabled;
-  if (paymentType === "annual") {
-    return request.approved_price_annual_cents ?? (useOverride ? request.track?.price_annual_cents : request.program?.price_annual_cents) ?? 0;
-  }
-  return request.approved_price_monthly_cents ?? (useOverride ? request.track?.price_monthly_cents : request.program?.price_monthly_cents) ?? 0;
-}
-
 function trackPriceLine(track: ProgramTrack | null, program: Program, forType?: PaymentType, options?: { bareLabel?: boolean }): { label: string } | null {
   if (!program.is_paid) {
     return { label: "Free" };
   }
   const { monthlyCents, annualCents } = track ? trackEffectivePriceCents(track, program) : { monthlyCents: program.price_monthly_cents, annualCents: program.price_annual_cents };
   const offersMonthly = program.offers_monthly_payment !== false && Boolean(monthlyCents);
-  const offersAnnual = !program.is_ongoing && Boolean(program.offers_annual_payment && annualCents);
+  const offersAnnual = Boolean(program.offers_annual_payment && annualCents);
   if (!offersMonthly && !offersAnnual) {
     return null;
   }
@@ -18838,7 +15723,13 @@ function trackPriceLine(track: ProgramTrack | null, program: Program, forType?: 
       : forType === "monthly" && offersMonthly
         ? false
         : !offersMonthly && offersAnnual;
-  const label = useAnnual ? (options?.bareLabel ? formatPrice(annualCents) : `${formatPrice(annualCents)} pay in full`) : `${formatPrice(monthlyCents)}/mo`;
+  const label = useAnnual
+    ? options?.bareLabel
+      ? formatPrice(annualCents)
+      : program.is_ongoing
+        ? `${formatPrice(annualCents)}/yr`
+        : `${formatPrice(annualCents)} pay in full`
+    : `${formatPrice(monthlyCents)}/mo`;
   return { label };
 }
 
@@ -18848,11 +15739,11 @@ function trackPricingDeal(track: ProgramTrack | null, program: Program): { annua
   }
   const { monthlyCents, annualCents } = track ? trackEffectivePriceCents(track, program) : { monthlyCents: program.price_monthly_cents, annualCents: program.price_annual_cents };
   const offersMonthly = program.offers_monthly_payment !== false && Boolean(monthlyCents);
-  const offersAnnual = !program.is_ongoing && Boolean(program.offers_annual_payment && annualCents);
+  const offersAnnual = Boolean(program.offers_annual_payment && annualCents);
   if (!offersMonthly || !offersAnnual) {
     return null;
   }
-  const durationMonths = programPayInFullDurationMonths(program);
+  const durationMonths = pricingComparisonDurationMonths(program);
   if (!durationMonths) {
     return null;
   }
@@ -18864,18 +15755,22 @@ function trackPricingDeal(track: ProgramTrack | null, program: Program): { annua
   return { annualPriceCents: annual, savingsCents: monthlyTotal - annual };
 }
 
+function hasPerTrackPricing(tracks: ProgramTrack[]) {
+  return tracks.some((track) => Boolean(track.pricing_override_enabled && (track.price_monthly_cents || track.price_annual_cents)));
+}
+
 function TrackPricingDealCaption({ track, program, paymentType }: { track: ProgramTrack | null; program: Program; paymentType?: PaymentType }) {
   const deal = trackPricingDeal(track, program);
   if (!deal) {
     return null;
   }
   return (
-    <p className="mt-0.5 text-right text-xs font-semibold text-[#B8860B]">
+    <p className="mt-1 text-xs font-semibold text-[#8A6418]">
       {paymentType === "annual"
-        ? `⭐ Saves ${formatPrice(deal.savingsCents)}`
+        ? `Saves ${formatPrice(deal.savingsCents)}`
         : paymentType === "monthly"
-          ? `⭐ Save ${formatPrice(deal.savingsCents)} paying in full`
-          : `⭐ Save ${formatPrice(deal.savingsCents)} by paying in full`}
+          ? `Save ${formatPrice(deal.savingsCents)} paying ${program.is_ongoing ? "annually" : "in full"}`
+          : `Save ${formatPrice(deal.savingsCents)} by paying ${program.is_ongoing ? "annually" : "in full"}`}
     </p>
   );
 }
@@ -18884,7 +15779,7 @@ function TrackPriceNumber({ price }: { price: { label: string } | null }) {
   if (!price) {
     return null;
   }
-  return <span className="shrink-0 font-mono text-2xl font-black leading-none tracking-tight tabular-nums text-[#17624F]">{price.label}</span>;
+  return <span className="block font-mono text-2xl font-black leading-none tracking-tight tabular-nums text-[#17624F]">{price.label}</span>;
 }
 
 function trackCapacityBadge(track: ProgramTrack, enrolledCountByTrackId: Record<string, number>): { label: string; tone: "full" | "low" } | null {
@@ -18912,34 +15807,33 @@ function ProgramScheduleOptionsDisplay({
   fallbackSchedule: string;
   enrolledCountByTrackId?: Record<string, number>;
 }) {
+  const showTrackPrices = program ? hasPerTrackPricing(tracks) : false;
   return (
     <div className="mt-4 space-y-2 border-t border-[#E6ECEF] pt-4">
       {tracks.length ? (
         <div className="space-y-2">
           {tracks.map((track) => {
             const scheduleLines = scheduleSessionLines(track.schedule, null);
-            const price = program ? trackPriceLine(track, program) : null;
+            const price = program && showTrackPrices ? trackPriceLine(track, program) : null;
             const capacityBadge = trackCapacityBadge(track, enrolledCountByTrackId);
             return (
-              <div key={track.id} className={cn("relative overflow-hidden rounded-[14px] p-3 ring-1", capacityBadge?.tone === "full" ? "bg-[#F3F4F5] ring-[#E1E8EC] opacity-75" : "bg-[#F7FAFB] ring-[#E6ECEF]", capacityBadge?.tone === "low" ? "pt-7" : "")}>
+              <div key={track.id} className={cn("relative overflow-hidden rounded-[14px] p-3 ring-1", capacityBadge?.tone === "full" ? "bg-[#F3F4F5] ring-[#E1E8EC] opacity-75" : "bg-[#F8FBFC] ring-[#E6ECEF]", capacityBadge?.tone === "low" ? "pt-7" : "")}>
                 {capacityBadge?.tone === "low" ? (
                   <span className="absolute right-0 top-0 rounded-bl-[10px] bg-[#C0392B] px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-white">{capacityBadge.label}</span>
                 ) : null}
-                <div className="flex items-start justify-between gap-3">
-                  <p className="min-w-0 flex-1 text-sm font-semibold text-[#26323A]">{track.name}</p>
-                  <div className="shrink-0">
-                    <TrackPriceNumber price={price} />
+                <div className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-4">
+                  <div className="min-w-0">
+                    <p className="text-sm font-semibold text-[#26323A]">{track.name}</p>
+                    <div className="mt-1 space-y-0.5">
+                      {scheduleLines.map((line) => (
+                        <p key={line} className="text-xs font-medium leading-5 text-[#52616A]">{line}</p>
+                      ))}
+                    </div>
                     {program ? <TrackPricingDealCaption track={track} program={program} /> : null}
                   </div>
+                  {price ? <div className="shrink-0 text-right"><TrackPriceNumber price={price} /></div> : null}
                 </div>
-                <div className="mt-1 flex items-start justify-between gap-3">
-                  <div className="min-w-0 flex-1 space-y-0.5">
-                    {scheduleLines.map((line) => (
-                      <p key={line} className="text-xs font-medium leading-5 text-[#17624F]">{line}</p>
-                    ))}
-                  </div>
-                  {program ? <TrackPayInFullPriceCaption track={track} program={program} /> : null}
-                </div>
+                {program ? <TrackPayInFullPriceCaption track={track} program={program} /> : null}
                 {track.eligibility_comment ? <p className="mt-1.5 text-xs leading-5 text-[#7B858C]">{track.eligibility_comment}</p> : null}
                 {capacityBadge?.tone === "full" ? <span className="mt-2 inline-block rounded-full bg-[#E1E8EC] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#7B858C]">Full</span> : null}
               </div>
@@ -18951,22 +15845,16 @@ function ProgramScheduleOptionsDisplay({
           const price = program ? trackPriceLine(null, program) : null;
           const scheduleLines = fallbackSchedule ? [fallbackSchedule] : ["Schedule will be announced"];
           return (
-            <div className="rounded-[14px] bg-[#F7FAFB] p-3 ring-1 ring-[#E6ECEF]">
-              <div className="flex items-start justify-between gap-3">
-                <p className="min-w-0 flex-1 text-sm font-semibold text-[#26323A]">Class schedule</p>
-                <div className="shrink-0">
-                  <TrackPriceNumber price={price} />
-                  {program ? <TrackPricingDealCaption track={null} program={program} /> : null}
-                </div>
+            <div className="rounded-[14px] bg-[#F8FBFC] p-3 ring-1 ring-[#E6ECEF]">
+              <p className="text-sm font-semibold text-[#26323A]">Class schedule</p>
+              <div className="mt-1 space-y-0.5">
+                {scheduleLines.map((line) => (
+                  <p key={line} className="text-xs font-medium leading-5 text-[#52616A]">{line}</p>
+                ))}
               </div>
-              <div className="mt-1 flex items-start justify-between gap-3">
-                <div className="min-w-0 flex-1 space-y-0.5">
-                  {scheduleLines.map((line) => (
-                    <p key={line} className="text-xs font-medium leading-5 text-[#17624F]">{line}</p>
-                  ))}
-                </div>
-                {program ? <TrackPayInFullPriceCaption track={null} program={program} /> : null}
-              </div>
+              {price ? <div className="mt-3"><TrackPriceNumber price={price} /></div> : null}
+              {program ? <TrackPricingDealCaption track={null} program={program} /> : null}
+              {program ? <TrackPayInFullPriceCaption track={null} program={program} /> : null}
             </div>
           );
         })()
@@ -18976,6 +15864,9 @@ function ProgramScheduleOptionsDisplay({
 }
 
 function TrackPayInFullPriceCaption({ track, program }: { track: ProgramTrack | null; program: Program }) {
+  if (program.is_ongoing) {
+    return null;
+  }
   const deal = trackPricingDeal(track, program);
   if (!deal) {
     return null;
@@ -18983,7 +15874,7 @@ function TrackPayInFullPriceCaption({ track, program }: { track: ProgramTrack | 
   return <p className="shrink-0 text-xs font-semibold text-[#6B747B]">Pay in full: {formatPrice(deal.annualPriceCents)}</p>;
 }
 
-function ProgramPaymentOptionsDisplay({ program }: { program: Program }) {
+function ProgramPaymentOptionsDisplay({ program, tracks = [] }: { program: Program; tracks?: ProgramTrack[] }) {
   const options = programPaymentOptions(program);
   if (!program.is_paid) {
     return (
@@ -18996,9 +15887,20 @@ function ProgramPaymentOptionsDisplay({ program }: { program: Program }) {
       </div>
     );
   }
+  if (hasPerTrackPricing(tracks)) {
+    return null;
+  }
+  const primaryPrice = trackPriceLine(null, program);
   return (
     <div className="mt-4 space-y-2 border-t border-[#E6ECEF] pt-4">
       <p className="text-xs font-semibold uppercase tracking-wide text-[#6B747B]">Price options</p>
+      {primaryPrice ? (
+        <div className="rounded-[14px] bg-[#F7FAFB] p-3 ring-1 ring-[#E6ECEF]">
+          <p className="text-xs font-semibold uppercase tracking-wide text-[#6B747B]">Program price</p>
+          <p className="mt-1 font-mono text-3xl font-black leading-none tracking-tight tabular-nums text-[#17624F]">{primaryPrice.label}</p>
+          <TrackPricingDealCaption track={null} program={program} />
+        </div>
+      ) : null}
       {options.map((option) => (
         <div key={option.type} className="rounded-[14px] bg-[#F7FAFB] p-3 ring-1 ring-[#E6ECEF]">
           <div className="flex items-start justify-between gap-3">
@@ -19013,7 +15915,12 @@ function ProgramPaymentOptionsDisplay({ program }: { program: Program }) {
   );
 }
 
-const PAYMENT_TYPE_LABEL: Record<PaymentType, string> = { monthly: "Monthly", annual: "Pay in Full" };
+function paymentTypeLabel(type: PaymentType, program: Pick<Program, "is_ongoing">): string {
+  if (type === "monthly") {
+    return "Monthly";
+  }
+  return program.is_ongoing ? "Annual subscription" : "Pay in Full";
+}
 
 function ProgramPaymentOptionSelector({
   program,
@@ -19045,7 +15952,7 @@ function ProgramPaymentOptionSelector({
             <span className={cn("flex h-5 w-5 shrink-0 items-center justify-center rounded-[6px] border text-[11px]", selected ? "border-[#17624F] bg-[#17624F] text-white" : "border-[#B9C3C8] bg-white text-transparent")}>
               <CheckIcon />
             </span>
-            <span className="text-sm font-semibold text-[#26323A]">{PAYMENT_TYPE_LABEL[type]}</span>
+            <span className="text-sm font-semibold text-[#26323A]">{paymentTypeLabel(type, program)}</span>
           </button>
         );
       })}
@@ -19060,8 +15967,6 @@ function ChildEnrollmentSelector({
   selfProfileId,
   selectedChildIds,
   onToggle,
-  onSubmit,
-  busy,
 }: {
   program: Program;
   childrenProfiles: StudentDisplay[];
@@ -19069,8 +15974,6 @@ function ChildEnrollmentSelector({
   selfProfileId?: string | null;
   selectedChildIds: string[];
   onToggle: (childId: string) => void;
-  onSubmit: () => void;
-  busy: boolean;
 }) {
   return (
     <div className="mt-4 space-y-2">
@@ -19116,14 +16019,6 @@ function ChildEnrollmentSelector({
           );
         })}
       </div>
-      <button
-        type="button"
-        onClick={onSubmit}
-        disabled={busy || selectedChildIds.length === 0}
-        className="mt-3 min-h-11 w-full rounded-full bg-[#17624F] px-4 text-sm font-semibold text-white shadow-[0_10px_20px_rgba(23,98,79,0.18)] disabled:opacity-60 md:w-auto md:px-10"
-      >
-        {busy ? "Submitting..." : "Submit Application"}
-      </button>
     </div>
   );
 }
@@ -19153,7 +16048,7 @@ function ProgramTrackSelector({
           const scheduleLines = scheduleSessionLines(track.schedule, null);
           const capacityBadge = trackCapacityBadge(track, enrolledCountByTrackId);
           const full = capacityBadge?.tone === "full";
-          const price = trackPriceLine(track, program, selectedPaymentType, { bareLabel: true });
+          const price = trackPriceLine(track, program, selectedPaymentType);
           return (
             <button
               key={track.id}
@@ -19173,36 +16068,44 @@ function ProgramTrackSelector({
               {capacityBadge?.tone === "low" ? (
                 <span className="absolute right-0 top-0 rounded-bl-[10px] bg-[#C0392B] px-2 py-1 text-[10px] font-bold uppercase tracking-wide text-white">{capacityBadge.label}</span>
               ) : null}
-              <span className="flex items-start justify-between gap-3">
-                <span className="min-w-0 flex-1 text-sm font-semibold text-[#26323A]">{track.name}</span>
-                <span className="shrink-0 text-right">
-                  <TrackPriceNumber price={price} />
+              <span className="grid grid-cols-[minmax(0,1fr)_auto] items-start gap-3">
+                <span className="min-w-0">
+                  <span className="block truncate whitespace-nowrap text-[13px] font-semibold leading-5 text-[#26323A]">{track.name}</span>
+                  {track.description ? <span className="mt-1 block text-xs leading-5 text-[#52616A]">{track.description}</span> : null}
                   {(() => {
                     const deal = trackPricingDeal(track, program);
                     if (!deal) {
                       return null;
                     }
                     return (
-                      <span className="mt-0.5 block text-xs font-semibold text-[#B8860B]">
-                        {selectedPaymentType === "annual" ? `⭐ Saves ${formatPrice(deal.savingsCents)}` : `⭐ Save ${formatPrice(deal.savingsCents)} paying in full`}
+                      <span className="mt-0.5 block text-[11px] font-semibold leading-5 text-[#8A6418]">
+                        {selectedPaymentType === "annual"
+                          ? program.is_ongoing
+                            ? `Saves ${formatPrice(deal.savingsCents)}/year`
+                            : `Saves ${formatPrice(deal.savingsCents)}`
+                          : `Save ${formatPrice(deal.savingsCents)} ${program.is_ongoing ? "with annual subscription" : "paying in full"}`}
                       </span>
                     );
                   })()}
                 </span>
+                <span className="shrink-0 text-right">
+                  <TrackPriceNumber price={price} />
+                </span>
               </span>
-              {track.description ? <span className="mt-1 block text-xs leading-5 text-[#52616A]">{track.description}</span> : null}
-              <span className="mt-1 flex items-start justify-between gap-3">
-                <span className="block min-w-0 flex-1 space-y-0.5">
+              <span className="mt-1 block min-w-0 space-y-0.5">
                   {scheduleLines.map((line) => (
                     <span key={line} className="block text-xs font-medium leading-5 text-[#17624F]">{line}</span>
                   ))}
-                </span>
                 {(() => {
                   const deal = trackPricingDeal(track, program);
                   if (!deal) {
                     return null;
                   }
-                  return <span className="shrink-0 text-xs font-semibold text-[#6B747B]">Pay in full: {formatPrice(deal.annualPriceCents)}</span>;
+                  return (
+                    <span className="block text-[11px] font-semibold leading-5 text-[#6B747B]">
+                      {program.is_ongoing ? `Annual: ${formatPrice(deal.annualPriceCents)}/yr` : `Pay in full: ${formatPrice(deal.annualPriceCents)}`}
+                    </span>
+                  );
                 })()}
               </span>
               {full ? <span className="mt-2 inline-block rounded-full bg-[#E1E8EC] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#7B858C]">Full</span> : null}
@@ -19435,6 +16338,8 @@ function EnrolledClassList({ programs, mosqueSlug }: { programs: ProgramWithTeac
               {program.track_switch_policy !== "disabled" ? (
                 <TeacherActionLink href={`/m/${mosqueSlug}/portal/classes/${program.id}/schedule`} icon={<ScheduleIcon />} label="Schedule Options" />
               ) : null}
+              <TeacherActionLink href={`/m/${mosqueSlug}/portal/announcements?tab=announcements`} icon={<MegaphoneIcon />} label="View Announcements" />
+              <TeacherActionLink href={`/m/${mosqueSlug}/portal/announcements?tab=notes`} icon={<ClipboardIcon />} label="View Notes" />
               <TeacherActionLink href={`/m/${mosqueSlug}/programs/${program.id}?returnTo=${encodeURIComponent(`/m/${mosqueSlug}/portal/classes`)}`} icon={<ExternalLinkIcon />} label="Program Details" previewLabel="Program Details" />
               <TeacherActionLink href={`/m/${mosqueSlug}/portal/classes/${program.id}/withdrawal`} icon={<XIcon />} label="Request Withdrawal" previewLabel="Request Withdrawal" />
             </div>
@@ -19471,22 +16376,20 @@ function MyApplicationsList({
                 <DefaultProfileIcon className="h-5 w-5" compact />
               </span>
               <div className="min-w-0 flex-1">
-                <div className="flex items-start justify-between gap-2">
-                  <div className="min-w-0">
-                    <h3 className="truncate text-[15px] font-semibold leading-5 text-[#26323A]">{row.program?.title ?? "Class"}</h3>
-                    <p className="mt-0.5 truncate text-xs text-[#6B747B]">
-                      {childName ? `${childName} • ` : ""}
-                      {trackName ? `${trackName} • ` : ""}
-                      Submitted {timeAgo(row.request.requested_at)}
-                    </p>
-                  </div>
-                  <span className={cn("shrink-0 rounded-full px-2.5 py-1 text-[11px] font-semibold", programStatusBadgeToneClass(applicationStatusTone(status)))}>{statusLabel}</span>
+                <h3 className="text-[15px] font-semibold leading-5 text-[#26323A]">{row.program?.title ?? "Class"}</h3>
+                <p className="mt-0.5 text-xs leading-5 text-[#6B747B]">
+                  {childName ? `${childName} • ` : ""}
+                  {trackName ? `${trackName} • ` : ""}
+                  Submitted {timeAgo(row.request.requested_at)}
+                </p>
+                <div className="mt-2 flex flex-wrap items-center gap-1.5">
+                  <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-semibold", programStatusBadgeToneClass(applicationStatusTone(status)))}>{statusLabel}</span>
+                  {paymentStatus !== "not_required" ? (
+                    <span className={cn("rounded-full px-2.5 py-1 text-[11px] font-semibold", programStatusBadgeToneClass(paymentStatusTone(paymentStatus)))}>
+                      {PAYMENT_STATUS_LABELS[paymentStatus]}
+                    </span>
+                  ) : null}
                 </div>
-                {paymentStatus !== "not_required" ? (
-                  <span className={cn("mt-2 inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold", programStatusBadgeToneClass(paymentStatusTone(paymentStatus)))}>
-                    {PAYMENT_STATUS_LABELS[paymentStatus]}
-                  </span>
-                ) : null}
                 <div className="mt-3">
                   {action.kind === "confirmation" ? (
                     <Link
@@ -19521,7 +16424,7 @@ function MyApplicationsList({
   );
 }
 
-function ApplicantDetailsDrawer({
+export function ApplicantDetailsDrawer({
   row,
   slug,
   returnTo,
@@ -19640,25 +16543,17 @@ function ApplicantDetailsDrawer({
             <>
               <Link
                 href={`/m/${slug}/registration/${row.request.id}?returnTo=${encodeURIComponent(resolvedReturnTo)}`}
-                className="flex min-h-12 w-full items-center justify-between rounded-[14px] bg-[#2E6E52] px-4 text-left text-sm font-semibold !text-white shadow-[0_8px_18px_rgba(46,110,82,0.18)] transition-colors hover:bg-[#265D45]"
+                className="flex min-h-11 w-full items-center justify-center rounded-[8px] bg-[#2E6E52] px-4 text-center text-sm font-semibold !text-white shadow-[0_8px_18px_rgba(46,110,82,0.18)] transition-colors hover:bg-[#265D45]"
               >
-                <span>
-                  <span className="block">{confirmationAction.label}</span>
-                  <span className="mt-0.5 block text-xs font-medium text-white/75">Review payment details and finish enrollment.</span>
-                </span>
-                <span aria-hidden>→</span>
+                <span>{confirmationAction.label}</span>
               </Link>
               {onCancelRegistration ? (
                 <button
                   type="button"
                   onClick={onCancelRegistration}
-                  className="flex min-h-12 w-full items-center justify-between rounded-[14px] border border-[#F0C7BE] bg-[#FFF6F4] px-4 text-left text-sm font-semibold text-[#B43A2E] transition-colors hover:bg-[#FCE8E4]"
+                  className="flex min-h-11 w-full items-center justify-center rounded-[8px] bg-[#C83F31] px-4 text-center text-sm font-semibold text-white shadow-[0_8px_18px_rgba(200,63,49,0.18)] transition-colors hover:bg-[#A93429]"
                 >
-                  <span>
-                    <span className="block">Cancel registration</span>
-                    <span className="mt-0.5 block text-xs font-medium text-[#9A5A52]">Decline this approved registration before it is completed.</span>
-                  </span>
-                  <span aria-hidden>→</span>
+                  <span>Cancel registration</span>
                 </button>
               ) : null}
             </>
@@ -19667,13 +16562,11 @@ function ApplicantDetailsDrawer({
             <button
               type="button"
               onClick={onRescind}
-              className="flex min-h-12 w-full items-center justify-between rounded-[14px] border border-[#F0C7BE] bg-[#FFF6F4] px-4 text-left text-sm font-semibold text-[#B43A2E] transition-colors hover:bg-[#FCE8E4]"
+              className="flex min-h-12 w-full items-center justify-center rounded-[9px] bg-[#C83F31] px-4  text-sm font-semibold text-white shadow-[0_8px_18px_rgba(200,63,49,0.18)] transition-colors hover:bg-[#A93429]"
             >
               <span>
                 <span className="block">Rescind application</span>
-                <span className="mt-0.5 block text-xs font-medium text-[#9A5A52]">Cancel this pending request before it is reviewed.</span>
               </span>
-              <span aria-hidden>→</span>
             </button>
           ) : null}
           {row.program ? (
@@ -20151,12 +17044,14 @@ type HomeLesson = {
 function HomeUpcomingRows({
   programs,
   ownerLabelsByProgramId = {},
+  ownerLabelsByTrackId = {},
   canCancelSessions = false,
   currentUserId = null,
   slug,
 }: {
   programs: ProgramScheduleSource[];
   ownerLabelsByProgramId?: Record<string, string[]>;
+  ownerLabelsByTrackId?: Record<string, Record<string, string[]>>;
   canCancelSessions?: boolean;
   currentUserId?: string | null;
   slug?: string;
@@ -20174,7 +17069,11 @@ function HomeUpcomingRows({
   const weekEndKey = dayKey(week[week.length - 1]);
   const programKey = programs.map((program) => program.id).sort().join("|");
   const cancellationLoadKey = `${programKey}:${weekStartKey}:${weekEndKey}`;
-  const lessonSources: Array<{ program: Program | ProgramWithTeacher; ownerLabel?: string }> = programs.flatMap((program) => {
+  const lessonSources: Array<{ program: ProgramScheduleSource; ownerLabel?: string; ownerLabelsByTrackId?: Record<string, string[]> }> = programs.flatMap((program) => {
+    const trackOwners = ownerLabelsByTrackId[program.id];
+    if (trackOwners && Object.keys(trackOwners).length > 0) {
+      return [{ program, ownerLabelsByTrackId: trackOwners }];
+    }
     const labels = ownerLabelsByProgramId[program.id] ?? [];
     return labels.length ? labels.map((ownerLabel) => ({ program, ownerLabel })) : [{ program }];
   });
@@ -20312,28 +17211,42 @@ function HomeUpcomingRows({
     upcomingLessonsByDay.set(key, [...(upcomingLessonsByDay.get(key) ?? []), lesson]);
   }
 
+  const futureFallbackLessonsByDay = new Map<string, HomeLesson[]>();
+  for (const lesson of futureFallbackLessons) {
+    const key = dayKey(lesson.date);
+    futureFallbackLessonsByDay.set(key, [...(futureFallbackLessonsByDay.get(key) ?? []), lesson]);
+  }
+  const futureFallbackDayGroups = Array.from(futureFallbackLessonsByDay.entries()).sort(([, a], [, b]) => a[0].startsAt.getTime() - b[0].startsAt.getTime());
+
   return (
-    <div className="space-y-5">
+    <div className="space-y-5 pb-24">
       <WeekCalendar days={week} lessonsByDay={lessonsByDay} />
       {upcomingLessons.length === 0 ? (
         futureFallbackLessons.length ? (
-          <section className="space-y-2">
+          <div className="space-y-5">
             <div className="px-1">
               <h3 className="text-sm font-semibold text-[#26323A]">Next upcoming sessions</h3>
               <p className="mt-0.5 text-xs font-medium text-[#7B858C]">Nothing else is scheduled this week.</p>
             </div>
-            <div className="space-y-3">
-              {futureFallbackLessons.map((lesson) => (
-                <HomeUpcomingLesson
-                  key={[lesson.program.id, lesson.ownerLabel ?? "self", dayKey(lesson.date), normalizeScheduleTime(lesson.start) || lesson.start, normalizeScheduleTime(lesson.end) || lesson.end].join("|")}
-                  lesson={lesson}
-                  canCancel={canCancelSessions}
-                  onCancel={() => openCancelModal(lesson)}
-                  viewStudentsHref={canCancelSessions && slug ? homeLessonViewStudentsHref(slug, lesson) : undefined}
-                />
-              ))}
-            </div>
-          </section>
+            {futureFallbackDayGroups.map(([key, dayLessons]) => (
+              <section key={key} className="space-y-2">
+                <h3 className="px-1 text-sm font-semibold text-[#26323A]">{formatHomeDate(dayLessons[0].date)}</h3>
+                <div className="space-y-3">
+                  {dayLessons.map((lesson) => (
+                    <HomeUpcomingLesson
+                      key={[lesson.program.id, lesson.ownerLabel ?? "self", dayKey(lesson.date), normalizeScheduleTime(lesson.start) || lesson.start, normalizeScheduleTime(lesson.end) || lesson.end].join("|")}
+                      lesson={lesson}
+                      canCancel={canCancelSessions}
+                      onCancel={() => openCancelModal(lesson)}
+                      viewStudentsHref={canCancelSessions && slug ? homeLessonViewStudentsHref(slug, lesson) : undefined}
+                      markAttendanceHref={canCancelSessions && slug ? attendanceMarkHref(slug, lesson) : undefined}
+                      markAttendanceDisabled={false}
+                    />
+                  ))}
+                </div>
+              </section>
+            ))}
+          </div>
         ) : (
           <HomeEmptyState title="No more classes this week" text="Your scheduled class days are shown above." />
         )
@@ -20353,6 +17266,8 @@ function HomeUpcomingRows({
                       canCancel={canCancelSessions}
                       onCancel={() => openCancelModal(lesson)}
                       viewStudentsHref={canCancelSessions && slug ? homeLessonViewStudentsHref(slug, lesson) : undefined}
+                      markAttendanceHref={canCancelSessions && slug ? attendanceMarkHref(slug, lesson) : undefined}
+                      markAttendanceDisabled={false}
                     />
                   ))}
                 </div>
@@ -20426,25 +17341,40 @@ function WeekCalendar({ days, lessonsByDay }: { days: Date[]; lessonsByDay: Map<
 }
 
 function homeLessonViewStudentsHref(slug: string, lesson: HomeLesson) {
-  const trackId = lesson.trackKey?.includes(":") ? lesson.trackKey.split(":")[1] : undefined;
-  const params = new URLSearchParams({ from: "home", day: weekdayName(lesson.date) });
-  if (trackId) {
-    params.set("trackId", trackId);
-  }
+  const params = new URLSearchParams({
+    from: "home",
+    day: weekdayName(lesson.date),
+    start: normalizeScheduleTime(lesson.start) || lesson.start,
+    end: normalizeScheduleTime(lesson.end) || lesson.end || lesson.start,
+  });
   return `/m/${slug}/teacher/classes/${lesson.program.id}/students?${params.toString()}`;
 }
 
-function HomeUpcomingLesson({ lesson, canCancel = false, onCancel, viewStudentsHref }: { lesson: HomeLesson; canCancel?: boolean; onCancel?: () => void; viewStudentsHref?: string }) {
-  const detailParts = [lesson.ownerLabel, lesson.trackName, lessonTimeRange(lesson)].filter(Boolean);
+function HomeUpcomingLesson({
+  lesson,
+  canCancel = false,
+  onCancel,
+  viewStudentsHref,
+  markAttendanceHref,
+  markAttendanceDisabled,
+}: {
+  lesson: HomeLesson;
+  canCancel?: boolean;
+  onCancel?: () => void;
+  viewStudentsHref?: string;
+  markAttendanceHref?: string;
+  markAttendanceDisabled?: boolean;
+}) {
+  const detailParts = [lesson.ownerLabel, lessonTimeRange(lesson)].filter(Boolean);
   return (
     <div className="flex items-center gap-3 rounded-[24px] bg-white px-4 py-3 shadow-[0_8px_24px_rgba(38,50,58,0.06)]">
       <HomeProgramThumb program={lesson.program} />
       <div className="min-w-0 flex-1">
         <h3 className="truncate text-base font-semibold text-[#26323A]">{lesson.program.title}</h3>
-        <p className="mt-0.5 truncate text-sm text-[#6B747B]">{detailParts.join(" • ")}</p>
+        <p className="mt-0.5 text-sm leading-5 text-[#6B747B]">{detailParts.join(" • ")}</p>
       </div>
       {canCancel ? (
-        <UpcomingLessonActionMenu onCancel={onCancel} viewStudentsHref={viewStudentsHref} />
+        <UpcomingLessonActionMenu onCancel={onCancel} viewStudentsHref={viewStudentsHref} markAttendanceHref={markAttendanceHref} markAttendanceDisabled={markAttendanceDisabled} />
       ) : (
         <span className="h-2.5 w-2.5 shrink-0 rounded-full" style={{ backgroundColor: lesson.color }} aria-hidden />
       )}
@@ -20452,12 +17382,52 @@ function HomeUpcomingLesson({ lesson, canCancel = false, onCancel, viewStudentsH
   );
 }
 
-function UpcomingLessonActionMenu({ onCancel, viewStudentsHref }: { onCancel?: () => void; viewStudentsHref?: string }) {
+function UpcomingLessonActionMenu({
+  onCancel,
+  viewStudentsHref,
+  markAttendanceHref,
+  markAttendanceDisabled,
+}: {
+  onCancel?: () => void;
+  viewStudentsHref?: string;
+  markAttendanceHref?: string;
+  markAttendanceDisabled?: boolean;
+}) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null);
+
+  useEffect(() => {
+    if (!menuOpen) {
+      return;
+    }
+    function placeMenu() {
+      const button = buttonRef.current;
+      if (!button) {
+        return;
+      }
+      const rect = button.getBoundingClientRect();
+      const menuWidth = 176;
+      const menuHeight = 150;
+      const gap = 8;
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const top = spaceBelow < menuHeight + 96 ? Math.max(12, rect.top - menuHeight - gap) : rect.bottom + gap;
+      const left = Math.min(Math.max(12, rect.right - menuWidth), window.innerWidth - menuWidth - 12);
+      setMenuPosition({ top, left });
+    }
+    placeMenu();
+    window.addEventListener("resize", placeMenu);
+    window.addEventListener("scroll", placeMenu, true);
+    return () => {
+      window.removeEventListener("resize", placeMenu);
+      window.removeEventListener("scroll", placeMenu, true);
+    };
+  }, [menuOpen]);
 
   return (
     <span className="relative shrink-0">
       <button
+        ref={buttonRef}
         type="button"
         onClick={() => setMenuOpen((value) => !value)}
         className={cn("flex h-9 w-9 items-center justify-center rounded-full transition-colors", menuOpen ? "bg-[#26323A] text-white" : "text-[#52616A] hover:bg-[#EEF3F5] hover:text-[#26323A]")}
@@ -20465,8 +17435,8 @@ function UpcomingLessonActionMenu({ onCancel, viewStudentsHref }: { onCancel?: (
       >
         <MoreVerticalIcon />
       </button>
-      {menuOpen ? (
-        <span className="absolute right-0 top-10 z-30 w-40 overflow-hidden rounded-[16px] border border-[#DDE5E9] bg-white p-1 text-sm shadow-[0_18px_44px_rgba(38,50,58,0.18)]">
+      {menuOpen && menuPosition ? createPortal(
+        <span className="fixed z-[2147483646] w-44 rounded-[16px] border border-[#DDE5E9] bg-white p-1 text-sm shadow-[0_18px_44px_rgba(38,50,58,0.18)]" style={{ top: menuPosition.top, left: menuPosition.left }}>
           {viewStudentsHref ? (
             <Link
               href={viewStudentsHref}
@@ -20476,6 +17446,21 @@ function UpcomingLessonActionMenu({ onCancel, viewStudentsHref }: { onCancel?: (
               View students
             </Link>
           ) : null}
+          {markAttendanceHref ? (
+            markAttendanceDisabled ? (
+              <span className="flex w-full cursor-not-allowed items-center gap-2 rounded-[12px] px-3 py-2.5 text-left font-semibold text-[#A7B0B6]">
+                Mark Attendance
+              </span>
+            ) : (
+              <Link
+                href={markAttendanceHref}
+                onClick={() => setMenuOpen(false)}
+                className="flex w-full items-center gap-2 rounded-[12px] px-3 py-2.5 text-left font-semibold text-[#17624F] hover:bg-[#EAF7F1] no-underline"
+              >
+                Mark Attendance
+              </Link>
+            )
+          ) : null}
           <button
             type="button"
             onClick={() => {
@@ -20484,9 +17469,10 @@ function UpcomingLessonActionMenu({ onCancel, viewStudentsHref }: { onCancel?: (
             }}
             className="flex w-full items-center gap-2 rounded-[12px] px-3 py-2.5 text-left font-semibold text-[#C83F31] hover:bg-[#FFF1EF]"
           >
-            Cancel
+            Cancel session
           </button>
-        </span>
+        </span>,
+        document.body,
       ) : null}
     </span>
   );
@@ -20551,16 +17537,20 @@ function dateWithinProgramDuration(date: Date, program: Pick<ProgramScheduleSour
   return true;
 }
 
-function weekLessons(sources: Array<{ program: ProgramScheduleSource; ownerLabel?: string }>, week: Date[]) {
+function weekLessons(sources: Array<{ program: ProgramScheduleSource; ownerLabel?: string; ownerLabelsByTrackId?: Record<string, string[]> }>, week: Date[]) {
   const lessons: HomeLesson[] = [];
   const seenLessonKeys = new Set<string>();
 
-  sources.forEach(({ program, ownerLabel }) => {
+  sources.forEach(({ program, ownerLabel, ownerLabelsByTrackId }) => {
     const trackSources = program.scheduleTracks?.length
-      ? program.scheduleTracks.map((track) => ({ trackKey: `${program.id}:${track.id}`, trackName: track.name, rows: parseProgramSchedule(track.schedule) }))
-      : [{ trackKey: program.id, trackName: undefined, rows: parseProgramSchedule(program.schedule) }];
+      ? program.scheduleTracks.map((track) => ({ trackId: track.id, trackKey: `${program.id}:${track.id}`, trackName: track.name, rows: parseProgramSchedule(track.schedule) }))
+      : [{ trackId: null as string | null, trackKey: program.id, trackName: undefined, rows: parseProgramSchedule(program.schedule) }];
 
-    trackSources.forEach(({ trackKey, trackName, rows }) => {
+    trackSources.forEach(({ trackId, trackKey, trackName, rows }) => {
+      const rowOwnerLabels = ownerLabelsByTrackId && trackId ? ownerLabelsByTrackId[trackId] ?? [] : ownerLabel ? [ownerLabel] : [undefined];
+      if (ownerLabelsByTrackId && trackId && rowOwnerLabels.length === 0) {
+        return;
+      }
       const trackColor = programLessonColor(trackKey);
       rows.forEach((row) => {
         const date = week.find((day) => weekdayName(day).toLowerCase() === row.day.toLowerCase());
@@ -20569,28 +17559,30 @@ function weekLessons(sources: Array<{ program: ProgramScheduleSource; ownerLabel
         }
 
         const startsAt = withTime(date, row.start);
-        const dedupeKey = [
-          program.id,
-          ownerLabel ?? "self",
-          dayKey(date),
-          normalizeScheduleTime(row.start) || row.start,
-          normalizeScheduleTime(row.end) || row.end,
-        ].join("|");
-        if (seenLessonKeys.has(dedupeKey)) {
-          return;
-        }
-        seenLessonKeys.add(dedupeKey);
-        lessons.push({
-          program,
-          ownerLabel,
-          trackKey,
-          trackName,
-          date,
-          startsAt,
-          endsAt: row.end ? withTime(date, row.end) : null,
-          start: row.start,
-          end: row.end,
-          color: trackColor,
+        rowOwnerLabels.forEach((nextOwnerLabel) => {
+          const dedupeKey = [
+            program.id,
+            nextOwnerLabel ?? "self",
+            dayKey(date),
+            normalizeScheduleTime(row.start) || row.start,
+            normalizeScheduleTime(row.end) || row.end,
+          ].join("|");
+          if (seenLessonKeys.has(dedupeKey)) {
+            return;
+          }
+          seenLessonKeys.add(dedupeKey);
+          lessons.push({
+            program,
+            ownerLabel: nextOwnerLabel,
+            trackKey,
+            trackName,
+            date,
+            startsAt,
+            endsAt: row.end ? withTime(date, row.end) : null,
+            start: row.start,
+            end: row.end,
+            color: trackColor,
+          });
         });
       });
     });
@@ -20599,7 +17591,7 @@ function weekLessons(sources: Array<{ program: ProgramScheduleSource; ownerLabel
   return lessons;
 }
 
-function nextFutureLessons(sources: Array<{ program: ProgramScheduleSource; ownerLabel?: string }>, currentWeek: Date[], limit: number) {
+function nextFutureLessons(sources: Array<{ program: ProgramScheduleSource; ownerLabel?: string; ownerLabelsByTrackId?: Record<string, string[]> }>, currentWeek: Date[], limit: number) {
   const now = new Date();
   const results: HomeLesson[] = [];
   for (let weekOffset = 1; weekOffset <= 16 && results.length < limit; weekOffset += 1) {
@@ -20631,17 +17623,6 @@ function startOfToday() {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   return today;
-}
-
-function dayKey(date: Date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function weekdayName(date: Date) {
-  return date.toLocaleDateString("en-US", { weekday: "long" });
 }
 
 function weekdayShort(date: Date) {
@@ -20785,7 +17766,9 @@ function TeacherClassCard({
           {isDirector ? <TeacherActionLink href={`${classBasePath}/${program.id}/applications`} icon={<ClipboardIcon />} label="Manage Applications" count={counts?.applications} urgent /> : null}
           {isDirector ? <TeacherActionLink href={`${classBasePath}/${program.id}/instructors`} icon={<InstructorManageIcon />} label="Instructors" count={counts?.instructors} /> : null}
           <TeacherActionLink href={`${classBasePath}/${program.id}/announcement`} icon={<MegaphoneIcon />} label="Announcement" />
+          <TeacherActionLink href={attendanceHistoryHref(mosqueSlug, program.id, classBasePath)} icon={<AttendanceIcon />} label="Attendance History" />
           {canManageFinances ? <TeacherActionLink href={`${classBasePath}/${program.id}/finances`} icon={<FinanceIcon />} label="Manage Finances" /> : null}
+          {isDirector || canManageFinances ? <TeacherActionLink href={`${classBasePath}/${program.id}/exports`} icon={<ClipboardIcon />} label="Export Data" /> : null}
           {isDirector ? <TeacherActionLink href={`${classBasePath}/${program.id}`} icon={<EditClassIcon />} label="Edit Program" /> : null}
           {!isDirector ? <TeacherActionButton icon={<XIcon />} label="Resign from Class" onClick={() => setResignOpen(true)} /> : null}
         </div>
@@ -21702,6 +18685,7 @@ type ProgramStudentInviteRow = Database["public"]["Tables"]["program_student_inv
  */
 function ProgramStudentInviteTools({ program }: { program: Program }) {
   const [isDirector, setIsDirector] = useState(false);
+  const [toolOpen, setToolOpen] = useState(false);
   const [invites, setInvites] = useState<ProgramStudentInviteRow[]>([]);
   const [comment, setComment] = useState("");
   const [paymentBypassed, setPaymentBypassed] = useState(false);
@@ -21788,9 +18772,38 @@ function ProgramStudentInviteTools({ program }: { program: Program }) {
   const claimedInvites = invites.filter((invite) => invite.claimed_at);
   const featuredCode = latestInviteCode ?? unusedInvites[unusedInvites.length - 1]?.invite_code ?? null;
 
+  if (!toolOpen) {
+    return (
+      <section className="bg-white px-4 pb-8 pt-2">
+        <EditorToast toast={toast} onClose={() => setToast(null)} />
+        <div className="flex items-center justify-between gap-3 rounded-[24px] bg-[#17624F] px-4 py-3 text-white shadow-[0_14px_30px_rgba(23,98,79,0.20)]">
+          <div className="min-w-0">
+            <h2 className="text-sm font-semibold">Registration codes</h2>
+            <p className="mt-0.5 text-xs font-medium text-white/72">
+              {unusedInvites.length ? `${unusedInvites.length} unused ${unusedInvites.length === 1 ? "code" : "codes"}` : "Generate invite-only student access"}
+            </p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setToolOpen(true)}
+            className="shrink-0 rounded-full bg-white px-4 py-2 text-xs font-semibold text-[#17624F] shadow-[0_8px_18px_rgba(10,45,36,0.16)]"
+          >
+            Open
+          </button>
+        </div>
+      </section>
+    );
+  }
+
   return (
     <section className="space-y-6 bg-white px-4 pb-8 pt-4">
       <EditorToast toast={toast} onClose={() => setToast(null)} />
+      <div className="flex items-center justify-between gap-3 px-1">
+        <h2 className="text-lg font-semibold text-[#26323A]">Registration codes</h2>
+        <button type="button" onClick={() => setToolOpen(false)} className="rounded-full bg-[#EEF3F5] px-3 py-1.5 text-xs font-semibold text-[#52616A]">
+          Close
+        </button>
+      </div>
       <div className="rounded-[30px] bg-[#17624F] p-5 text-white shadow-[0_18px_40px_rgba(23,98,79,0.24)]">
         <h2 className="text-xl font-semibold leading-6">Generate Student Registration Code</h2>
         <p className="mt-1 truncate text-sm font-medium text-white/72">{program.title}</p>
@@ -22644,7 +19657,7 @@ function Logo({ src, name }: { src: string | null; name: string }) {
   );
 }
 
-function Avatar({ src, name }: { src: string | null; name: string }) {
+export function Avatar({ src, name }: { src: string | null; name: string }) {
   if (src) {
     return <Image src={src} alt="" width={42} height={42} className="h-11 w-11 shrink-0 rounded-full object-cover" />;
   }
@@ -22654,10 +19667,6 @@ function Avatar({ src, name }: { src: string | null; name: string }) {
       {initials(name)}
     </div>
   );
-}
-
-function DirectorySkeleton() {
-  return <GenericLoadingState label="Loading" />;
 }
 
 function ProgramDetailLoadingState() {
@@ -22695,7 +19704,7 @@ function lastNameOf(name: string) {
   return (parts.length > 1 ? parts[parts.length - 1] : parts[0] ?? "").toLowerCase();
 }
 
-function displayAge(profile: Pick<Profile, "date_of_birth" | "age"> | null | undefined) {
+export function displayAge(profile: Pick<Profile, "date_of_birth" | "age"> | null | undefined) {
   const calculatedAge = calculateAge(profile?.date_of_birth ?? null);
   if (calculatedAge !== null) {
     return `${calculatedAge}`;
@@ -22862,18 +19871,6 @@ function normalizeGender(gender: string | null) {
   return normalized;
 }
 
-function formatPrice(cents: number | null) {
-  if (!cents) {
-    return "Free";
-  }
-
-  return new Intl.NumberFormat("en-CA", {
-    style: "currency",
-    currency: "CAD",
-    maximumFractionDigits: 0,
-  }).format(cents / 100);
-}
-
 type ProgramPaymentOptionsInput = Pick<
   Program,
   "is_paid" | "offers_monthly_payment" | "offers_annual_payment" | "price_monthly_cents" | "price_annual_cents" | "is_ongoing" | "start_date" | "end_date" | "duration_months" | "billing_duration_months"
@@ -22881,6 +19878,13 @@ type ProgramPaymentOptionsInput = Pick<
 
 function programPayInFullDurationMonths(program: Pick<Program, "start_date" | "end_date" | "duration_months" | "billing_duration_months">) {
   return program.billing_duration_months ?? program.duration_months ?? estimateBillingMonths(program.start_date ?? "", program.end_date ?? "") ?? null;
+}
+
+/** Duration to compare monthly-vs-annual pricing against. An ongoing program's annual option
+ * is a yearly renewal, so it's always weighed against 12 months of monthly payments — a
+ * fixed-duration program's annual option is a lump sum for the whole known length instead. */
+function pricingComparisonDurationMonths(program: Pick<Program, "is_ongoing" | "start_date" | "end_date" | "duration_months" | "billing_duration_months">) {
+  return program.is_ongoing ? 12 : programPayInFullDurationMonths(program);
 }
 
 function programOfferedPaymentTypes(program: Pick<Program, "is_paid" | "offers_monthly_payment" | "offers_annual_payment" | "is_ongoing">): PaymentType[] {
@@ -22891,19 +19895,19 @@ function programOfferedPaymentTypes(program: Pick<Program, "is_paid" | "offers_m
   if (program.offers_monthly_payment !== false) {
     types.push("monthly");
   }
-  if (!program.is_ongoing && program.offers_annual_payment) {
+  if (program.offers_annual_payment) {
     types.push("annual");
   }
   return types;
 }
 
-function programPaymentOptions(program: ProgramPaymentOptionsInput) {
+export function programPaymentOptions(program: ProgramPaymentOptionsInput) {
   if (!program.is_paid) {
     return [];
   }
   const monthlyEnabled = program.offers_monthly_payment !== false && Boolean(program.price_monthly_cents);
-  const annualEnabled = !program.is_ongoing && Boolean(program.offers_annual_payment && program.price_annual_cents);
-  const durationMonths = programPayInFullDurationMonths(program);
+  const annualEnabled = Boolean(program.offers_annual_payment && program.price_annual_cents);
+  const durationMonths = pricingComparisonDurationMonths(program);
   const options: Array<{ type: PaymentType; title: string; price: string; subtitle: string; badge?: string }> = [];
   if (monthlyEnabled) {
     const monthlyBadge = monthlyEnabled && annualEnabled ? monthlyDealText(program) : "";
@@ -22924,19 +19928,23 @@ function programPaymentOptions(program: ProgramPaymentOptionsInput) {
     const monthlyEquivalent = durationMonths && program.price_annual_cents ? Math.round(program.price_annual_cents / durationMonths) : null;
     options.push({
       type: "annual",
-      title: "Pay in Full",
-      price: formatPrice(program.price_annual_cents),
-      subtitle: monthlyEquivalent
-        ? `Equivalent to ${formatPrice(monthlyEquivalent)}/month for the ${durationMonths}-month program.`
-        : "One payment covers the full program.",
+      title: program.is_ongoing ? "Annual subscription" : "Pay in Full",
+      price: program.is_ongoing ? `${formatPrice(program.price_annual_cents)}/year` : formatPrice(program.price_annual_cents),
+      subtitle: program.is_ongoing
+        ? monthlyEquivalent
+          ? `Equivalent to ${formatPrice(monthlyEquivalent)}/month, billed once a year. Renews automatically until cancelled.`
+          : "Billed once a year. Renews automatically until cancelled."
+        : monthlyEquivalent
+          ? `Equivalent to ${formatPrice(monthlyEquivalent)}/month for the ${durationMonths}-month program.`
+          : "One payment covers the full program.",
       badge: monthlyEnabled && annualEnabled ? annualDealText(program) : "",
     });
   }
   return options;
 }
 
-function annualDealText(program: Pick<Program, "price_monthly_cents" | "price_annual_cents" | "start_date" | "end_date" | "duration_months" | "billing_duration_months">) {
-  const durationMonths = programPayInFullDurationMonths(program);
+export function annualDealText(program: Pick<Program, "price_monthly_cents" | "price_annual_cents" | "start_date" | "end_date" | "duration_months" | "billing_duration_months" | "is_ongoing">) {
+  const durationMonths = pricingComparisonDurationMonths(program);
   if (!durationMonths) {
     return "";
   }
@@ -22946,7 +19954,7 @@ function annualDealText(program: Pick<Program, "price_monthly_cents" | "price_an
     return "";
   }
   const savings = monthlyTotal - annual;
-  return `Save ${formatPrice(savings)} by paying in full`;
+  return program.is_ongoing ? `Save ${formatPrice(savings)} per year by paying annually` : `Save ${formatPrice(savings)} by paying in full`;
 }
 
 function mosqueSlugLabel(mosque: Pick<Mosque, "slug" | "name"> | null | undefined) {
@@ -22956,8 +19964,8 @@ function mosqueSlugLabel(mosque: Pick<Mosque, "slug" | "name"> | null | undefine
   return titleCase(mosque.slug || mosque.name);
 }
 
-function monthlyDealText(program: Pick<Program, "price_monthly_cents" | "price_annual_cents" | "start_date" | "end_date" | "duration_months" | "billing_duration_months">) {
-  const durationMonths = programPayInFullDurationMonths(program);
+function monthlyDealText(program: Pick<Program, "price_monthly_cents" | "price_annual_cents" | "start_date" | "end_date" | "duration_months" | "billing_duration_months" | "is_ongoing">) {
+  const durationMonths = pricingComparisonDurationMonths(program);
   if (!durationMonths) {
     return "";
   }
@@ -22969,15 +19977,6 @@ function monthlyDealText(program: Pick<Program, "price_monthly_cents" | "price_a
   return `Save ${formatPrice(annual - monthlyTotal)} by paying monthly`;
 }
 
-function formatAgeRange(ageRange: string | null) {
-  if (!ageRange) {
-    return "All ages";
-  }
-
-  const trimmed = ageRange.trim();
-  return trimmed.toLowerCase() === "all" ? "All ages" : trimmed;
-}
-
 function validateAccountPassword(value: string) {
   if (value.length < 8) {
     return "Password must be at least 8 characters.";
@@ -22986,43 +19985,6 @@ function validateAccountPassword(value: string) {
     return "Password must include uppercase, lowercase, number, and symbol.";
   }
   return null;
-}
-
-function formatGender(gender: string | null) {
-  if (!gender) {
-    return "Brothers & Sisters";
-  }
-
-  const trimmed = gender.trim();
-  const normalized = trimmed.toLowerCase().replace(/[_-]+/g, " ");
-  if (normalized === "all" || normalized === "all genders" || normalized === "all students" || normalized === "mixed") {
-    return "Brothers & Sisters";
-  }
-  if (normalized === "male" || normalized === "boys" || normalized === "brothers" || normalized === "brothers only") {
-    return "Brothers Only";
-  }
-  if (normalized === "female" || normalized === "girls" || normalized === "sisters" || normalized === "sisters only") {
-    return "Sisters Only";
-  }
-
-  return trimmed;
-}
-
-function formatStudentDetailGender(gender: string | null) {
-  if (!gender) {
-    return "Not provided";
-  }
-
-  const trimmed = gender.trim();
-  const normalized = trimmed.toLowerCase().replace(/[_-]+/g, " ");
-  if (normalized === "male" || normalized === "boys" || normalized === "brothers" || normalized === "brothers only") {
-    return "Brother";
-  }
-  if (normalized === "female" || normalized === "girls" || normalized === "sisters" || normalized === "sisters only") {
-    return "Sister";
-  }
-
-  return trimmed;
 }
 
 function timeAgo(value: string) {
@@ -23043,76 +20005,15 @@ function timeAgo(value: string) {
   return `${diffDays}d ago`;
 }
 
-function parseProgramSchedule(schedule: Json | null): ProgramScheduleRow[] {
-  const rawRows = expandRawScheduleRows(schedule);
-  if (rawRows.length === 0) {
-    return [];
-  }
-
-  const rows = rawRows
-    .map((item): ProgramScheduleRow | null => {
-      if (!item || typeof item !== "object" || Array.isArray(item)) {
-        return null;
-      }
-
-      const dayValue = readScheduleString(item, ["day", "weekday", "days"]);
-      const startValue = readScheduleString(item, ["start", "start_time", "startTime", "from"]);
-      const endValue = readScheduleString(item, ["end", "end_time", "endTime", "to"]);
-      const idValue = readScheduleString(item, ["id", "session_id", "sessionId"]);
-      const dateValue = readScheduleString(item, ["date", "session_date", "sessionDate"]);
-      const day = dayValue ? normalizeScheduleDay(dayValue) : "";
-      const start = startValue ? normalizeScheduleTime(startValue) : "";
-      const end = endValue ? normalizeScheduleTime(endValue) : "";
-      if (!day || !start) {
-        return null;
-      }
-
-      return { id: idValue || undefined, date: dateValue || undefined, day, start, end: end || start };
-    })
-    .filter((row): row is ProgramScheduleRow => Boolean(row));
-
-  return sortScheduleRows(rows);
-}
-
-function scheduleRowKey(row: ProgramScheduleRow) {
-  return [row.date ?? "", row.day, normalizeScheduleTime(row.start) || row.start, normalizeScheduleTime(row.end) || row.end].join("|");
-}
-
-function uniqueScheduleRows(rows: ProgramScheduleRow[]) {
-  const byKey = new Map<string, ProgramScheduleRow>();
-  for (const row of rows) {
-    const start = normalizeScheduleTime(row.start) || row.start;
-    const end = normalizeScheduleTime(row.end) || row.end || start;
-    if (!row.day || !start) {
-      continue;
-    }
-    const normalized = { ...row, start, end };
-    if (!byKey.has(scheduleRowKey(normalized))) {
-      byKey.set(scheduleRowKey(normalized), normalized);
-    }
-  }
-  return sortScheduleRows(Array.from(byKey.values()));
-}
-
-function scheduleRowsToJson(rows: ProgramScheduleRow[]): Json {
-  return uniqueScheduleRows(rows).map((row) => ({
-    id: row.id,
-    date: row.date,
-    day: row.day,
-    start: row.start,
-    end: row.end,
-  })) as unknown as Json;
-}
-
-function dayFromSessionDate(value: string | null) {
+export function formatAnnouncementTimestamp(value: string | null) {
   if (!value) {
-    return "Monday" as const;
+    return "";
   }
-  const parsed = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(parsed.getTime())) {
-    return "Monday" as const;
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return "";
   }
-  return scheduleDayOptions[parsed.getDay() === 0 ? 6 : parsed.getDay() - 1];
+  return date.toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" });
 }
 
 function scheduleRowFromProgramSession(session: ProgramSession): ProgramScheduleRow {
@@ -23170,96 +20071,6 @@ function linkedEditorTrackRows(tracks: ProgramTrack[], sessions: ProgramSession[
   });
 }
 
-function expandRawScheduleRows(schedule: Json | null): Array<Record<string, Json>> {
-  if (Array.isArray(schedule)) {
-    return schedule.flatMap((item) => {
-      if (!item || typeof item !== "object" || Array.isArray(item)) {
-        return [];
-      }
-
-      return expandScheduleObject(item as Record<string, Json>);
-    });
-  }
-
-  if (schedule && typeof schedule === "object") {
-    return expandScheduleObject(schedule as Record<string, Json>);
-  }
-
-  return [];
-}
-
-function expandScheduleObject(item: Record<string, Json>): Array<Record<string, Json>> {
-  const days = item.days;
-  if (Array.isArray(days)) {
-    return days
-      .filter((day): day is string => typeof day === "string")
-      .map((day) => ({
-        ...item,
-        day,
-      }));
-  }
-
-  return [item];
-}
-
-function readScheduleString(item: Record<string, Json>, keys: string[]) {
-  for (const key of keys) {
-    const value = item[key];
-    if (typeof value === "string" && value.trim()) {
-      return value;
-    }
-  }
-
-  return "";
-}
-
-function sortScheduleRows(rows: ProgramScheduleRow[]) {
-  return [...rows].sort((a, b) => scheduleDayOptions.indexOf(a.day as (typeof scheduleDayOptions)[number]) - scheduleDayOptions.indexOf(b.day as (typeof scheduleDayOptions)[number]));
-}
-
-function normalizeScheduleDay(value: string) {
-  const lower = value.trim().toLowerCase();
-  const found = scheduleDayOptions.find((day) => day.toLowerCase() === lower || day.slice(0, 3).toLowerCase() === lower.slice(0, 3));
-  return found ?? "";
-}
-
-function normalizeScheduleTime(value: string) {
-  const match = value.match(/^(\d{1,2}):(\d{2})/);
-  if (!match) {
-    return "";
-  }
-
-  return `${match[1].padStart(2, "0")}:${match[2]}`;
-}
-
-function formatClockLabel(value: string) {
-  const [hourText, minuteText] = value.split(":");
-  const hour = Number(hourText);
-  const minute = Number(minuteText);
-  if (!Number.isFinite(hour) || !Number.isFinite(minute)) {
-    return value;
-  }
-
-  const date = new Date();
-  date.setHours(hour, minute, 0, 0);
-  return date.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
-}
-
-function formatScheduleRange(start: string, end?: string | null) {
-  const startLabel = formatClockLabel(start);
-  const endLabel = end ? formatClockLabel(end) : "";
-  return endLabel ? `${startLabel}-${endLabel}` : startLabel;
-}
-
-function scheduleLabel(schedule: Json | null, fallback: string) {
-  const rows = parseProgramSchedule(schedule);
-  if (rows.length === 0) {
-    return fallback;
-  }
-
-  return rows.length === 1 ? rows[0].day : rows.map((row) => row.day.slice(0, 3)).join(", ");
-}
-
 function scheduleTime(schedule: Json | null) {
   const rows = parseProgramSchedule(schedule);
   if (rows.length === 0) {
@@ -23270,7 +20081,7 @@ function scheduleTime(schedule: Json | null) {
   return rows.every((row) => `${row.start}-${row.end}` === firstTime) ? formatScheduleRange(rows[0].start, rows[0].end) : "Multiple times";
 }
 
-function scheduleSummary(schedule: Json | null, notes: string | null) {
+export function scheduleSummary(schedule: Json | null, notes: string | null) {
   const day = scheduleLabel(schedule, "Schedule will be announced");
   const time = scheduleTime(schedule);
   const full = notes || (time === "TBA" ? day : `${day}, ${time}`);
@@ -23295,3 +20106,4 @@ function mockProgramDescription(title: string) {
 function mockTeacherCredentials(title: string) {
   return `Certified instructor with experience teaching ${title.toLowerCase()} in a masjid classroom setting. Credentials and ijazah details can be updated from the teacher profile in Supabase.`;
 }
+

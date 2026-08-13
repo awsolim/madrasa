@@ -1,4 +1,4 @@
-import { PortalClassesPage } from "@/components/pages/page-views";
+import { PortalClassesPage } from "@/components/pages/portal-pages";
 
 export default async function Page({
   params,

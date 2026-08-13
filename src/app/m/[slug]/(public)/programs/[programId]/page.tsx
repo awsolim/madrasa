@@ -1,4 +1,4 @@
-import { PublicProgramDetailPage } from "@/components/pages/page-views";
+import { PublicProgramDetailPage } from "@/components/pages/public-pages";
 
 function safeReturnTo(value: string | string[] | undefined, slug: string) {
   const returnTo = Array.isArray(value) ? value[0] : value;

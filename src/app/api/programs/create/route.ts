@@ -263,7 +263,7 @@ export async function POST(request: Request) {
     }
 
     if (!isDraft && isPaid && !usesPerTrackPricing && offersAnnualPayment && (!priceAnnualCents || priceAnnualCents < 50)) {
-      return Response.json({ error: "Pay in Full needs a valid price." }, { status: 400 });
+      return Response.json({ error: durationType === "ongoing" ? "Annual subscription needs a valid price." : "Pay in Full needs a valid price." }, { status: 400 });
     }
 
     const supabase = createSupabaseServiceClient();
@@ -363,6 +363,7 @@ export async function POST(request: Request) {
             product: product.id,
             currency: "cad",
             unit_amount: priceAnnualCents ?? 0,
+            ...(durationType === "ongoing" ? { recurring: { interval: "year" as const } } : {}),
             metadata: {
               mosque_id: mosque.id,
               mosque_slug: mosque.slug,

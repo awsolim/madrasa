@@ -167,6 +167,10 @@ async function upsertPaidEnrollmentFromSession(session: Stripe.Checkout.Session,
     ? await supabase.from("program_payment_terms").select("*").eq("id", paymentTermsId).maybeSingle()
     : { data: null };
   const subscriptionId = typeof session.subscription === "string" ? session.subscription : session.subscription?.id ?? null;
+  // "annual" payment_type is ambiguous on its own — it can be a one-time pay_in_full charge
+  // (fixed-duration program) or a genuine recurring yearly subscription (ongoing program).
+  // Whether a Stripe subscription actually exists is the reliable signal for "recurring or not".
+  const isOneTimePayment = !subscriptionId;
   let subscription: Stripe.Subscription | null = null;
   if (subscriptionId) {
     const stripeRequestOptions = shouldUseStripeConnect() && stripeAccountId ? { stripeAccount: stripeAccountId } : undefined;
@@ -201,7 +205,7 @@ async function upsertPaidEnrollmentFromSession(session: Stripe.Checkout.Session,
       amount_cents: paymentTerms?.amount_cents ?? null,
       billing_months: paymentTerms?.billing_months ?? null,
       currency: paymentTerms?.currency ?? session.currency ?? "cad",
-      status: subscription?.status ?? (paymentType === "annual" ? "paid" : "active"),
+      status: subscription?.status ?? (isOneTimePayment ? "paid" : "active"),
       current_period_start: period.start,
       current_period_end: period.end,
       cancel_at_period_end: subscription?.cancel_at_period_end ?? false,
@@ -254,7 +258,7 @@ async function upsertPaidEnrollmentFromSession(session: Stripe.Checkout.Session,
     await supabase
       .from("program_payment_terms")
       .update({
-        status: paymentType === "annual" ? "paid" : "active",
+        status: isOneTimePayment ? "paid" : "active",
         stripe_customer_id: typeof session.customer === "string" ? session.customer : session.customer?.id ?? null,
         stripe_checkout_session_id: session.id,
         stripe_subscription_id: subscriptionId,
@@ -273,9 +277,9 @@ async function upsertPaidEnrollmentFromSession(session: Stripe.Checkout.Session,
     programId,
     studentProfileId,
     actorProfileId: null,
-    eventType: paymentType === "annual" ? "payment_completed" : "subscription_started",
+    eventType: isOneTimePayment ? "payment_completed" : "subscription_started",
     summary:
-      paymentType === "annual"
+      isOneTimePayment
         ? `Payment completed and enrollment activated for ${studentLabel}.`
         : `Subscription started and enrollment activated for ${studentLabel}.`,
     metadata: { stripeSubscriptionId: subscriptionId, stripeCheckoutSessionId: session.id },
@@ -283,7 +287,7 @@ async function upsertPaidEnrollmentFromSession(session: Stripe.Checkout.Session,
 
   await notifyProgramManagers(supabase, programId, {
     title: "Payment received",
-    body: paymentType === "annual" ? `${studentLabel} completed payment and enrollment is active.` : `${studentLabel} started a subscription and enrollment is active.`,
+    body: isOneTimePayment ? `${studentLabel} completed payment and enrollment is active.` : `${studentLabel} started a subscription and enrollment is active.`,
   });
 }
 

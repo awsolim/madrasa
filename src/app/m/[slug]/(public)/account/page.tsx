@@ -1,4 +1,4 @@
-import { PublicAccountPage } from "@/components/pages/page-views";
+import { PublicAccountPage } from "@/components/pages/portal-pages";
 
 export default async function Page({
   params,

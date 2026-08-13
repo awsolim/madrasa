@@ -7,6 +7,14 @@ type NotifyBody = {
   announcementId?: string;
 };
 
+function notificationBody(message: string, attachments: unknown) {
+  const trimmed = message.trim();
+  if (trimmed) {
+    return trimmed.length > 140 ? `${trimmed.slice(0, 137)}...` : trimmed;
+  }
+  return Array.isArray(attachments) && attachments.length > 0 ? "New attachment" : "New announcement";
+}
+
 export async function POST(request: Request, { params }: { params: Promise<{ programId: string }> }) {
   try {
     const { programId } = await params;
@@ -93,7 +101,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
     void sendPushNotification(supabase, {
       recipientProfileIds: Array.from(recipientIds),
       title: `New announcement: ${program.title}`,
-      body: announcement.message.length > 140 ? `${announcement.message.slice(0, 137)}...` : announcement.message,
+      body: notificationBody(announcement.message, announcement.attachments),
       url: `/m/${mosque.slug}/portal/announcements`,
     });
 

@@ -1,4 +1,4 @@
-import { LoginPage } from "@/components/pages/page-views";
+import { LoginPage } from "@/components/pages/auth-pages";
 
 function safeReturnTo(value: string | string[] | undefined, slug: string) {
   const returnTo = Array.isArray(value) ? value[0] : value;

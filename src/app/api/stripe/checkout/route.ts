@@ -90,10 +90,22 @@ export async function POST(request: Request) {
       return Response.json({ error: "An active subscription already exists for this registration." }, { status: 409 });
     }
 
-    const paymentType = paymentTerms.payment_type === "pay_in_full" ? "annual" : "monthly";
+    // "annual" pricing is either a one-time lump sum (pay_in_full, for a fixed-duration
+    // program) or a genuine recurring yearly subscription (annual, for an ongoing program) —
+    // see payment-terms.ts's paymentTypeFor(). Everything downstream that only cares about
+    // "was money charged as monthly or annual pricing" uses paymentType; everything that cares
+    // about "does this create a recurring Stripe subscription" uses isRecurring/recurringInterval.
+    const isRecurringMonthly = paymentTerms.payment_type === "monthly";
+    const isRecurringAnnual = paymentTerms.payment_type === "annual";
+    const isOneTimeAnnual = paymentTerms.payment_type === "pay_in_full";
+    const isRecurring = isRecurringMonthly || isRecurringAnnual;
+    const paymentType: "monthly" | "annual" = isRecurringMonthly ? "monthly" : "annual";
     const approvedAmount = paymentTerms.amount_cents;
     if (!approvedAmount || approvedAmount < 50) {
-      return Response.json({ error: `This approval does not have a valid ${paymentType === "annual" ? "one-time annual" : "monthly"} price.` }, { status: 409 });
+      return Response.json(
+        { error: `This approval does not have a valid ${paymentType === "annual" ? (isOneTimeAnnual ? "one-time annual" : "annual") : "monthly"} price.` },
+        { status: 409 },
+      );
     }
 
     const stripeRequestOptions = shouldUseStripeConnect() && mosque.stripe_account_id ? { stripeAccount: mosque.stripe_account_id } : undefined;
@@ -111,7 +123,7 @@ export async function POST(request: Request) {
         product: productId,
         currency: "cad",
         unit_amount: approvedAmount,
-        ...(paymentType === "monthly" ? { recurring: { interval: "month" as const } } : {}),
+        ...(isRecurringMonthly ? { recurring: { interval: "month" as const } } : isRecurringAnnual ? { recurring: { interval: "year" as const } } : {}),
         metadata: {
           payment_terms_id: paymentTerms.id,
           enrollment_request_id: enrollmentRequest.id,
@@ -142,13 +154,13 @@ export async function POST(request: Request) {
 
     const session = await stripe.checkout.sessions.create(
       {
-        mode: paymentType === "annual" ? "payment" : "subscription",
+        mode: isRecurring ? "subscription" : "payment",
         line_items: [{ price: dynamicPrice.id, quantity: 1 }],
         customer_email: profile?.email ?? user.email ?? undefined,
         client_reference_id: enrollmentRequest.id,
         success_url: `${origin}${returnPath}?result=success&session_id={CHECKOUT_SESSION_ID}`,
         cancel_url: `${origin}${returnPath}?result=cancelled`,
-        ...(paymentType === "monthly" ? { subscription_data: { metadata: checkoutMetadata } } : {}),
+        ...(isRecurring ? { subscription_data: { metadata: checkoutMetadata } } : {}),
         metadata: checkoutMetadata,
       },
       stripeRequestOptions,

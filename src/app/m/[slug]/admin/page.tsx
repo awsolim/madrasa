@@ -1,4 +1,4 @@
-import { AdminDashboardPage } from "@/components/pages/page-views";
+import { AdminDashboardPage } from "@/components/pages/admin-pages";
 
 export default async function Page({
   params,

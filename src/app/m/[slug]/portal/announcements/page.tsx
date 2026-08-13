@@ -1,4 +1,4 @@
-import { PortalAnnouncementsPage } from "@/components/pages/page-views";
+import { PortalAnnouncementsPage } from "@/components/pages/portal-pages";
 
 export default async function Page({
   params,

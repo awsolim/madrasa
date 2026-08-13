@@ -1,4 +1,4 @@
-import { AdminSettingsPage } from "@/components/pages/page-views";
+import { AdminSettingsPage } from "@/components/pages/admin-pages";
 
 export default async function Page({
   params,

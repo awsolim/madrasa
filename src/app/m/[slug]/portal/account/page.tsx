@@ -1,4 +1,4 @@
-import { PortalAccountPage } from "@/components/pages/page-views";
+import { PortalAccountPage } from "@/components/pages/portal-pages";
 
 export default async function Page({
   params,
