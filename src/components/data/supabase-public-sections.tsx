@@ -4371,38 +4371,98 @@ function VoiceAttachmentPreview({ attachment, disabled, onRemove }: { attachment
   );
 }
 
-export function MessageAttachmentList({ attachments }: { attachments: MessageAttachment[] }) {
+function useSignedAttachmentUrls(programId: string, source: "announcement" | "note", messageId: string, attachmentIds: string[]) {
+  const [urls, setUrls] = useState<Record<string, string>>({});
+  const attachmentIdsKey = attachmentIds.join(",");
+
+  useEffect(() => {
+    let cancelled = false;
+    if (!attachmentIdsKey) {
+      return;
+    }
+    (async () => {
+      const token = await getCurrentAccessToken();
+      if (!token) {
+        return;
+      }
+      const response = await fetch(`/api/programs/${programId}/message-attachments/signed-url`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ source, messageId }),
+      });
+      const result = (await response.json().catch(() => ({}))) as { urls?: Record<string, string> };
+      if (!cancelled && result.urls) {
+        setUrls(result.urls);
+      }
+    })().catch(() => null);
+    return () => {
+      cancelled = true;
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [programId, source, messageId, attachmentIdsKey]);
+
+  return urls;
+}
+
+export function MessageAttachmentList({
+  attachments,
+  programId,
+  source,
+  messageId,
+}: {
+  attachments: MessageAttachment[];
+  programId: string;
+  source: "announcement" | "note";
+  messageId: string;
+}) {
+  const signedUrls = useSignedAttachmentUrls(
+    programId,
+    source,
+    messageId,
+    attachments.map((attachment) => attachment.id),
+  );
   if (!attachments.length) {
     return null;
   }
   return (
     <div className="mt-3 grid gap-2">
-      {attachments.map((attachment) => (
-        <div key={attachment.id} className="overflow-hidden rounded-[14px] border border-[#DDE6EA] bg-white">
-          {attachment.kind === "image" ? (
-            <a href={attachment.url} target="_blank" rel="noreferrer" className="block">
-              <img src={attachment.url} alt={attachmentDisplayName(attachment)} className="max-h-72 w-full object-cover" />
-            </a>
-          ) : attachment.kind === "audio" ? (
-            <div className="space-y-2 px-3 py-3">
-              <div className="flex items-center gap-2 text-xs font-semibold text-[#26323A]">
-                <MicIcon />
-                <span className="min-w-0 truncate">{attachmentDisplayName(attachment)}</span>
-                <span className="ml-auto shrink-0 text-[11px] font-medium text-[#7B858C]">{formatAttachmentSize(attachment.size)}</span>
-              </div>
-              <audio controls src={attachment.url} className="w-full" />
+      {attachments.map((attachment) => {
+        const url = signedUrls[attachment.id];
+        if (!url) {
+          return (
+            <div key={attachment.id} className="flex min-h-12 items-center gap-2 rounded-[14px] border border-[#DDE6EA] bg-white px-3 py-2 text-xs font-medium text-[#7B858C]">
+              <span className="h-4 w-4 animate-spin rounded-full border-2 border-[#DDEFF4] border-t-[#2F8FB3]" aria-hidden />
+              Loading attachment...
             </div>
-          ) : (
-            <a href={attachment.url} target="_blank" rel="noreferrer" className="flex min-h-12 items-center gap-3 px-3 py-2 text-sm font-semibold text-[#17624F]">
-              <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#EEF6F7]" aria-hidden>
-                <FileIcon />
-              </span>
-              <span className="min-w-0 flex-1 truncate">{attachmentDisplayName(attachment)}</span>
-              <span className="shrink-0 text-xs text-[#7B858C]">{formatAttachmentSize(attachment.size)}</span>
-            </a>
-          )}
-        </div>
-      ))}
+          );
+        }
+        return (
+          <div key={attachment.id} className="overflow-hidden rounded-[14px] border border-[#DDE6EA] bg-white">
+            {attachment.kind === "image" ? (
+              <a href={url} target="_blank" rel="noreferrer" className="block">
+                <img src={url} alt={attachmentDisplayName(attachment)} className="max-h-72 w-full object-cover" />
+              </a>
+            ) : attachment.kind === "audio" ? (
+              <div className="space-y-2 px-3 py-3">
+                <div className="flex items-center gap-2 text-xs font-semibold text-[#26323A]">
+                  <MicIcon />
+                  <span className="min-w-0 truncate">{attachmentDisplayName(attachment)}</span>
+                  <span className="ml-auto shrink-0 text-[11px] font-medium text-[#7B858C]">{formatAttachmentSize(attachment.size)}</span>
+                </div>
+                <audio controls src={url} className="w-full" />
+              </div>
+            ) : (
+              <a href={url} target="_blank" rel="noreferrer" className="flex min-h-12 items-center gap-3 px-3 py-2 text-sm font-semibold text-[#17624F]">
+                <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-[#EEF6F7]" aria-hidden>
+                  <FileIcon />
+                </span>
+                <span className="min-w-0 flex-1 truncate">{attachmentDisplayName(attachment)}</span>
+                <span className="shrink-0 text-xs text-[#7B858C]">{formatAttachmentSize(attachment.size)}</span>
+              </a>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -13921,7 +13981,7 @@ export function StudentAnnouncementCard({ announcement }: { announcement: Announ
         </div>
         <p className="mt-0.5 text-xs font-medium text-[#2F8FB3]">{announcement.program?.title ?? "Class announcement"}</p>
         {announcement.message.trim() ? <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-[#26323A]">{announcement.message}</p> : null}
-        <MessageAttachmentList attachments={attachments} />
+        <MessageAttachmentList attachments={attachments} programId={announcement.program_id} source="announcement" messageId={announcement.id} />
       </div>
     </article>
   );
@@ -14078,7 +14138,7 @@ export function StudentNoteBubble({
           <span className="rounded-full bg-[#EAF4F7] px-2 py-0.5 text-[11px] font-semibold text-[#2F6F83]">Subject: {note.student?.full_name ?? "Student"}</span>
         </div>
         {note.message.trim() ? <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-[#26323A]">{note.message}</p> : null}
-        <MessageAttachmentList attachments={attachments} />
+        <MessageAttachmentList attachments={attachments} programId={note.program_id} source="note" messageId={note.id} />
         <div className="mt-2 flex items-center justify-between gap-2 text-xs text-[#6B747B]">
           <span>{seen ? `Seen ${note.seen_at ? timeAgo(note.seen_at) : ""}` : "Not seen"}</span>
           {viewer === "recipient" && !seen ? <span className="font-semibold text-[#2F8FB3]">Marked seen</span> : null}
@@ -14127,7 +14187,7 @@ function TeacherAnnouncementBubble({ announcement, readers = [], showSeenDetails
           <span className="text-xs text-[#6B747B]">{formatAnnouncementTimestamp(announcement.created_at)}</span>
         </div>
         {announcement.message.trim() ? <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-[#26323A]">{announcement.message}</p> : null}
-        <MessageAttachmentList attachments={attachments} />
+        <MessageAttachmentList attachments={attachments} programId={announcement.program_id} source="announcement" messageId={announcement.id} />
         {showSeenDetails ? (
           <div className="mt-3 flex justify-end">
             <button
@@ -15196,11 +15256,20 @@ function TeacherStudentNotesPage({
     }
     setDeletingNoteId(note.id);
     setError(null);
-    const supabase = createSupabaseBrowserClient();
-    const { error: deleteError } = await supabase.from("program_student_notes").delete().eq("id", note.id);
+    const token = await getCurrentAccessToken();
+    if (!token) {
+      setDeletingNoteId(null);
+      setError("Log in required.");
+      return;
+    }
+    const response = await fetch(`/api/programs/${program.id}/notes/${note.id}`, {
+      method: "DELETE",
+      headers: { Authorization: `Bearer ${token}` },
+    });
     setDeletingNoteId(null);
-    if (deleteError) {
-      setError(deleteError.message);
+    if (!response.ok) {
+      const result = (await response.json().catch(() => ({}))) as { error?: string };
+      setError(result.error ?? "Could not delete note.");
       return;
     }
     setNotes((current) => current.filter((item) => item.id !== note.id));

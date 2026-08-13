@@ -5,6 +5,9 @@ export const runtime = "nodejs";
 const maxAttachmentBytes = 25 * 1024 * 1024;
 const allowedMimePrefixes = ["audio/", "image/"];
 const allowedMimeTypes = new Set(["application/pdf", "text/plain"]);
+// Signed just long enough to cover the compose flow (preview + send); the persisted view
+// (MessageAttachmentList) never uses this URL -- it re-signs on render via signed-url/route.ts.
+const composePreviewUrlExpirySeconds = 60 * 60;
 
 function extensionFromFile(file: File) {
   const fromName = file.name.split(".").pop()?.toLowerCase();
@@ -88,7 +91,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
 
     const extension = extensionFromFile(file);
     const path = `program-message-attachments/${programId}/${crypto.randomUUID()}.${extension}`;
-    const { error: uploadError } = await supabase.storage.from("media").upload(path, file, {
+    const { error: uploadError } = await supabase.storage.from("message-attachments").upload(path, file, {
       contentType: file.type || "application/octet-stream",
       upsert: false,
     });
@@ -97,12 +100,16 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
       return Response.json({ error: uploadError.message }, { status: 500 });
     }
 
-    const { data } = supabase.storage.from("media").getPublicUrl(path);
+    const { data, error: signError } = await supabase.storage.from("message-attachments").createSignedUrl(path, composePreviewUrlExpirySeconds);
+    if (signError || !data?.signedUrl) {
+      return Response.json({ error: signError?.message ?? "Could not prepare attachment preview." }, { status: 500 });
+    }
+
     return Response.json({
       attachment: {
         id: crypto.randomUUID(),
         kind: attachmentKind(file),
-        url: data.publicUrl,
+        url: data.signedUrl,
         path,
         name: file.name || "Attachment",
         mimeType: file.type || "application/octet-stream",
