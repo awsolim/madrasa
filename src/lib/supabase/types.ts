@@ -300,6 +300,7 @@ export type Database = {
           program_id: string;
           author_profile_id: string;
           message: string;
+          attachments: Json;
           target_program_track_ids: string[];
           created_at: string;
           updated_at: string;
@@ -342,6 +343,7 @@ export type Database = {
           parent_profile_id: string | null;
           author_profile_id: string;
           message: string;
+          attachments: Json;
           category: string;
           seen_at: string | null;
           seen_by: string | null;
@@ -672,6 +674,28 @@ export type Database = {
         };
         Insert: Partial<Database["public"]["Tables"]["program_track_sessions"]["Row"]>;
         Update: Partial<Database["public"]["Tables"]["program_track_sessions"]["Row"]>;
+        Relationships: [];
+      };
+      program_attendance_records: {
+        Row: {
+          id: string;
+          program_id: string;
+          program_session_id: string | null;
+          enrollment_id: string | null;
+          student_profile_id: string;
+          session_date: string;
+          day_of_week: string | null;
+          start_time: string;
+          end_time: string | null;
+          status: string;
+          absence_reason: string | null;
+          marked_by: string | null;
+          marked_at: string;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["program_attendance_records"]["Row"]>;
+        Update: Partial<Database["public"]["Tables"]["program_attendance_records"]["Row"]>;
         Relationships: [];
       };
       enrollment_tracks: {

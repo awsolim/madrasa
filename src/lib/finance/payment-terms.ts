@@ -30,21 +30,30 @@ function approvedPriceFor(input: ApprovedPaymentInput, paymentType: "monthly" | 
   return input.priceMonthlyCents ?? input.enrollmentRequest.approved_price_monthly_cents ?? input.program.price_monthly_cents ?? null;
 }
 
-function paymentTypeFor(input: ApprovedPaymentInput): "free" | "waived" | "monthly" | "pay_in_full" {
+function paymentTypeFor(input: ApprovedPaymentInput): "free" | "waived" | "monthly" | "pay_in_full" | "annual" {
   if (!input.program.is_paid) {
     return "free";
   }
   if (input.paymentBypassed) {
     return "waived";
   }
-  return (input.paymentType ?? input.enrollmentRequest.payment_type) === "annual" ? "pay_in_full" : "monthly";
+  if ((input.paymentType ?? input.enrollmentRequest.payment_type) !== "annual") {
+    return "monthly";
+  }
+  // Annual means two different things depending on duration: a fixed-length program has a
+  // known end, so "annual" is a one-time lump sum covering it ("pay_in_full"). An ongoing
+  // program has no end, so "annual" must be a genuine recurring yearly subscription instead.
+  return input.program.is_ongoing ? "annual" : "pay_in_full";
 }
 
 function billingEndBehaviorFor(program: ProgramRow, paymentType: string) {
-  if (paymentType !== "monthly") {
-    return "not_applicable";
+  if (paymentType === "monthly") {
+    return program.billing_end_behavior === "fixed_months" ? "fixed_month_count" : "ongoing_until_cancelled";
   }
-  return program.billing_end_behavior === "fixed_months" ? "fixed_month_count" : "ongoing_until_cancelled";
+  if (paymentType === "annual") {
+    return "ongoing_until_cancelled";
+  }
+  return "not_applicable";
 }
 
 function billingMonthsFor(program: ProgramRow, paymentType: string) {
@@ -55,7 +64,7 @@ function billingMonthsFor(program: ProgramRow, paymentType: string) {
 }
 
 function statusFor(paymentType: string) {
-  if (paymentType === "monthly" || paymentType === "pay_in_full") {
+  if (paymentType === "monthly" || paymentType === "pay_in_full" || paymentType === "annual") {
     return "payment_required";
   }
   return "pending_confirmation";
@@ -63,9 +72,9 @@ function statusFor(paymentType: string) {
 
 export async function createApprovedPaymentTerms(supabase: SupaClient, input: ApprovedPaymentInput) {
   const paymentType = paymentTypeFor(input);
-  const legacyPaymentType: "monthly" | "annual" = paymentType === "pay_in_full" ? "annual" : "monthly";
-  const amountCents =
-    paymentType === "monthly" ? approvedPriceFor(input, "monthly") : paymentType === "pay_in_full" ? approvedPriceFor(input, "annual") : 0;
+  const isAnnualPricing = paymentType === "pay_in_full" || paymentType === "annual";
+  const legacyPaymentType: "monthly" | "annual" = isAnnualPricing ? "annual" : "monthly";
+  const amountCents = paymentType === "monthly" ? approvedPriceFor(input, "monthly") : isAnnualPricing ? approvedPriceFor(input, "annual") : 0;
   const now = new Date().toISOString();
 
   await supabase
@@ -109,7 +118,7 @@ export async function createApprovedPaymentTerms(supabase: SupaClient, input: Ap
       payment_terms_id: terms.id,
       payment_type: legacyPaymentType,
       approved_price_monthly_cents: paymentType === "waived" ? 0 : paymentType === "monthly" ? amountCents : null,
-      approved_price_annual_cents: paymentType === "waived" ? 0 : paymentType === "pay_in_full" ? amountCents : null,
+      approved_price_annual_cents: paymentType === "waived" ? 0 : isAnnualPricing ? amountCents : null,
       payment_bypassed: paymentType === "free" || paymentType === "waived",
       payment_bypass_external: Boolean(input.paymentBypassedExternal),
     })
