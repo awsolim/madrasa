@@ -1,5 +1,6 @@
-import type { Status } from "@/lib/mock-data";
 import { cn } from "@/lib/utils";
+
+export type Status = "Open" | "Pending" | "Confirmed" | "Waitlisted" | "Present" | "Absent" | "Late" | "Closed";
 
 const statusClasses: Record<Status, string> = {
   Open: "border-[#2F8FB3] bg-[#E7F3F8] text-[#257B9C]",
