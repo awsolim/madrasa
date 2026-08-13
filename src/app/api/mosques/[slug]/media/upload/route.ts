@@ -2,6 +2,8 @@ import { createSupabaseServiceClient } from "@/lib/supabase/service";
 
 export const runtime = "nodejs";
 
+const maxImageBytes = 10 * 1024 * 1024;
+
 function extensionFromFile(file: File) {
   const fromName = file.name.split(".").pop()?.toLowerCase();
   if (fromName && /^[a-z0-9]+$/.test(fromName)) {
@@ -34,6 +36,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
     }
     if (!file.type.startsWith("image/")) {
       return Response.json({ error: "Only image uploads are supported here." }, { status: 400 });
+    }
+    if (file.size > maxImageBytes) {
+      return Response.json({ error: "Image is too large (max 10MB)." }, { status: 400 });
     }
 
     const supabase = createSupabaseServiceClient();

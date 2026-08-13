@@ -7,6 +7,20 @@ type SwitchRequestBody = {
   slug?: string;
 };
 
+// This endpoint lists every profile in the database and can mint a magic-link login for
+// any of them — it must never be reachable outside a developer's own machine. NODE_ENV
+// alone isn't a safe enough guard (a misconfigured host, a `next start` after a dev build,
+// or a preview deploy that doesn't set NODE_ENV=production would all silently re-enable
+// it), so this also requires an explicit opt-in env var that must never be set anywhere
+// but a local .env.local.
+function requireDevelopmentMode() {
+  if (process.env.NODE_ENV === "production" || process.env.ENABLE_DEV_ACCOUNT_SWITCHER !== "true") {
+    return Response.json({ error: "Not found." }, { status: 404 });
+  }
+
+  return null;
+}
+
 function getOrigin(request: Request) {
   const requestOrigin = request.headers.get("origin");
   if (requestOrigin) {
@@ -23,6 +37,11 @@ function getOrigin(request: Request) {
 
 export async function GET() {
   try {
+    const blocked = requireDevelopmentMode();
+    if (blocked) {
+      return blocked;
+    }
+
     const supabase = createSupabaseServiceClient();
     const { data, error } = await supabase
       .from("profiles")
@@ -51,6 +70,11 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const blocked = requireDevelopmentMode();
+    if (blocked) {
+      return blocked;
+    }
+
     const body = (await request.json()) as SwitchRequestBody;
     const profileId = typeof body.profileId === "string" ? body.profileId : "";
     const slug = typeof body.slug === "string" && body.slug.trim() ? body.slug.trim() : "assiddiq";
