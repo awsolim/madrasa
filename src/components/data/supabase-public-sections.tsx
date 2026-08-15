@@ -17064,8 +17064,8 @@ function HomeNotification({
     return (
       <div className="px-5 py-3">
         <div className="min-w-0">
-          <h2 className="text-base font-semibold text-[#26323A]">{title}</h2>
-          <p className="mt-0.5 text-sm leading-5 text-[#52616A]">{text}</p>
+          <h2 className="text-base font-semibold text-[var(--text-primary)]">{title}</h2>
+          <p className="mt-0.5 text-sm leading-5 text-[var(--text-secondary)]">{text}</p>
         </div>
       </div>
     );
@@ -17075,15 +17075,15 @@ function HomeNotification({
     <div className="relative overflow-hidden rounded-[28px] bg-[linear-gradient(135deg,#E7FFF3_0%,#D4F3EA_52%,#BFE6F3_100%)] px-5 py-4 shadow-[0_14px_34px_rgba(38,50,58,0.08)]">
       <div className="absolute right-[-28px] top-[-38px] h-28 w-28 rounded-full bg-white/45" aria-hidden />
       <div className="relative flex items-center gap-3">
-        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/80 text-xl font-medium text-[#17624F]">
+        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/80 text-xl font-medium text-[var(--brand-green)]">
           !
         </div>
         <div className="min-w-0 flex-1">
-          <h2 className="truncate text-base font-semibold text-[#26323A]">{title}</h2>
-          <p className="mt-0.5 text-sm leading-5 text-[#52616A]">{text}</p>
+          <h2 className="truncate text-base font-semibold text-[var(--text-primary)]">{title}</h2>
+          <p className="mt-0.5 text-sm leading-5 text-[var(--text-secondary)]">{text}</p>
         </div>
         {href ? (
-          <Link href={href} className="inline-flex min-h-10 shrink-0 items-center rounded-full bg-white px-4 text-sm font-semibold text-[#26323A] shadow-[0_10px_22px_rgba(38,50,58,0.12)] ring-1 ring-white/70">
+          <Link href={href} className="inline-flex min-h-10 shrink-0 items-center rounded-full bg-white px-4 text-sm font-semibold text-[var(--text-primary)] shadow-[0_10px_22px_rgba(38,50,58,0.12)] ring-1 ring-white/70">
             Inbox
           </Link>
         ) : null}
@@ -17095,7 +17095,7 @@ function HomeNotification({
 function HomeSectionTitle({ title }: { title: string }) {
   return (
     <div className="px-1 pt-1">
-      <h2 className="text-lg font-semibold text-[#26323A]">{title}</h2>
+      <h2 className="text-lg font-semibold text-[var(--text-primary)]">{title}</h2>
     </div>
   );
 }
@@ -17301,12 +17301,12 @@ function HomeUpcomingRows({
         futureFallbackLessons.length ? (
           <div className="space-y-5">
             <div className="px-1">
-              <h3 className="text-sm font-semibold text-[#26323A]">Next upcoming sessions</h3>
-              <p className="mt-0.5 text-xs font-medium text-[#7B858C]">Nothing else is scheduled this week.</p>
+              <h3 className="text-sm font-semibold text-[var(--text-primary)]">Next upcoming sessions</h3>
+              <p className="mt-0.5 text-xs font-medium text-[var(--text-subtle)]">Nothing else is scheduled this week.</p>
             </div>
             {futureFallbackDayGroups.map(([key, dayLessons]) => (
               <section key={key} className="space-y-2">
-                <h3 className="px-1 text-sm font-semibold text-[#26323A]">{formatHomeDate(dayLessons[0].date)}</h3>
+                <h3 className="px-1 text-sm font-semibold text-[var(--text-primary)]">{formatHomeDate(dayLessons[0].date)}</h3>
                 <div className="space-y-3">
                   {dayLessons.map((lesson) => (
                     <HomeUpcomingLesson
@@ -17333,7 +17333,7 @@ function HomeUpcomingRows({
             .filter((group) => group.lessons.length > 0)
             .map((group) => (
               <section key={dayKey(group.day)} className="space-y-2">
-                <h3 className="px-1 text-sm font-semibold text-[#26323A]">{formatHomeDate(group.day)}</h3>
+                <h3 className="px-1 text-sm font-semibold text-[var(--text-primary)]">{formatHomeDate(group.day)}</h3>
                 <div className="space-y-3">
                   {group.lessons.map((lesson) => (
                     <HomeUpcomingLesson
@@ -17354,22 +17354,22 @@ function HomeUpcomingRows({
       {cancelTarget ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#172522]/45 px-5 backdrop-blur-sm">
           <div ref={cancelModalRef} role="dialog" aria-modal="true" tabIndex={-1} className="w-full max-w-sm rounded-[28px] bg-white p-5 shadow-[0_24px_70px_rgba(23,37,34,0.28)] outline-none">
-            <h3 className="text-xl font-semibold text-[#26323A]">Cancel session?</h3>
-            <p className="mt-2 text-sm leading-6 text-[#6B747B]">
+            <h3 className="text-xl font-semibold text-[var(--text-primary)]">Cancel session?</h3>
+            <p className="mt-2 text-sm leading-6 text-[var(--text-muted)]">
               By continuing, you will cancel {cancelTarget.program.title} on {formatHomeDate(cancelTarget.date)}.
             </p>
             <textarea
               value={cancelMessage}
               onChange={(event) => setCancelMessage(event.target.value)}
               placeholder="Optional announcement to send to enrolled students"
-              className="mt-4 min-h-28 w-full resize-none rounded-[18px] border border-[#D6DCE0] bg-[#F7F9FA] px-4 py-3 text-sm text-[#26323A] outline-none focus:border-[#2F8FB3]"
+              className="mt-4 min-h-28 w-full resize-none rounded-[18px] border border-[var(--border-default)] bg-[#F7F9FA] px-4 py-3 text-sm text-[var(--text-primary)] outline-none focus:border-[var(--brand-blue)]"
             />
-            {cancelError ? <p className="mt-3 text-sm text-[#C83F31]">{cancelError}</p> : null}
+            {cancelError ? <p className="mt-3 text-sm text-[var(--danger-dark)]">{cancelError}</p> : null}
             <div className="mt-5 flex justify-end gap-3">
               <button type="button" onClick={() => setCancelTarget(null)} disabled={cancelBusy} className="min-h-10 rounded-[8px] bg-[#EEF2F4] px-5 text-sm font-semibold text-[#5C6870] disabled:opacity-60">
                 Keep
               </button>
-              <button type="button" onClick={cancelSession} disabled={cancelBusy} className="min-h-10 rounded-[8px] bg-[#C83F31] px-5 text-sm font-semibold text-white disabled:opacity-60">
+              <button type="button" onClick={cancelSession} disabled={cancelBusy} className="min-h-10 rounded-[8px] bg-[var(--danger-dark)] px-5 text-sm font-semibold text-white disabled:opacity-60">
                 {cancelBusy ? "Cancelling..." : "Cancel and send"}
               </button>
             </div>
@@ -17396,7 +17396,7 @@ function WeekCalendar({ days, lessonsByDay }: { days: Date[]; lessonsByDay: Map<
             <div
               className={cn(
                 "flex min-h-14 w-full max-w-12 flex-col items-center justify-center rounded-2xl text-center transition-colors",
-                isToday ? "bg-[#DDF3EA] text-[#17624F] shadow-[0_8px_18px_rgba(23,98,79,0.12)]" : "text-[#6B747B]",
+                isToday ? "bg-[#DDF3EA] text-[var(--brand-green)] shadow-[0_8px_18px_rgba(23,98,79,0.12)]" : "text-[var(--text-muted)]",
               )}
             >
               <span className="text-[11px] font-semibold uppercase leading-none">{weekdayShort(day)}</span>
@@ -17446,8 +17446,8 @@ function HomeUpcomingLesson({
     <div className="flex items-center gap-3 rounded-[24px] bg-white px-4 py-3 shadow-[0_8px_24px_rgba(38,50,58,0.06)]">
       <HomeProgramThumb program={lesson.program} />
       <div className="min-w-0 flex-1">
-        <h3 className="truncate text-base font-semibold text-[#26323A]">{lesson.program.title}</h3>
-        <p className="mt-0.5 text-sm leading-5 text-[#6B747B]">{detailParts.join(" • ")}</p>
+        <h3 className="truncate text-base font-semibold text-[var(--text-primary)]">{lesson.program.title}</h3>
+        <p className="mt-0.5 text-sm leading-5 text-[var(--text-muted)]">{detailParts.join(" • ")}</p>
       </div>
       {canCancel ? (
         <UpcomingLessonActionMenu onCancel={onCancel} viewStudentsHref={viewStudentsHref} markAttendanceHref={markAttendanceHref} markAttendanceDisabled={markAttendanceDisabled} />
@@ -17506,7 +17506,7 @@ function UpcomingLessonActionMenu({
         ref={buttonRef}
         type="button"
         onClick={() => setMenuOpen((value) => !value)}
-        className={cn("flex h-9 w-9 items-center justify-center rounded-full transition-colors", menuOpen ? "bg-[#26323A] text-white" : "text-[#52616A] hover:bg-[#EEF3F5] hover:text-[#26323A]")}
+        className={cn("flex h-9 w-9 items-center justify-center rounded-full transition-colors", menuOpen ? "bg-[var(--text-primary)] text-white" : "text-[var(--text-secondary)] hover:bg-[#EEF3F5] hover:text-[var(--text-primary)]")}
         aria-label="Session actions"
       >
         <MoreVerticalIcon />
@@ -17517,7 +17517,7 @@ function UpcomingLessonActionMenu({
             <Link
               href={viewStudentsHref}
               onClick={() => setMenuOpen(false)}
-              className="flex w-full items-center gap-2 rounded-[12px] px-3 py-2.5 text-left font-semibold text-[#26323A] hover:bg-[#F1F5F6] no-underline"
+              className="flex w-full items-center gap-2 rounded-[12px] px-3 py-2.5 text-left font-semibold text-[var(--text-primary)] hover:bg-[#F1F5F6] no-underline"
             >
               View students
             </Link>
@@ -17531,7 +17531,7 @@ function UpcomingLessonActionMenu({
               <Link
                 href={markAttendanceHref}
                 onClick={() => setMenuOpen(false)}
-                className="flex w-full items-center gap-2 rounded-[12px] px-3 py-2.5 text-left font-semibold text-[#17624F] hover:bg-[#EAF7F1] no-underline"
+                className="flex w-full items-center gap-2 rounded-[12px] px-3 py-2.5 text-left font-semibold text-[var(--brand-green)] hover:bg-[#EAF7F1] no-underline"
               >
                 Mark Attendance
               </Link>
@@ -17543,7 +17543,7 @@ function UpcomingLessonActionMenu({
               setMenuOpen(false);
               onCancel?.();
             }}
-            className="flex w-full items-center gap-2 rounded-[12px] px-3 py-2.5 text-left font-semibold text-[#C83F31] hover:bg-[#FFF1EF]"
+            className="flex w-full items-center gap-2 rounded-[12px] px-3 py-2.5 text-left font-semibold text-[var(--danger-dark)] hover:bg-[#FFF1EF]"
           >
             Cancel session
           </button>
@@ -17564,7 +17564,7 @@ function HomeProgramThumb({ program }: { program: ProgramScheduleSource }) {
   }
 
   return (
-    <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-[#E7F3F8] text-sm font-semibold text-[#2F8FB3]">
+    <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-2xl bg-[#E7F3F8] text-sm font-semibold text-[var(--brand-blue)]">
       {initials(program.title)}
     </div>
   );
