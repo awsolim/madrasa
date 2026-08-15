@@ -133,7 +133,7 @@ export function TeacherInboxPage({ slug }: { slug: string }) {
 export function TeacherProgramDetailPage({ programId, slug }: { programId: string; slug: string }) {
   return (
     <>
-      <PageTitleBar title="Edit Program" backHref={`/m/${slug}/teacher/classes`} backLabel="Classes" tone="teal" />
+      <PageTitleBar title="Edit Class" backHref={`/m/${slug}/teacher/classes`} backLabel="Classes" tone="teal" />
       <TeacherWorkspace>
         <TeacherProgramSettingsData slug={slug} programId={programId} />
       </TeacherWorkspace>

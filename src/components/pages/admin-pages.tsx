@@ -80,7 +80,7 @@ export function AdminMasjidInformationPage({ slug }: { slug: string }) {
 export function AdminProgramDetailPage({ programId, slug }: { programId: string; slug: string }) {
   return (
     <>
-      <PageTitleBar title="Edit Program" backHref={`/m/${slug}/admin/programs`} backLabel="Classes" tone="teal" />
+      <PageTitleBar title="Edit Class" backHref={`/m/${slug}/admin/programs`} backLabel="Classes" tone="teal" />
       <AdminWorkspace>
         <TeacherProgramSettingsData slug={slug} programId={programId} returnHref={`/m/${slug}/admin/programs`} />
       </AdminWorkspace>

@@ -249,8 +249,8 @@ function defaultBuilderStatus(): ProgramBuilderStatus {
     allowCustomPrices: true,
     allowWaivedPayments: true,
     manualPaymentNote: "",
-    financialAssistanceNote: "Financial assistance or custom payment arrangements may be available. Please apply and contact the program Director for details.",
-    receiptNote: "Receipt eligibility may depend on program type and masjid policy. Please contact administration for details.",
+    financialAssistanceNote: "Financial assistance or custom payment arrangements may be available. Please apply and contact the class Director for details.",
+    receiptNote: "Receipt eligibility may depend on class type and masjid policy. Please contact administration for details.",
     taxReceiptPolicy: "not_applicable",
     trackSwitchPolicy: "disabled",
     trackSwitchAllowAll: false,
@@ -1051,14 +1051,14 @@ export function PublicProgramsData({ slug }: { slug: string }) {
   }
 
   if (error) {
-    return <EmptyState title="Could not load programs" text={error} onRetry={() => window.location.reload()} />;
+    return <EmptyState title="Could not load classes" text={error} onRetry={() => window.location.reload()} />;
   }
 
   if (!mosque) {
-    return <EmptyState title="Masjid not found" text="Programs could not be loaded for this masjid." />;
+    return <EmptyState title="Masjid not found" text="Classes could not be loaded for this masjid." />;
   }
 
-  return <ProgramCardGrid programs={programs} mosqueSlug={mosque.slug} emptyText="No programs are available at this masjid yet." />;
+  return <ProgramCardGrid programs={programs} mosqueSlug={mosque.slug} emptyText="No classes are available at this masjid yet." />;
 }
 
 type ProgramDetailSnapshot = {
@@ -1126,7 +1126,7 @@ async function fetchProgramDetailSnapshot(
   }
 
   if (section === "public" && programData && !["published", "hidden"].includes(programData.publication_status ?? "published")) {
-    return { ...emptyProgramDetailSnapshot, mosque: mosqueData, error: "This program is not published yet." };
+    return { ...emptyProgramDetailSnapshot, mosque: mosqueData, error: "This class is not published yet." };
   }
 
   let teacher: TeacherDisplay | null = null;
@@ -1332,11 +1332,11 @@ export function ProgramDetailData({ slug, programId, section = "public" }: { slu
   }
 
   if (error) {
-    return <EmptyState title="Could not load program" text={error} onRetry={() => window.location.reload()} />;
+    return <EmptyState title="Could not load class" text={error} onRetry={() => window.location.reload()} />;
   }
 
   if (!mosque || !program) {
-    return <EmptyState title="Program not found" text="This class may no longer be available." />;
+    return <EmptyState title="Class not found" text="This class may no longer be available." />;
   }
 
   const teacherName = details?.instructor_display_name?.trim() || program.teacher?.full_name || "Teacher to be announced";
@@ -1465,7 +1465,7 @@ export function ProgramDetailData({ slug, programId, section = "public" }: { slu
             ) : null}
 
             {publicInfoRows.length ? (
-              <DetailSection title="Program Details">
+              <DetailSection title="Class Details">
                 <div className="divide-y divide-[#E6ECEF]">
                   {publicInfoRows.map((row) => (
                     <div key={row.title} className="py-3 first:pt-0 last:pb-0">
@@ -1640,7 +1640,7 @@ async function fetchProgramApplyDetail(slug: string, programId: string, userId: 
     return { ...emptyProgramApplyDetailSnapshot, mosque: mosqueData, error: friendlyErrorMessage(programError, "This class could not be loaded.") };
   }
   if (!["published", "hidden"].includes(programData.publication_status ?? "published")) {
-    return { ...emptyProgramApplyDetailSnapshot, mosque: mosqueData, program: programData, error: "This program is not published yet." };
+    return { ...emptyProgramApplyDetailSnapshot, mosque: mosqueData, program: programData, error: "This class is not published yet." };
   }
 
   const { data: tracksData } = await supabase
@@ -1820,7 +1820,7 @@ export function ProgramApplyData({ slug, programId }: { slug: string; programId:
   }
 
   if (!mosque || !program) {
-    return <EmptyState title="Program not found" text="This class may no longer be available." />;
+    return <EmptyState title="Class not found" text="This class may no longer be available." />;
   }
 
   const programHref = `/m/${slug}/programs/${programId}`;
@@ -2715,7 +2715,7 @@ export function StudentClassesData({ slug }: { slug: string }) {
         {(
           [
             ["classes", "My Classes"],
-            ["browse", "Browse Programs"],
+            ["browse", "Browse Classes"],
             ["applications", "My Applications"],
           ] as const
         ).map(([id, label]) => (
@@ -5336,7 +5336,7 @@ export function TeacherInstructorsData({ slug, programId }: { slug: string; prog
   }
 
   if (!isDirector) {
-    return <EmptyState title="Director access required" text="Only the program director can manage instructors for this class." />;
+    return <EmptyState title="Director access required" text="Only the class director can manage instructors for this class." />;
   }
 
   return (
@@ -6104,7 +6104,7 @@ export function TeacherProgramCreateData({ slug }: { slug: string }) {
           <div className="space-y-3 p-4">
             <EditBox label="Public name" required value={title} onChange={setTitle} />
             <label className="block">
-              <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-[#6B747B]">{formatRequiredLabel("Program type", true)}</span>
+              <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-[#6B747B]">{formatRequiredLabel("Class type", true)}</span>
               <select value={builderStatus.programType} onChange={(event) => setBuilderStatus((current) => ({ ...current, programType: event.target.value as ProgramBuilderStatus["programType"] }))} className="h-10 w-full rounded-[8px] border border-[#B9C3C8] bg-white px-3 text-sm font-medium text-[#26323A] outline-none focus:border-[#2F8FB3]">
                 <option value="recurring">Recurring program</option>
                 <option value="event">One-time event</option>
@@ -7006,7 +7006,7 @@ export function TeacherProgramSettingsData({ slug, programId, returnHref }: { sl
   }
 
   if (!isDirector) {
-    return <EmptyState title="Director access required" text="Only the program director can edit this class." />;
+    return <EmptyState title="Director access required" text="Only the class director can edit this class." />;
   }
 
   const startDateLocked = programAlreadyStarted(program);
@@ -7235,7 +7235,7 @@ export function TeacherProgramSettingsData({ slug, programId, returnHref }: { sl
           <div className="space-y-3 p-4">
             <EditBox label="Public name" required value={title} onChange={setTitle} />
             <label className="block">
-              <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-[#6B747B]">{formatRequiredLabel("Program type", true)}</span>
+              <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-[#6B747B]">{formatRequiredLabel("Class type", true)}</span>
               <select value={builderStatus.programType} onChange={(event) => setBuilderStatus((current) => ({ ...current, programType: event.target.value as ProgramBuilderStatus["programType"] }))} className="h-10 w-full rounded-[8px] border border-[#B9C3C8] bg-white px-3 text-sm font-medium text-[#26323A] outline-none focus:border-[#2F8FB3]">
                 <option value="recurring">Recurring program</option>
                 <option value="event">One-time event</option>
@@ -7616,7 +7616,7 @@ function ProgramEditorPreview({
       ) : null}
 
       {visibleMediaRows.length ? (
-        <DetailSection title="Program Media">
+        <DetailSection title="Class Media">
           <div className="space-y-3">
             {visibleMediaRows.map((row) => (
               <div key={row.id} className="overflow-hidden rounded-[16px] border border-[#E6ECEF]">
@@ -8085,7 +8085,7 @@ function ProgramBuilderStepper({
 }) {
   const activeIndex = programBuilderSteps.findIndex((step) => step.id === activeStep);
   return (
-    <nav className="px-1 py-1" aria-label="Program builder steps">
+    <nav className="px-1 py-1" aria-label="Class builder steps">
       <ol className="grid grid-cols-5 items-center gap-1 sm:gap-2">
         {programBuilderSteps.map((step, index) => {
           const active = step.id === activeStep;
@@ -8772,7 +8772,7 @@ function ProgramEditorFields({
         ) : null}
 
         {[{ title: "Topics Covered", body: topicsIntro }, { title: "Requirements", body: requirementsText }, { title: "Policies", body: policiesText }].some((row) => row.body.trim()) ? (
-          <DetailSection title="Program Details">
+          <DetailSection title="Class Details">
             <div className="divide-y divide-[#E6ECEF]">
               {[{ title: "Topics Covered", body: topicsIntro }, { title: "Requirements", body: requirementsText }, { title: "Policies", body: policiesText }]
                 .filter((row) => row.body.trim())
@@ -8787,7 +8787,7 @@ function ProgramEditorFields({
         ) : null}
 
         {visibleMediaRows.length ? (
-          <DetailSection title="Program Media">
+          <DetailSection title="Class Media">
             <div className="space-y-3">
               {visibleMediaRows.map((row) => (
                 <div key={row.id} className="overflow-hidden rounded-[16px] border border-[#E6ECEF]">
@@ -8985,7 +8985,7 @@ function ProgramEditorFields({
         )) : null}
 
         {showPublic ? (mediaVisible ? (
-          <EditorFieldSection title="Program Media" action={<RemoveSectionButton onClick={removeMediaSection} />}>
+          <EditorFieldSection title="Class Media" action={<RemoveSectionButton onClick={removeMediaSection} />}>
             <div className="divide-y divide-[#E6ECEF]">
               {mediaRows.map((row) => {
                 const previewUrl = row.previewUrl || row.url;
@@ -15656,7 +15656,7 @@ function ProgramMediaGallery({ items }: { items: readonly ProgramMedia[] }) {
   const activeItem = items[active] ?? items[0];
 
   return (
-    <DetailSection title="Program Media">
+    <DetailSection title="Class Media">
       <div className="overflow-hidden rounded-xl border border-[#D6DCE0] bg-[var(--workspace)]">
         <div className="relative flex aspect-[16/10] items-end overflow-hidden p-5 text-white">
           <Image src={mediaUrl(activeItem)} alt={mediaAltText(activeItem)} fill className="object-cover" sizes="(min-width: 1024px) 720px, 100vw" />
@@ -15712,7 +15712,7 @@ function mediaThumbnail(item: ProgramMedia) {
 }
 
 function mediaTitle(item: ProgramMedia) {
-  return item.title ?? "Program media";
+  return item.title ?? "Class media";
 }
 
 function mediaCaption(item: ProgramMedia) {
@@ -16364,7 +16364,7 @@ function ProgramCardGrid({
   applicationStatusByProgramId?: Record<string, ApplicantApplicationRow>;
 }) {
   if (programs.length === 0) {
-    return <EmptyState title="No programs available" text={emptyText} />;
+    return <EmptyState title="No classes available" text={emptyText} />;
   }
 
   return (
@@ -16426,7 +16426,7 @@ function EnrolledClassList({ programs, mosqueSlug }: { programs: ProgramWithTeac
               ) : null}
               <TeacherActionLink href={`/m/${mosqueSlug}/portal/announcements?tab=announcements`} icon={<MegaphoneIcon />} label="View Announcements" />
               <TeacherActionLink href={`/m/${mosqueSlug}/portal/announcements?tab=notes`} icon={<ClipboardIcon />} label="View Notes" />
-              <TeacherActionLink href={`/m/${mosqueSlug}/programs/${program.id}?returnTo=${encodeURIComponent(`/m/${mosqueSlug}/portal/classes`)}`} icon={<ExternalLinkIcon />} label="Program Details" previewLabel="Program Details" />
+              <TeacherActionLink href={`/m/${mosqueSlug}/programs/${program.id}?returnTo=${encodeURIComponent(`/m/${mosqueSlug}/portal/classes`)}`} icon={<ExternalLinkIcon />} label="Class Details" previewLabel="Class Details" />
               <TeacherActionLink href={`/m/${mosqueSlug}/portal/classes/${program.id}/withdrawal`} icon={<XIcon />} label="Request Withdrawal" previewLabel="Request Withdrawal" />
             </div>
           </div>
@@ -17763,7 +17763,7 @@ function TeacherClassCard({
   const teacherClassesReturnTo = encodeURIComponent(classBasePath);
   const publicHref = `/m/${mosqueSlug}/programs/${program.id}?returnTo=${teacherClassesReturnTo}`;
   const primaryHref = isDirector ? `${classBasePath}/${program.id}` : publicHref;
-  const primaryLabel = isDirector ? "Edit Program" : "Public Page";
+  const primaryLabel = isDirector ? "Edit Class" : "Public Page";
 
   async function resignFromClass() {
     setResigning(true);
@@ -17845,7 +17845,7 @@ function TeacherClassCard({
           <TeacherActionLink href={attendanceHistoryHref(mosqueSlug, program.id, classBasePath)} icon={<AttendanceIcon />} label="Attendance History" />
           {canManageFinances ? <TeacherActionLink href={`${classBasePath}/${program.id}/finances`} icon={<FinanceIcon />} label="Manage Finances" /> : null}
           {isDirector || canManageFinances ? <TeacherActionLink href={`${classBasePath}/${program.id}/exports`} icon={<ClipboardIcon />} label="Export Data" /> : null}
-          {isDirector ? <TeacherActionLink href={`${classBasePath}/${program.id}`} icon={<EditClassIcon />} label="Edit Program" /> : null}
+          {isDirector ? <TeacherActionLink href={`${classBasePath}/${program.id}`} icon={<EditClassIcon />} label="Edit Class" /> : null}
           {!isDirector ? <TeacherActionButton icon={<XIcon />} label="Resign from Class" onClick={() => setResignOpen(true)} /> : null}
         </div>
       </div>

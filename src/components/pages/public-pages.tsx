@@ -39,7 +39,7 @@ export function PublicMasjidPage({ slug }: { slug: string }) {
 export function PublicProgramsPage({ slug }: { slug: string }) {
   return (
     <>
-      <PageTitleBar title="Programs" subtitle="Find weekly classes, workshops, and circles." tone="teal" />
+      <PageTitleBar title="Classes" subtitle="Find weekly classes, workshops, and circles." tone="teal" />
       <PublicWorkspace>
         <PublicProgramsData slug={slug} />
       </PublicWorkspace>
@@ -48,7 +48,7 @@ export function PublicProgramsPage({ slug }: { slug: string }) {
 }
 
 export function PublicProgramDetailPage({ programId, slug, returnTo }: { programId: string; slug: string; returnTo?: string }) {
-  const backLabel = returnTo?.includes("/admin/programs") || returnTo?.includes("/teacher/classes") || returnTo?.includes("/portal/classes") ? "Classes" : "Programs";
+  const backLabel = "Classes";
   return (
     <>
       <PageTitleBar title="Class Details" backHref={returnTo ?? `/m/${slug}/programs`} backLabel={backLabel} tone="teal" />
@@ -62,7 +62,7 @@ export function PublicProgramDetailPage({ programId, slug, returnTo }: { program
 export function ProgramApplyPage({ programId, slug }: { programId: string; slug: string }) {
   return (
     <>
-      <PageTitleBar title="Apply to Register" backHref={`/m/${slug}/programs/${programId}`} backLabel="Program" tone="teal" />
+      <PageTitleBar title="Apply to Register" backHref={`/m/${slug}/programs/${programId}`} backLabel="Class" tone="teal" />
       <PublicWorkspace>
         <ProgramApplyData slug={slug} programId={programId} />
       </PublicWorkspace>
