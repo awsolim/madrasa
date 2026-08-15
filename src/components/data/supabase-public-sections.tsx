@@ -12,7 +12,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { EmptyState } from "@/components/data/empty-state";
 import { DirectorySkeleton, GenericLoadingState } from "@/components/data/data-loading";
 import { EditorToast, queueEditorToast, readQueuedEditorToast, type EditorToastState } from "@/components/data/editor-toast";
-import { FloatingInboxTabs, InboxLoadingPanel, InboxSection, NotificationBadge } from "@/components/data/inbox-shared";
+import { FloatingInboxTabs, InboxLoadingPanel, InboxSection, MiniEmpty, NotificationBadge } from "@/components/data/inbox-shared";
 import { ConfirmModal } from "@/components/ui/confirm-modal";
 import { FlatLink } from "@/components/ui/flat-button";
 import { useHideMobileChromeWhileMounted, useModalFocusTrap } from "@/hooks/use-modal-behavior";
@@ -987,7 +987,7 @@ export function StudentHomeData({ slug }: { slug: string }) {
       ) : null}
       <HomeSectionTitle title="Upcoming" />
       {enrolledPrograms.length === 0 ? (
-        <HomeEmptyState title="You are not enrolled in any classes" text="Your next lesson will appear here after enrollment." />
+        <EmptyState title="You are not enrolled in any classes" text="Your next lesson will appear here after enrollment." />
       ) : (
         <HomeUpcomingRows programs={enrolledPrograms} ownerLabelsByProgramId={programOwnerLabels} ownerLabelsByTrackId={programOwnerLabelsByTrackId} />
       )}
@@ -4698,7 +4698,7 @@ export function TeacherHomeData({ slug }: { slug: string }) {
         />
       ) : null}
       <HomeSectionTitle title="Upcoming" />
-      {programs.length ? <HomeUpcomingRows programs={programs} canCancelSessions currentUserId={currentUserId} slug={slug} /> : <HomeEmptyState title="No assigned classes" text="Your next class sessions will appear here." />}
+      {programs.length ? <HomeUpcomingRows programs={programs} canCancelSessions currentUserId={currentUserId} slug={slug} /> : <EmptyState title="No assigned classes" text="Your next class sessions will appear here." />}
     </div>
   );
 }
@@ -4718,7 +4718,7 @@ export function AdminHomeData({ slug }: { slug: string }) {
     <div className="space-y-4 bg-[var(--workspace)] p-4">
       <PushNotificationNudge />
       <HomeSectionTitle title="Upcoming" />
-      {programs.length ? <HomeUpcomingRows programs={programs} /> : <HomeEmptyState title="No classes yet" text="All masjid class sessions will appear here after classes are created." />}
+      {programs.length ? <HomeUpcomingRows programs={programs} /> : <EmptyState title="No classes yet" text="All masjid class sessions will appear here after classes are created." />}
     </div>
   );
 }
@@ -10738,7 +10738,7 @@ export function TeacherStudentsData({ slug, programId }: { slug: string; program
               )}
             </div>
           ) : (
-            <HomeEmptyState title={students.length ? "No matching students" : "No enrolled students"} text={students.length ? "Adjust the search or filters." : "Accepted students will appear here."} />
+            <EmptyState title={students.length ? "No matching students" : "No enrolled students"} text={students.length ? "Adjust the search or filters." : "Accepted students will appear here."} />
           )}
         </section>
 
@@ -13774,10 +13774,6 @@ function TeacherRequestSection({ title, count, children, action }: { title: stri
       <div className="space-y-3">{children}</div>
     </section>
   );
-}
-
-function MiniEmpty({ text }: { text: string }) {
-  return <div className="rounded-xl border border-dashed border-[#D6DCE0] px-4 py-6 text-center text-sm text-[#6B747B]">{text}</div>;
 }
 
 function TeacherInboxMessageRow({ item, onOpen, onClear }: { item: TeacherInboxMessageItem; onOpen: () => void; onClear: () => void }) {
@@ -17104,16 +17100,6 @@ function HomeSectionTitle({ title }: { title: string }) {
   );
 }
 
-function HomeEmptyState({ title, text }: { title: string; text: string }) {
-  return (
-    <div className="px-6 py-8 text-center">
-      <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full border-4 border-[#62AFC3] text-2xl font-medium text-[#62AFC3]">!</div>
-      <h3 className="mt-4 text-base font-semibold text-[#26323A]">{title}</h3>
-      <p className="mt-1 text-sm leading-6 text-[#6B747B]">{text}</p>
-    </div>
-  );
-}
-
 function HomeLoadingState() {
   return <GenericLoadingState label="Loading home" />;
 }
@@ -17286,7 +17272,7 @@ function HomeUpcomingRows({
   }
 
   if (lessons.length === 0 && futureFallbackLessons.length === 0) {
-    return <HomeEmptyState title="No upcoming classes" text="Upcoming sessions will appear here after schedules are added." />;
+    return <EmptyState title="No upcoming classes" text="Upcoming sessions will appear here after schedules are added." />;
   }
 
   const lessonsByDay = new Map<string, HomeLesson[]>();
@@ -17338,7 +17324,7 @@ function HomeUpcomingRows({
             ))}
           </div>
         ) : (
-          <HomeEmptyState title="No more classes this week" text="Your scheduled class days are shown above." />
+          <EmptyState title="No more classes this week" text="Your scheduled class days are shown above." />
         )
       ) : (
         <div className="space-y-5">

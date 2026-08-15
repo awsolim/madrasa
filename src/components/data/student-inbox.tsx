@@ -16,7 +16,7 @@ import {
 } from "@/components/data/supabase-public-sections";
 import { EditorToast, type EditorToastState } from "@/components/data/editor-toast";
 import { EmptyState } from "@/components/data/empty-state";
-import { FloatingInboxTabs, InboxLoadingPanel, InboxSection } from "@/components/data/inbox-shared";
+import { FloatingInboxTabs, InboxLoadingPanel, InboxSection, MiniEmpty } from "@/components/data/inbox-shared";
 import { useHideMobileChromeWhileMounted, useModalFocusTrap } from "@/hooks/use-modal-behavior";
 import { friendlyErrorMessage } from "@/lib/errors";
 import { buildAnnouncementThreads, buildNoteThreads } from "@/lib/messages/threads";
@@ -145,10 +145,6 @@ function DefaultProfileIcon({ className = "h-6 w-6", compact = false }: { classN
       {icon}
     </span>
   );
-}
-
-function MiniEmpty({ text }: { text: string }) {
-  return <div className="rounded-xl border border-dashed border-[#D6DCE0] px-4 py-6 text-center text-sm text-[#6B747B]">{text}</div>;
 }
 
 function getAnnouncementTargetTrackIds(announcement: Pick<AnnouncementWithContext, "target_program_track_ids">) {

@@ -1,6 +1,7 @@
 "use client";
 
 import { ChildrenManager } from "@/components/data/children-manager";
+import { EmptyState } from "@/components/data/empty-state";
 import { PortalRoleRedirect } from "@/components/data/portal-role-redirect";
 import { PortalAccountData, ProgramDetailData, RegistrationConfirmationData, StudentClassesData, StudentHomeData, StudentScheduleOptionsData, StudentWithdrawalRequestData } from "@/components/data/supabase-public-sections";
 import { InboxAnnouncementsData } from "@/components/data/student-inbox";
@@ -131,16 +132,6 @@ export function PortalWithdrawalRequestPage({ slug, programId }: { slug: string;
   );
 }
 
-function EmptyAttendanceState({ title, text }: { title: string; text: string }) {
-  return (
-    <div className="flex flex-col items-center justify-center px-6 py-10 text-center">
-      <div className="flex h-16 w-16 items-center justify-center rounded-full border-4 border-[#22A6B3] text-3xl font-medium text-[#22A6B3]">!</div>
-      <h3 className="mt-4 text-base font-medium text-[#26323A]">{title}</h3>
-      <p className="mt-1 max-w-sm text-sm text-[#6B747B]">{text}</p>
-    </div>
-  );
-}
-
 export function PortalAttendancePage({ slug }: { slug: string }) {
   void slug;
   return (
@@ -155,11 +146,11 @@ export function PortalAttendancePage({ slug }: { slug: string }) {
         </PortalPanel>
         <PortalPanel>
           <PortalSectionHeader title="Upcoming" />
-          <EmptyAttendanceState title="No upcoming absences" text="Submitted absences for upcoming classes will appear here." />
+          <EmptyState title="No upcoming absences" text="Submitted absences for upcoming classes will appear here." />
         </PortalPanel>
         <PortalPanel>
           <PortalSectionHeader title="Past" />
-          <EmptyAttendanceState title="No attendance records" text="Past attendance records will appear here after class." />
+          <EmptyState title="No attendance records" text="Past attendance records will appear here after class." />
         </PortalPanel>
       </PortalWorkspace>
     </>

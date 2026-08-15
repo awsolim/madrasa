@@ -71,3 +71,7 @@ export function InboxSection({ title, count, children, action }: { title: string
 export function InboxLoadingPanel({ label }: { label: string }) {
   return <GenericLoadingState label={label} />;
 }
+
+export function MiniEmpty({ text }: { text: string }) {
+  return <div className="rounded-xl border border-dashed border-[#D6DCE0] px-4 py-6 text-center text-sm text-[#6B747B]">{text}</div>;
+}
