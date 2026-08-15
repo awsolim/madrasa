@@ -5,7 +5,10 @@ export default function manifest(): MetadataRoute.Manifest {
     name: "Tareeqah",
     short_name: "Tareeqah",
     description: "Masjid class registration and management portal",
-    start_url: "/",
+    // Single-tenant mode (see src/app/page.tsx): "/" is just a server redirect to this
+    // same URL, so pointing start_url here directly saves a full network round-trip on
+    // every cold PWA launch. Revisit when there is more than one client masjid.
+    start_url: "/m/assiddiq",
     scope: "/",
     display: "standalone",
     orientation: "portrait",

@@ -1,4 +1,4 @@
-const CACHE_NAME = "tareeqah-shell-v1";
+const CACHE_NAME = "tareeqah-shell-v2";
 const OFFLINE_URL = "/offline.html";
 const SHELL_ASSETS = [OFFLINE_URL, "/favicon.svg"];
 
@@ -33,8 +33,29 @@ self.addEventListener("fetch", (event) => {
   }
 
   if (request.mode === "navigate") {
+    // Stale-while-revalidate: paint the last-cached shell instantly (if we have one),
+    // then refresh the cache in the background for next launch. Page data itself is
+    // always fetched fresh client-side after hydration, so a cached shell is never
+    // stale *data* -- at worst it's last launch's app-shell HTML/JS for one launch.
     event.respondWith(
-      fetch(request).catch(() => caches.match(OFFLINE_URL)),
+      caches.open(CACHE_NAME).then(async (cache) => {
+        const cached = await cache.match(request);
+        const networkFetch = fetch(request)
+          .then((response) => {
+            if (response.ok) {
+              cache.put(request, response.clone());
+            }
+            return response;
+          })
+          .catch(() => null);
+
+        if (cached) {
+          event.waitUntil(networkFetch);
+          return cached;
+        }
+
+        return (await networkFetch) || caches.match(OFFLINE_URL);
+      }),
     );
     return;
   }
