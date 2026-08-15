@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { PageTitleBar } from "@/components/layout/page-title-bar";
 import { EmptyState } from "@/components/data/empty-state";
+import { friendlyErrorMessage } from "@/lib/errors";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { Database } from "@/lib/supabase/types";
 import { cn } from "@/lib/utils";
@@ -119,7 +120,7 @@ function ProgramExportsData({ slug, programId }: { slug: string; programId: stri
         return;
       }
       if (programError || !programRow) {
-        setError(programError?.message ?? "Class not found.");
+        setError(friendlyErrorMessage(programError, "Class not found."));
         setProgram(null);
       } else {
         setProgram(programRow);

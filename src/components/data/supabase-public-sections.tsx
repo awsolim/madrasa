@@ -19,6 +19,7 @@ import { useHideMobileChromeWhileMounted, useModalFocusTrap } from "@/hooks/use-
 import { useStudentNotificationCounts, useTeacherNotificationCounts } from "@/hooks/use-notification-counts";
 import { getAccountLabel, getDefaultLandingHref, loadUserAccessByMosqueSlug } from "@/lib/authz";
 import { clearUserScopedCaches, getCachedProfileSummary, getCachedSessionSnapshot, getCachedUserAccess, loadCachedSession, loadCachedUserAccess, performClientLogout, setCachedProfileName, setCachedProfileSummary, setCachedSessionSnapshot, subscribeCachedSession } from "@/lib/client-cache";
+import { friendlyErrorMessage } from "@/lib/errors";
 import { attachmentDisplayName, attachmentMetaLabel, formatAttachmentSize, normalizeMessageAttachments, type MessageAttachment } from "@/lib/messages/attachments";
 import { buildAnnouncementThreads, buildNoteThreads } from "@/lib/messages/threads";
 import { invalidateQuery, invalidateQueryPrefix, prefetchQuery, useCachedQuery } from "@/lib/query-cache";
@@ -903,7 +904,7 @@ export function MosqueDirectoryRows() {
       .then(({ data, error: queryError }) => {
         setLoading(false);
         if (queryError) {
-          setError(queryError.message);
+          setError(friendlyErrorMessage(queryError, "Could not load masjids."));
           return;
         }
         setMosques(data ?? []);
@@ -1626,7 +1627,7 @@ async function fetchProgramApplyDetail(slug: string, programId: string, userId: 
   const supabase = createSupabaseBrowserClient();
   const { data: mosqueData, error: mosqueError } = await supabase.from("mosques").select("*").eq("slug", slug).maybeSingle();
   if (mosqueError || !mosqueData) {
-    return { ...emptyProgramApplyDetailSnapshot, error: mosqueError?.message ?? "Masjid not found." };
+    return { ...emptyProgramApplyDetailSnapshot, error: friendlyErrorMessage(mosqueError, "Masjid not found.") };
   }
 
   const { data: programData, error: programError } = await supabase
@@ -1636,7 +1637,7 @@ async function fetchProgramApplyDetail(slug: string, programId: string, userId: 
     .eq("mosque_id", mosqueData.id)
     .maybeSingle();
   if (programError || !programData) {
-    return { ...emptyProgramApplyDetailSnapshot, mosque: mosqueData, error: programError?.message ?? "This class could not be loaded." };
+    return { ...emptyProgramApplyDetailSnapshot, mosque: mosqueData, error: friendlyErrorMessage(programError, "This class could not be loaded.") };
   }
   if (!["published", "hidden"].includes(programData.publication_status ?? "published")) {
     return { ...emptyProgramApplyDetailSnapshot, mosque: mosqueData, program: programData, error: "This program is not published yet." };
@@ -2230,7 +2231,7 @@ export function RegistrationConfirmationData({ slug, requestId }: { slug: string
 
     const { data: mosqueRow, error: mosqueError } = await supabase.from("mosques").select("*").eq("slug", slug).maybeSingle();
     if (mosqueError || !mosqueRow) {
-      setError(mosqueError?.message ?? "Masjid not found.");
+      setError(friendlyErrorMessage(mosqueError, "Masjid not found."));
       setLoading(false);
       return;
     }
@@ -2821,7 +2822,7 @@ export function StudentScheduleOptionsData({ slug, programId }: { slug: string; 
       ]);
 
       if (enrollmentError) {
-        setError(enrollmentError.message);
+        setError(friendlyErrorMessage(enrollmentError, "Could not load your enrollment."));
         setLoading(false);
         return;
       }
@@ -2922,7 +2923,7 @@ export function StudentScheduleOptionsData({ slug, programId }: { slug: string; 
         current.map((row) =>
           row.enrollment.id === item.enrollment.id
             ? requestError
-              ? { ...row, message: { tone: "error", text: requestError.message } }
+              ? { ...row, message: { tone: "error", text: friendlyErrorMessage(requestError, "Could not send this request.") } }
               : { ...row, draftTrackIds: row.selectedTrackIds, message: { tone: "success", text: "Request sent to the class director." } }
             : row,
         ),
@@ -2940,7 +2941,7 @@ export function StudentScheduleOptionsData({ slug, programId }: { slug: string; 
       current.map((row) =>
         row.enrollment.id === item.enrollment.id
           ? updateError
-            ? { ...row, message: { tone: "error", text: updateError.message } }
+            ? { ...row, message: { tone: "error", text: friendlyErrorMessage(updateError, "Could not update your schedule.") } }
             : { ...row, selectedTrackIds: item.draftTrackIds, message: { tone: "success", text: "Schedule options updated." } }
           : row,
       ),
@@ -3419,7 +3420,7 @@ export function PortalAccountData({ slug }: { slug: string }) {
       .maybeSingle();
 
     if (error || !updatedProfile) {
-      setProfileMessage(error?.message ?? "Profile photo could not be saved. Please refresh and try again.");
+      setProfileMessage(friendlyErrorMessage(error, "Profile photo could not be saved. Please refresh and try again."));
       setProfileSaving(false);
       return;
     }
@@ -3494,7 +3495,7 @@ export function PortalAccountData({ slug }: { slug: string }) {
           .select("*")
           .maybeSingle();
         if (profileUpdateError || !updatedProfile) {
-          setProfileMessage(profileUpdateError?.message ?? "Email was changed for login, but the profile row did not update.");
+          setProfileMessage(friendlyErrorMessage(profileUpdateError, "Email was changed for login, but the profile row did not update."));
           setProfileSaving(false);
           return;
         }
@@ -3519,7 +3520,7 @@ export function PortalAccountData({ slug }: { slug: string }) {
         .select("*")
         .maybeSingle();
       if (error || !updatedProfile) {
-        setProfileMessage(error?.message ?? "Profile could not be saved. Please refresh and try again.");
+        setProfileMessage(friendlyErrorMessage(error, "Profile could not be saved. Please refresh and try again."));
         setProfileSaving(false);
         return;
       }
@@ -3911,7 +3912,7 @@ export function TeacherAnnouncementData({ slug, programId }: { slug: string; pro
       .maybeSingle();
 
     if (programError || !programRow) {
-      setError(programError?.message ?? "Class not found.");
+      setError(friendlyErrorMessage(programError, "Class not found."));
       setLoading(false);
       return;
     }
@@ -3926,7 +3927,7 @@ export function TeacherAnnouncementData({ slug, programId }: { slug: string; pro
     ]);
 
     if (announcementError) {
-      setError(announcementError.message);
+      setError(friendlyErrorMessage(announcementError, "Could not load announcements."));
       setLoading(false);
       return;
     }
@@ -4006,7 +4007,7 @@ export function TeacherAnnouncementData({ slug, programId }: { slug: string; pro
       .single();
 
     if (insertError) {
-      setError(insertError.message);
+      setError(friendlyErrorMessage(insertError, "Could not send this announcement."));
       return;
     }
 
@@ -4491,7 +4492,7 @@ export function TeacherScheduleData({ slug, programId }: { slug: string; program
 
     const { data: mosque, error: mosqueError } = await supabase.from("mosques").select("id").eq("slug", slug).maybeSingle();
     if (mosqueError || !mosque) {
-      setError(mosqueError?.message ?? "Masjid not found.");
+      setError(friendlyErrorMessage(mosqueError, "Masjid not found."));
       setLoading(false);
       return;
     }
@@ -4504,7 +4505,7 @@ export function TeacherScheduleData({ slug, programId }: { slug: string; program
       .maybeSingle();
 
     if (programError || !programRow) {
-      setError(programError?.message ?? "Class not found.");
+      setError(friendlyErrorMessage(programError, "Class not found."));
       setLoading(false);
       return;
     }
@@ -4564,7 +4565,7 @@ export function TeacherScheduleData({ slug, programId }: { slug: string; program
       .eq("id", program.id);
 
     if (updateError) {
-      setError(updateError.message);
+      setError(friendlyErrorMessage(updateError, "Could not save this schedule."));
       setSaving(false);
       return;
     }
@@ -4948,7 +4949,7 @@ export function AdminMasjidData({ slug }: { slug: string }) {
         const supabase = createSupabaseBrowserClient();
         const { data, error: mosqueError } = await supabase.from("mosques").select("*").eq("slug", slug).maybeSingle();
         if (mosqueError) {
-          setError(mosqueError.message);
+          setError(friendlyErrorMessage(mosqueError, "Could not load your masjid."));
         }
         setMosque(data ?? null);
         if (data) {
@@ -5027,7 +5028,7 @@ export function AdminMasjidInformationData({ slug }: { slug: string }) {
         setError(null);
         const { data, error: mosqueError } = await createSupabaseBrowserClient().from("mosques").select("*").eq("slug", slug).maybeSingle();
         if (mosqueError) {
-          setError(mosqueError.message);
+          setError(friendlyErrorMessage(mosqueError, "Could not load your masjid."));
         }
         setMosque(data ?? null);
         setName(data?.name ?? "");
@@ -5234,7 +5235,7 @@ export function AdminMasjidFinancesData({ slug }: { slug: string }) {
         }
         const { data, error: programsError } = await supabase.from("programs").select("*").eq("mosque_id", mosque.id).order("title", { ascending: true });
         if (programsError) {
-          setError(programsError.message);
+          setError(friendlyErrorMessage(programsError, "Could not load classes."));
           setLoading(false);
           return;
         }
@@ -5309,7 +5310,7 @@ export function TeacherInstructorsData({ slug, programId }: { slug: string; prog
       ]);
 
       if (programError) {
-        setError(programError.message);
+        setError(friendlyErrorMessage(programError, "Could not load this class."));
         setLoading(false);
         return;
       }
@@ -5801,13 +5802,13 @@ export function TeacherProgramCreateData({ slug }: { slug: string }) {
         cover_director_visibility: coverDirectorVisibility,
       }, { onConflict: "program_id" });
       if (detailsError) {
-        throw new Error(detailsError.message);
+        throw new Error(friendlyErrorMessage(detailsError, "Could not save class details."));
       }
 
       if (learningVisible && outcomeRows.length) {
         const { error: outcomesError } = await supabase.from("program_outcomes").insert(outcomeRows.map((row, index) => ({ program_id: program.id, sort_order: index + 1, text: row.text.trim() })));
         if (outcomesError) {
-          throw new Error(outcomesError.message);
+          throw new Error(friendlyErrorMessage(outcomesError, "Could not save learning outcomes."));
         }
       }
       if (faqRows.length) {
@@ -5820,7 +5821,7 @@ export function TeacherProgramCreateData({ slug }: { slug: string }) {
           })),
         );
         if (faqsError) {
-          throw new Error(faqsError.message);
+          throw new Error(friendlyErrorMessage(faqsError, "Could not save FAQs."));
         }
       }
       if (contentSectionRows.length) {
@@ -5834,7 +5835,7 @@ export function TeacherProgramCreateData({ slug }: { slug: string }) {
           })),
         );
         if (contentSectionsError) {
-          throw new Error(contentSectionsError.message);
+          throw new Error(friendlyErrorMessage(contentSectionsError, "Could not save content sections."));
         }
       }
       const { data: insertedTracks, error: tracksError } = await supabase
@@ -5856,7 +5857,7 @@ export function TeacherProgramCreateData({ slug }: { slug: string }) {
         })))
         .select("id, sort_order");
       if (tracksError) {
-        throw new Error(tracksError.message);
+        throw new Error(friendlyErrorMessage(tracksError, "Could not save tracks."));
       }
       await saveCanonicalProgramSessions(supabase, program.id, insertedTracks ?? [], trackRows, {
         programType: effectiveBuilderStatus.programType,
@@ -5879,7 +5880,7 @@ export function TeacherProgramCreateData({ slug }: { slug: string }) {
       if (uploadedMedia.length) {
         const { error: mediaError } = await supabase.from("program_media").insert(uploadedMedia);
         if (mediaError) {
-          throw new Error(mediaError.message);
+          throw new Error(friendlyErrorMessage(mediaError, "Could not save class photos."));
         }
       }
 
@@ -6385,7 +6386,7 @@ export function TeacherProgramSettingsData({ slug, programId, returnHref }: { sl
         : { data: [] as ProgramTrackSession[] };
 
       if (programError) {
-        setError(programError.message);
+        setError(friendlyErrorMessage(programError, "Could not load this class."));
         setLoading(false);
         return;
       }
@@ -6865,7 +6866,7 @@ export function TeacherProgramSettingsData({ slug, programId, returnHref }: { sl
     };
     const { error: detailsError } = await supabase.from("program_details").upsert(detailsPayload, { onConflict: "program_id" });
     if (detailsError) {
-      setToast({ tone: "error", message: detailsError.message });
+      setToast({ tone: "error", message: friendlyErrorMessage(detailsError, "Could not save class details.") });
       setBusy(false);
       return;
     }
@@ -6880,7 +6881,7 @@ export function TeacherProgramSettingsData({ slug, programId, returnHref }: { sl
         })),
       );
       if (outcomesError) {
-        setToast({ tone: "error", message: outcomesError.message });
+        setToast({ tone: "error", message: friendlyErrorMessage(outcomesError, "Could not save learning outcomes.") });
         setBusy(false);
         return;
       }
@@ -6897,7 +6898,7 @@ export function TeacherProgramSettingsData({ slug, programId, returnHref }: { sl
         })),
       );
       if (faqsError) {
-        setToast({ tone: "error", message: faqsError.message });
+        setToast({ tone: "error", message: friendlyErrorMessage(faqsError, "Could not save FAQs.") });
         setBusy(false);
         return;
       }
@@ -6915,7 +6916,7 @@ export function TeacherProgramSettingsData({ slug, programId, returnHref }: { sl
         })),
       );
       if (contentSectionsError) {
-        setToast({ tone: "error", message: contentSectionsError.message });
+        setToast({ tone: "error", message: friendlyErrorMessage(contentSectionsError, "Could not save content sections.") });
         setBusy(false);
         return;
       }
@@ -6936,7 +6937,7 @@ export function TeacherProgramSettingsData({ slug, programId, returnHref }: { sl
         })),
       );
       if (mediaError) {
-        setToast({ tone: "error", message: mediaError.message });
+        setToast({ tone: "error", message: friendlyErrorMessage(mediaError, "Could not save class photos.") });
         setBusy(false);
         return;
       }
@@ -6963,7 +6964,7 @@ export function TeacherProgramSettingsData({ slug, programId, returnHref }: { sl
         })),
       ).select("id, sort_order");
       if (tracksError) {
-        setToast({ tone: "error", message: tracksError.message });
+        setToast({ tone: "error", message: friendlyErrorMessage(tracksError, "Could not save tracks.") });
         setBusy(false);
         return;
       }
@@ -9548,7 +9549,7 @@ export function AdminTeacherRequestsData({ slug }: { slug: string }) {
       .order("created_at", { ascending: true });
 
     if (requestError) {
-      setError(requestError.message);
+      setError(friendlyErrorMessage(requestError, "Could not load teachers."));
       setLoading(false);
       return;
     }
@@ -9583,7 +9584,7 @@ export function AdminTeacherRequestsData({ slug }: { slug: string }) {
       .eq("id", requestId);
     setBusyId(null);
     if (reviewError) {
-      setError(reviewError.message);
+      setError(friendlyErrorMessage(reviewError, "Could not update this permission."));
       return;
     }
     await loadRequests();
@@ -9684,7 +9685,7 @@ export function AdminMembersData({ slug }: { slug: string }) {
       .order("created_at", { ascending: false });
 
     if (membershipError) {
-      setError(membershipError.message);
+      setError(friendlyErrorMessage(membershipError, "Could not load members."));
       setLoading(false);
       return;
     }
@@ -9809,7 +9810,7 @@ export function AdminMembersData({ slug }: { slug: string }) {
       .eq("id", membershipId);
     setBusyId(null);
     if (updateError) {
-      setError(updateError.message);
+      setError(friendlyErrorMessage(updateError, "Could not update this permission."));
       return;
     }
     await loadMembers();
@@ -9826,7 +9827,7 @@ export function AdminMembersData({ slug }: { slug: string }) {
       .eq("role", "director");
     setBusyId(null);
     if (updateError) {
-      setError(updateError.message);
+      setError(friendlyErrorMessage(updateError, "Could not update this permission."));
       return;
     }
     setToast({ tone: "success", message: enabled ? "Finance access enabled." : "Finance access removed." });
@@ -10154,7 +10155,7 @@ export function TeacherStudentsData({ slug, programId }: { slug: string; program
 
     const { data: mosqueData, error: mosqueError } = await supabase.from("mosques").select("*").eq("slug", slug).maybeSingle();
     if (mosqueError || !mosqueData) {
-      return { ...emptyTeacherRosterSnapshot, currentUserId: userId, error: mosqueError?.message ?? "Masjid not found." };
+      return { ...emptyTeacherRosterSnapshot, currentUserId: userId, error: friendlyErrorMessage(mosqueError, "Masjid not found.") };
     }
 
     const { data: programData, error: programError } = await supabase
@@ -10165,7 +10166,7 @@ export function TeacherStudentsData({ slug, programId }: { slug: string; program
       .maybeSingle();
 
     if (programError || !programData) {
-      return { ...emptyTeacherRosterSnapshot, currentUserId: userId, mosque: mosqueData, error: programError?.message ?? "Class not found." };
+      return { ...emptyTeacherRosterSnapshot, currentUserId: userId, mosque: mosqueData, error: friendlyErrorMessage(programError, "Class not found.") };
     }
 
     const [{ data: enrollmentRows, error: enrollmentError }, { data: waitlistRows, error: waitlistError }, { data: trackRows }] = await Promise.all([
@@ -10185,7 +10186,7 @@ export function TeacherStudentsData({ slug, programId }: { slug: string; program
     ]);
 
     if (enrollmentError || waitlistError) {
-      return { ...emptyTeacherRosterSnapshot, currentUserId: userId, mosque: mosqueData, program: programData, error: enrollmentError?.message ?? waitlistError?.message ?? "Could not load students." };
+      return { ...emptyTeacherRosterSnapshot, currentUserId: userId, mosque: mosqueData, program: programData, error: friendlyErrorMessage(enrollmentError ?? waitlistError, "Could not load students.") };
     }
 
     const activeTrackRows = trackRows ?? [];
@@ -10365,7 +10366,7 @@ export function TeacherStudentsData({ slug, programId }: { slug: string; program
       .eq("student_profile_id", studentId);
 
     if (updateError) {
-      setError(updateError.message);
+      setError(friendlyErrorMessage(updateError, "Could not remove this student."));
       setBusyStudentId(null);
       return;
     }
@@ -10389,7 +10390,7 @@ export function TeacherStudentsData({ slug, programId }: { slug: string; program
     );
 
     if (noticeError) {
-      setError(noticeError.message);
+      setError(friendlyErrorMessage(noticeError, "Could not send removal notice."));
     }
 
     const { data: actorProfile } = await supabase.from("profiles").select("full_name, email").eq("id", currentUserId).maybeSingle();
@@ -11161,14 +11162,14 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
     ]);
 
     if (mosqueError || !mosque) {
-      setError(mosqueError?.message ?? "Masjid not found.");
+      setError(friendlyErrorMessage(mosqueError, "Masjid not found."));
       setLoading(false);
       return;
     }
 
     const { data: programRow, error: programError } = await supabase.from("programs").select("*").eq("id", programId).eq("mosque_id", mosque.id).maybeSingle();
     if (programError || !programRow) {
-      setError(programError?.message ?? "Class not found.");
+      setError(friendlyErrorMessage(programError, "Class not found."));
       setLoading(false);
       return;
     }
@@ -11204,7 +11205,7 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
     ]);
 
     if (enrollmentError) {
-      setError(enrollmentError.message);
+      setError(friendlyErrorMessage(enrollmentError, "Could not load enrollments."));
       setLoading(false);
       return;
     }
@@ -12158,7 +12159,7 @@ function FinanceAddNoteModal({
     });
     setBusy(false);
     if (insertError) {
-      setError(insertError.message);
+      setError(friendlyErrorMessage(insertError, "Could not save this note."));
       return;
     }
     onSuccess();
@@ -12297,14 +12298,14 @@ export function ProgramApplicationsData({ slug, programId, mode = "teacher" }: {
 
     const { data: mosque, error: mosqueError } = await supabase.from("mosques").select("id").eq("slug", slug).maybeSingle();
     if (mosqueError || !mosque) {
-      setError(mosqueError?.message ?? "Masjid not found.");
+      setError(friendlyErrorMessage(mosqueError, "Masjid not found."));
       setLoading(false);
       return;
     }
 
     const { data: programRow, error: programError } = await supabase.from("programs").select("*").eq("id", programId).eq("mosque_id", mosque.id).maybeSingle();
     if (programError || !programRow) {
-      setError(programError?.message ?? "Class not found.");
+      setError(friendlyErrorMessage(programError, "Class not found."));
       setLoading(false);
       return;
     }
@@ -12329,7 +12330,7 @@ export function ProgramApplicationsData({ slug, programId, mode = "teacher" }: {
       supabase.from("enrollment_request_tracks").select("enrollment_request_id, program_track_id"),
     ]);
     if (requestError) {
-      setError(requestError.message);
+      setError(friendlyErrorMessage(requestError, "Could not load applications."));
       setLoading(false);
       return;
     }
@@ -12422,7 +12423,7 @@ export function ProgramApplicationsData({ slug, programId, mode = "teacher" }: {
     });
     setSwitchRequestBusyId(null);
     if (decisionError) {
-      setToast({ tone: "error", message: decisionError.message });
+      setToast({ tone: "error", message: friendlyErrorMessage(decisionError, "Could not process this request.") });
       return;
     }
     setToast({ tone: "success", message: decision === "approved" ? "Switch approved." : "Switch rejected." });
@@ -13202,7 +13203,7 @@ async function saveCanonicalProgramSessions(
     .insert(sessionEntries.map(([, payload]) => payload))
     .select("id");
   if (sessionsError) {
-    throw new Error(sessionsError.message);
+    throw new Error(friendlyErrorMessage(sessionsError, "Could not save sessions."));
   }
 
   const sessionIdByKey = new Map<string, string>();
@@ -13223,7 +13224,7 @@ async function saveCanonicalProgramSessions(
   if (linkRows.length) {
     const { error: linkError } = await supabase.from("program_track_sessions").insert(linkRows);
     if (linkError) {
-      throw new Error(linkError.message);
+      throw new Error(friendlyErrorMessage(linkError, "Could not link sessions to tracks."));
     }
   }
 }
@@ -13289,7 +13290,7 @@ async function fetchTeacherPrograms(slug: string): Promise<TeacherProgramsResult
   ]);
 
   if (programError || assignmentError) {
-    return { ...emptyTeacherProgramsResult, currentUserId: userId, error: programError?.message ?? assignmentError?.message ?? "Could not load assigned classes." };
+    return { ...emptyTeacherProgramsResult, currentUserId: userId, error: friendlyErrorMessage(programError ?? assignmentError, "Could not load assigned classes.") };
   }
 
   const assignmentRoleByProgramId = Object.fromEntries(
@@ -13390,7 +13391,7 @@ async function fetchAdminProgramsWithTracks(slug: string): Promise<AdminPrograms
   ]);
 
   if (mosqueError || !mosque) {
-    return { programs: [], error: mosqueError?.message ?? "Masjid not found." };
+    return { programs: [], error: friendlyErrorMessage(mosqueError, "Masjid not found.") };
   }
 
   const { data: adminMembership } = await supabase
@@ -15071,7 +15072,7 @@ export function TeacherStudentNotesData({ slug, programId, studentId }: { slug: 
         return;
       }
       if (mosqueError || !mosqueData) {
-        setError(mosqueError?.message ?? "Masjid not found.");
+        setError(friendlyErrorMessage(mosqueError, "Masjid not found."));
         setLoading(false);
         return;
       }
@@ -15086,7 +15087,7 @@ export function TeacherStudentNotesData({ slug, programId, studentId }: { slug: 
         return;
       }
       if (programError || !programData) {
-        setError(programError?.message ?? "Class not found.");
+        setError(friendlyErrorMessage(programError, "Class not found."));
         setLoading(false);
         return;
       }
@@ -15101,7 +15102,7 @@ export function TeacherStudentNotesData({ slug, programId, studentId }: { slug: 
         return;
       }
       if (enrollmentError || !enrollment) {
-        setError(enrollmentError?.message ?? "Student enrollment not found.");
+        setError(friendlyErrorMessage(enrollmentError, "Student enrollment not found."));
         setLoading(false);
         return;
       }
@@ -15194,7 +15195,7 @@ function TeacherStudentNotesPage({
       .order("created_at", { ascending: true });
 
     if (noteError) {
-      setError(noteError.message);
+      setError(friendlyErrorMessage(noteError, "Could not load notes."));
       setLoading(false);
       return;
     }
@@ -15246,7 +15247,7 @@ function TeacherStudentNotesPage({
       .single();
     setBusy(false);
     if (insertError) {
-      setError(insertError.message);
+      setError(friendlyErrorMessage(insertError, "Could not send this note."));
       return;
     }
     setMessage("");
@@ -18425,7 +18426,7 @@ function StudentInviteCodeTools({ slug }: { slug: string }) {
     });
     setBusy(false);
     if (claimError || !requestId) {
-      setMessage(claimError?.message ?? "Could not redeem this code.");
+      setMessage(friendlyErrorMessage(claimError, "Could not redeem this code."));
       return;
     }
     router.push(`/m/${slug}/registration/${requestId}`);

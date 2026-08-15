@@ -17,6 +17,7 @@ import {
 import { TransitionLink } from "@/components/layout/transition-link";
 import { useModalFocusTrap } from "@/hooks/use-modal-behavior";
 import { getCachedSessionSnapshot, loadCachedSession, subscribeCachedSession } from "@/lib/client-cache";
+import { friendlyErrorMessage } from "@/lib/errors";
 import {
   fetchNotificationState,
   markNotificationsDismissed,
@@ -531,7 +532,7 @@ export function TeacherInboxData({ slug }: { slug: string }) {
         programs: teacherPrograms,
         selectedProgramId: activeProgramId,
         canReviewRequests: directorProgramIds.length > 0,
-        error: announcementError?.message ?? requestError?.message ?? withdrawalError?.message ?? instructorError?.message ?? instructorEventError?.message ?? "Could not load teacher inbox.",
+        error: friendlyErrorMessage(announcementError ?? requestError ?? withdrawalError ?? instructorError ?? instructorEventError, "Could not load teacher inbox."),
       };
     }
 
@@ -702,7 +703,7 @@ export function TeacherInboxData({ slug }: { slug: string }) {
       .select("id")
       .single();
     if (insertError) {
-      setError(insertError.message);
+      setError(friendlyErrorMessage(insertError, "Could not send this announcement."));
       return;
     }
     setMessage("");
@@ -721,7 +722,7 @@ export function TeacherInboxData({ slug }: { slug: string }) {
       .eq("id", requestId);
 
     if (clearError) {
-      setError(clearError.message);
+      setError(friendlyErrorMessage(clearError, "Could not dismiss this."));
       return;
     }
 
@@ -742,7 +743,7 @@ export function TeacherInboxData({ slug }: { slug: string }) {
       .in("id", pastRequestIds);
 
     if (clearError) {
-      setError(clearError.message);
+      setError(friendlyErrorMessage(clearError, "Could not dismiss these."));
       return;
     }
 
@@ -788,7 +789,7 @@ export function TeacherInboxData({ slug }: { slug: string }) {
       .eq("id", requestId);
 
     if (clearError) {
-      setError(clearError.message);
+      setError(friendlyErrorMessage(clearError, "Could not dismiss this."));
       return;
     }
 
@@ -809,7 +810,7 @@ export function TeacherInboxData({ slug }: { slug: string }) {
       .in("id", pastWithdrawalIds);
 
     if (clearError) {
-      setError(clearError.message);
+      setError(friendlyErrorMessage(clearError, "Could not dismiss these."));
       return;
     }
 
@@ -862,7 +863,7 @@ export function TeacherInboxData({ slug }: { slug: string }) {
     });
     setSwitchRequestBusyId(null);
     if (decisionError) {
-      setToast({ tone: "error", message: decisionError.message });
+      setToast({ tone: "error", message: friendlyErrorMessage(decisionError, "Could not process this request.") });
       return false;
     }
     setToast({ tone: "success", message: decision === "approved" ? "Switch approved." : "Switch rejected." });

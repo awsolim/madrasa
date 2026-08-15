@@ -8,6 +8,7 @@ import { DirectorySkeleton } from "@/components/data/data-loading";
 import { EditorToast, type EditorToastState } from "@/components/data/editor-toast";
 import { EmptyState } from "@/components/data/empty-state";
 import { loadCachedSession } from "@/lib/client-cache";
+import { friendlyErrorMessage } from "@/lib/errors";
 import { formatShortDate } from "@/lib/programs/display";
 import { isCurrentEnrollmentStatus } from "@/lib/programs/enrollment-status";
 import {
@@ -101,7 +102,7 @@ async function loadAttendanceSessionContext(slug: string, programId: string, sea
     supabase.rpc("can_manage_program", { check_program_id: programId, check_profile_id: userId }),
   ]);
   if (mosqueError || !mosque) {
-    return { ...emptyAttendanceSessionContext, currentUserId: userId, sessionDate, day, start, end, error: mosqueError?.message ?? "Masjid not found." };
+    return { ...emptyAttendanceSessionContext, currentUserId: userId, sessionDate, day, start, end, error: friendlyErrorMessage(mosqueError, "Masjid not found.") };
   }
   if (!canManage) {
     return { ...emptyAttendanceSessionContext, mosque, currentUserId: userId, sessionDate, day, start, end, error: "You don't have permission to manage attendance for this class." };
@@ -109,7 +110,7 @@ async function loadAttendanceSessionContext(slug: string, programId: string, sea
 
   const { data: program, error: programError } = await supabase.from("programs").select("*").eq("id", programId).eq("mosque_id", mosque.id).maybeSingle();
   if (programError || !program) {
-    return { ...emptyAttendanceSessionContext, mosque, currentUserId: userId, sessionDate, day, start, end, error: programError?.message ?? "Class not found." };
+    return { ...emptyAttendanceSessionContext, mosque, currentUserId: userId, sessionDate, day, start, end, error: friendlyErrorMessage(programError, "Class not found.") };
   }
 
   const [{ data: enrollmentRows }, { data: trackRows }, { data: sessionRows }, { data: records }] = await Promise.all([
@@ -370,7 +371,7 @@ export function ProgramAttendanceMarkData({ slug, programId }: { slug: string; p
     const [{ error: deleteError }, { error: saveError }] = await Promise.all([deletePromise, upsertPromise]);
     setSaving(false);
     if (deleteError || saveError) {
-      setError(deleteError?.message ?? saveError?.message ?? "Could not save attendance.");
+      setError(friendlyErrorMessage(deleteError ?? saveError, "Could not save attendance."));
       return;
     }
     const next = await loadAttendanceSessionContext(slug, programId, new URLSearchParams(readonlySearchParams.toString()));

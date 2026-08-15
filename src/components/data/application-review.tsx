@@ -18,6 +18,7 @@ import {
   scheduleSummary,
 } from "@/components/data/supabase-public-sections";
 import { useModalFocusTrap } from "@/hooks/use-modal-behavior";
+import { friendlyErrorMessage } from "@/lib/errors";
 import {
   applicationStatusTone,
   getApplicationPaymentStatus,
@@ -156,7 +157,7 @@ export function ApplicationReviewOverlay({
         return;
       }
       if (requestError || !request || !programRow) {
-        setError(requestError?.message ?? "Application not found.");
+        setError(friendlyErrorMessage(requestError, "Application not found."));
         setLoading(false);
         return;
       }

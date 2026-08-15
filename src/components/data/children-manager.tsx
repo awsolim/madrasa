@@ -69,7 +69,7 @@ export function ChildrenManager({ slug }: { slug: string }) {
 
     const { data: mosque, error: mosqueError } = await supabase.from("mosques").select("id").eq("slug", slug).maybeSingle();
     if (mosqueError || !mosque) {
-      setError(mosqueError?.message ?? "Masjid not found.");
+      setError(friendlyErrorMessage(mosqueError, "Masjid not found."));
       setLoading(false);
       return;
     }

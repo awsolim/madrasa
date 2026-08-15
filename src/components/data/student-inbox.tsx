@@ -930,7 +930,7 @@ export function InboxAnnouncementsData({ slug }: { slug: string }) {
 
     if (requestError || withdrawalError) {
       setLoading(false);
-      setError(requestError?.message ?? withdrawalError?.message ?? "Could not load inbox.");
+      setError(friendlyErrorMessage(requestError ?? withdrawalError, "Could not load inbox."));
       return;
     }
 
@@ -1127,7 +1127,7 @@ export function InboxAnnouncementsData({ slug }: { slug: string }) {
       .update({ student_dismissed_at: new Date().toISOString() })
       .in("id", requestIds);
     if (dismissError) {
-      setError(dismissError.message);
+      setError(friendlyErrorMessage(dismissError, "Could not dismiss this."));
       return;
     }
     window.dispatchEvent(new Event("tareeqah:notifications-changed"));
@@ -1143,7 +1143,7 @@ export function InboxAnnouncementsData({ slug }: { slug: string }) {
       .update({ student_dismissed_at: new Date().toISOString() })
       .in("id", requestIds);
     if (dismissError) {
-      setError(dismissError.message);
+      setError(friendlyErrorMessage(dismissError, "Could not dismiss this."));
       return;
     }
     window.dispatchEvent(new Event("tareeqah:notifications-changed"));
@@ -1188,7 +1188,7 @@ export function InboxAnnouncementsData({ slug }: { slug: string }) {
       .eq("id", rescindTarget.request.id);
     if (rescindError) {
       setRescindBusy(false);
-      setToast({ tone: "error", message: rescindError.message });
+      setToast({ tone: "error", message: friendlyErrorMessage(rescindError, "Could not withdraw this application.") });
       return;
     }
     setRescindTarget(null);
@@ -1395,7 +1395,7 @@ export function InboxAnnouncementsData({ slug }: { slug: string }) {
 
     if (olderError) {
       setAnnouncementThreadLoadingOlder((current) => ({ ...current, [programId]: false }));
-      setError(olderError.message);
+      setError(friendlyErrorMessage(olderError, "Could not load older announcements."));
       return;
     }
 
@@ -1491,7 +1491,7 @@ export function InboxAnnouncementsData({ slug }: { slug: string }) {
 
     if (olderError) {
       setNoteThreadLoadingOlder((current) => ({ ...current, [threadKey]: false }));
-      setError(olderError.message);
+      setError(friendlyErrorMessage(olderError, "Could not load older notes."));
       return;
     }
 
