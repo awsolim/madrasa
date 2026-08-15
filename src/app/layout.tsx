@@ -1,4 +1,5 @@
 import type { Metadata, Viewport } from "next";
+import { BootScreen } from "@/components/pwa/boot-screen";
 import { PwaRegistrar } from "@/components/pwa/pwa-registrar";
 import "./globals.css";
 
@@ -45,6 +46,7 @@ export default function RootLayout({
     <html lang="en">
       <body>
         <PwaRegistrar />
+        <BootScreen />
         {children}
       </body>
     </html>
