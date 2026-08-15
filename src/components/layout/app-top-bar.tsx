@@ -105,7 +105,7 @@ function BottomNav({ items, inboxBadgeCount = 0, inboxActionRequired = false }: 
     >
       <div
         className={cn(
-          "mx-auto grid h-full w-full max-w-md rounded-t-[34px] border-x border-t border-[#D6DCE0] pb-[env(safe-area-inset-bottom)]",
+          "mx-auto grid h-full w-full max-w-md rounded-t-[34px] border-x border-t border-[var(--border-default)] pb-[env(safe-area-inset-bottom)]",
           "bg-white",
         )}
         style={{ gridTemplateColumns: `repeat(${visibleItems.length}, minmax(0, 1fr))` }}
@@ -127,8 +127,8 @@ function BottomNav({ items, inboxBadgeCount = 0, inboxActionRequired = false }: 
                 beginNavigation(index, item);
               }}
               className={cn(
-                "relative flex h-[74px] min-w-0 flex-col items-center justify-start px-1 pt-2.5 text-[11px] font-medium text-[#7B858C]",
-                active && "text-[#17624F]",
+                "relative flex h-[74px] min-w-0 flex-col items-center justify-start px-1 pt-2.5 text-[11px] font-medium text-[var(--text-subtle)]",
+                active && "text-[var(--brand-green)]",
               )}
             >
               <span
@@ -203,11 +203,11 @@ function isNavItemActive(pathname: string, item: NavItem) {
 
 function NavBadge({ count, actionRequired = false }: { count?: number; actionRequired?: boolean }) {
   if (actionRequired) {
-    return <span className="absolute -right-1 -top-1 h-3 w-3 rounded-full bg-[#2F8FB3] ring-2 ring-white" />;
+    return <span className="absolute -right-1 -top-1 h-3 w-3 rounded-full bg-[var(--brand-blue)] ring-2 ring-white" />;
   }
   if (count) {
     return (
-      <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-[#E25241] px-1 text-[11px] font-semibold leading-none text-white shadow-[0_4px_10px_rgba(226,82,65,0.35)] ring-2 ring-white">
+      <span className="absolute -right-1 -top-1 flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--danger)] px-1 text-[11px] font-semibold leading-none text-white shadow-[0_4px_10px_rgba(226,82,65,0.35)] ring-2 ring-white">
         {count > 9 ? "9+" : count}
       </span>
     );
@@ -493,13 +493,13 @@ export function AppTopBar({
 
 
   return (
-    <header className="sticky top-0 z-30 border-b border-[#E4E9EC] bg-white text-[#26323A] md:hidden">
+    <header className="sticky top-0 z-30 border-b border-[#E4E9EC] bg-white text-[var(--text-primary)] md:hidden">
       <div className="app-container grid min-h-[42px] grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 py-1">
         <Link href={homeHref} className="flex min-w-0 items-center gap-2">
           <TopBarLogo src={logoUrl} name={displayName} compact />
-          <span className="min-w-0 truncate text-[13px] font-semibold leading-4 text-[#26323A]">{displayName}</span>
+          <span className="min-w-0 truncate text-[13px] font-semibold leading-4 text-[var(--text-primary)]">{displayName}</span>
         </Link>
-        <div className="flex flex-col items-center justify-center whitespace-nowrap text-[#7B858C]">
+        <div className="flex flex-col items-center justify-center whitespace-nowrap text-[var(--text-subtle)]">
           <span className="text-[8px] font-medium leading-[9px]">Powered by</span>
           <span className="text-[9px] font-semibold leading-[10px]">Tareeqah</span>
         </div>
@@ -511,10 +511,10 @@ export function AppTopBar({
             </>
           ) : (
             <>
-              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[#17624F] text-[11px] font-semibold leading-none text-white">
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[var(--brand-green)] text-[11px] font-semibold leading-none text-white">
                 {accountInitial ?? <GuestProfileIcon />}
               </span>
-              <span className="min-w-0 flex-1 truncate text-right text-[12px] font-semibold leading-4 text-[#26323A]">
+              <span className="min-w-0 flex-1 truncate text-right text-[12px] font-semibold leading-4 text-[var(--text-primary)]">
                 {userFirstName}
               </span>
             </>

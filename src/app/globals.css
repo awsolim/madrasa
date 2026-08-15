@@ -1,21 +1,54 @@
 @import "tailwindcss";
 
 :root {
-  --primary-blue: #2f8fb3;
-  --primary-blue-dark: #257b9c;
-  --primary-blue-soft: #e7f3f8;
+  /* Brand -- the app's two recurring accent colors. Green is the dominant
+     CTA/active-state color; blue is used for links, focus rings, and
+     secondary emphasis. */
+  --brand-green: #17624f;
+  --brand-blue: #2f8fb3;
+  --brand-blue-dark: #257b9c;
+  --brand-blue-soft: #e7f3f8;
   --teal: #22a6b3;
+
+  /* Text -- ordered darkest (primary reading text) to lightest
+     (placeholders). Picked from the hex values already used most often
+     across the app, not new colors. */
+  --text-primary: #26323a;
+  --text-secondary: #52616a;
+  --text-muted: #6b747b;
+  --text-subtle: #7b858c;
+  --text-faint: #8a949b;
+  --text-placeholder: #9aa4aa;
+
+  /* Borders / dividers */
+  --border-default: #d6dce0;
+  --border-input: #b9c3c8;
+  --border-subtle: #e1e8ec;
+  --border-faint: #e6ecef;
+
+  /* Semantic */
+  --warning: #f59e0b;
+  --danger: #e25241;
+  --danger-dark: #c83f31;
+  --danger-darker: #c0392b;
+  --success: #258a43;
+
+  /* Surfaces */
   --workspace: #ffffff;
   --placeholder: #eee6d8;
   --placeholder-soft: #f7f1e8;
   --placeholder-strong: #e4d8c7;
   --panel: #ffffff;
   --toolbar: #e8e8e8;
-  --divider: #d6dce0;
-  --text: #26323a;
-  --muted: #6b747b;
-  --warning: #f59e0b;
-  --danger: #e25241;
+
+  /* Deprecated aliases -- kept so nothing relying on the old names breaks;
+     new code should use the tokens above. */
+  --primary-blue: var(--brand-blue);
+  --primary-blue-dark: var(--brand-blue-dark);
+  --primary-blue-soft: var(--brand-blue-soft);
+  --divider: var(--border-default);
+  --text: var(--text-primary);
+  --muted: var(--text-muted);
 }
 
 @theme inline {

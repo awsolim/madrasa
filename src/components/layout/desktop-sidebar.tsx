@@ -78,12 +78,12 @@ export function DesktopSidebar({
   }, [mosqueSlug]);
 
   return (
-    <aside className={cn("fixed inset-y-0 left-0 z-40 hidden w-72 flex-col border-r border-[#D6DCE0] px-5 py-6 text-[#26323A] md:flex", whiteChrome ? "bg-white" : "bg-[var(--workspace)]")}>
+    <aside className={cn("fixed inset-y-0 left-0 z-40 hidden w-72 flex-col border-r border-[var(--border-default)] px-5 py-6 text-[var(--text-primary)] md:flex", whiteChrome ? "bg-white" : "bg-[var(--workspace)]")}>
       <Link href={homeHref} className="flex min-w-0 items-center gap-3">
         <SidebarLogo src={logoUrl} name={displayName} />
         <span className="min-w-0">
           <span className="block truncate text-xl font-semibold leading-6">{displayName}</span>
-          <span className="block truncate text-xs leading-4 text-[#6B747B]">Powered by Tareeqah</span>
+          <span className="block truncate text-xs leading-4 text-[var(--text-muted)]">Powered by Tareeqah</span>
         </span>
       </Link>
 
@@ -116,8 +116,8 @@ export function DesktopSidebar({
               key={`${item.label}-${item.href}`}
               href={item.href}
               className={cn(
-                "flex min-h-11 items-center gap-3 rounded-2xl px-3 text-sm font-semibold text-[#5B6770] transition-colors hover:bg-[#F1F5F6] hover:text-[#26323A]",
-                active && "bg-[#E8F5F1] text-[#17624F]",
+                "flex min-h-11 items-center gap-3 rounded-2xl px-3 text-sm font-semibold text-[#5B6770] transition-colors hover:bg-[#F1F5F6] hover:text-[var(--text-primary)]",
+                active && "bg-[#E8F5F1] text-[var(--brand-green)]",
               )}
             >
               <SidebarIcon label={item.label} />
@@ -152,8 +152,8 @@ function DesktopNavGroup({ item, active, badgeCount, actionRequired = false, chi
         type="button"
         onClick={() => setOpen((current) => !current)}
         className={cn(
-          "flex min-h-11 w-full items-center gap-3 rounded-2xl px-3 text-left text-sm font-semibold text-[#5B6770] transition-colors hover:bg-[#F1F5F6] hover:text-[#26323A]",
-          active && "bg-[#E8F5F1] text-[#17624F]",
+          "flex min-h-11 w-full items-center gap-3 rounded-2xl px-3 text-left text-sm font-semibold text-[#5B6770] transition-colors hover:bg-[#F1F5F6] hover:text-[var(--text-primary)]",
+          active && "bg-[#E8F5F1] text-[var(--brand-green)]",
         )}
         aria-expanded={open}
       >
@@ -162,7 +162,7 @@ function DesktopNavGroup({ item, active, badgeCount, actionRequired = false, chi
         <Badge count={badgeCount} actionRequired={actionRequired} />
         <SidebarChevron expanded={open} />
       </button>
-      {open ? <div className="mt-1 border-l border-[#D6DCE0] pl-4">{children}</div> : null}
+      {open ? <div className="mt-1 border-l border-[var(--border-default)] pl-4">{children}</div> : null}
     </div>
   );
 }
@@ -177,8 +177,8 @@ function DesktopSidebarSubnav({ items, pathname, searchParams }: { items: Array<
           key={item.href}
           href={item.href}
           className={cn(
-            "flex min-h-9 items-center rounded-xl px-3 text-sm font-medium text-[#6B747B] transition-colors hover:bg-[#F1F5F6] hover:text-[#26323A]",
-            isHrefActive(pathname, searchParams, item.href) && "bg-[#F3FAF7] text-[#17624F]",
+            "flex min-h-9 items-center rounded-xl px-3 text-sm font-medium text-[var(--text-muted)] transition-colors hover:bg-[#F1F5F6] hover:text-[var(--text-primary)]",
+            isHrefActive(pathname, searchParams, item.href) && "bg-[#F3FAF7] text-[var(--brand-green)]",
           )}
         >
           {item.label}
@@ -291,10 +291,10 @@ function DesktopProfileLink({ mosqueSlug, accountHref }: { mosqueSlug: string; a
   if (!ready) {
     return (
       <div className="flex min-h-16 items-center gap-3 rounded-3xl bg-[#F5F7F8] px-3 py-3">
-        <span className="h-11 w-11 shrink-0 animate-pulse rounded-full bg-[#E1E8EC]" />
+        <span className="h-11 w-11 shrink-0 animate-pulse rounded-full bg-[var(--border-subtle)]" />
         <span className="min-w-0 flex-1 space-y-1.5">
-          <span className="block h-3.5 w-24 animate-pulse rounded bg-[#E1E8EC]" />
-          <span className="block h-3 w-16 animate-pulse rounded bg-[#E1E8EC]" />
+          <span className="block h-3.5 w-24 animate-pulse rounded bg-[var(--border-subtle)]" />
+          <span className="block h-3 w-16 animate-pulse rounded bg-[var(--border-subtle)]" />
         </span>
       </div>
     );
@@ -305,18 +305,18 @@ function DesktopProfileLink({ mosqueSlug, accountHref }: { mosqueSlug: string; a
       {profileAvatarUrl ? (
         <span className="h-11 w-11 shrink-0 rounded-full bg-cover bg-center" style={{ backgroundImage: `url("${profileAvatarUrl}")` }} aria-hidden />
       ) : session === null ? (
-        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#E5F3EF] text-[#17624F]">
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#E5F3EF] text-[var(--brand-green)]">
           <GuestProfileIcon className="h-5 w-5" />
         </span>
       ) : (
-        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#E5F3EF] text-sm font-semibold text-[#17624F]">
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#E5F3EF] text-sm font-semibold text-[var(--brand-green)]">
           {initials(displayName)}
         </span>
       )}
 
       <span className="min-w-0 flex-1">
-        <span className="block truncate text-sm font-semibold text-[#26323A]">{displayName}</span>
-        <span className="block truncate text-xs text-[#6B747B]">{label}</span>
+        <span className="block truncate text-sm font-semibold text-[var(--text-primary)]">{displayName}</span>
+        <span className="block truncate text-xs text-[var(--text-muted)]">{label}</span>
       </span>
     </Link>
   );
@@ -404,7 +404,7 @@ function DesktopAccountSubnav({ mosqueSlug, accountHref }: { mosqueSlug: string;
   const items = accountPanelItems.filter((item) => !("parentOnly" in item) || access.accountType === "parent");
 
   return (
-    <div className="mt-2 border-l border-[#D6DCE0] pl-4">
+    <div className="mt-2 border-l border-[var(--border-default)] pl-4">
       {items.map((item) => {
         const href = `${accountHref}?panel=${item.panel}`;
         const active = currentPanel === item.panel;
@@ -415,8 +415,8 @@ function DesktopAccountSubnav({ mosqueSlug, accountHref }: { mosqueSlug: string;
             href={href}
             onMouseEnter={() => router.prefetch(href)}
             className={cn(
-              "flex min-h-9 items-center rounded-xl px-3 text-sm font-medium text-[#6B747B] transition-colors hover:bg-[#F1F5F6] hover:text-[#26323A]",
-              active && "bg-[#F3FAF7] text-[#17624F]",
+              "flex min-h-9 items-center rounded-xl px-3 text-sm font-medium text-[var(--text-muted)] transition-colors hover:bg-[#F1F5F6] hover:text-[var(--text-primary)]",
+              active && "bg-[#F3FAF7] text-[var(--brand-green)]",
             )}
           >
             {item.label}
@@ -429,7 +429,7 @@ function DesktopAccountSubnav({ mosqueSlug, accountHref }: { mosqueSlug: string;
           router.replace(`/m/${mosqueSlug}/login`);
           void performClientLogout();
         }}
-        className="flex min-h-9 w-full items-center rounded-xl px-3 text-left text-sm font-medium text-[#C0392B] transition-colors hover:bg-[#FDF1F0]"
+        className="flex min-h-9 w-full items-center rounded-xl px-3 text-left text-sm font-medium text-[var(--danger-darker)] transition-colors hover:bg-[#FDF1F0]"
       >
         Log out
       </button>
@@ -581,10 +581,10 @@ function isHrefActive(pathname: string, searchParams: SearchParamReader, href: s
 
 function Badge({ count, actionRequired = false }: { count?: number; actionRequired?: boolean }) {
   if (actionRequired) {
-    return <span className="h-3 w-3 rounded-full bg-[#2F8FB3]" />;
+    return <span className="h-3 w-3 rounded-full bg-[var(--brand-blue)]" />;
   }
   if (count) {
-    return <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-[#E25241] px-1 text-[11px] font-semibold leading-none text-white">{count > 9 ? "9+" : count}</span>;
+    return <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-[var(--danger)] px-1 text-[11px] font-semibold leading-none text-white">{count > 9 ? "9+" : count}</span>;
   }
   return null;
 }
