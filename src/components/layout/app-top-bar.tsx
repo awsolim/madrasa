@@ -534,7 +534,7 @@ function TopBarLogo({ src, name, compact = false }: { src: string | null; name: 
   const sizeClass = compact ? "h-7 w-7" : "h-10 w-10";
 
   if (src) {
-    return <Image src={src} alt="" width={compact ? 28 : 40} height={compact ? 28 : 40} className={cn(sizeClass, "shrink-0 object-contain")} />;
+    return <Image src={src} alt={name} width={compact ? 28 : 40} height={compact ? 28 : 40} className={cn(sizeClass, "shrink-0 object-contain")} />;
   }
 
   return (

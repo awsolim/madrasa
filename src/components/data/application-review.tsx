@@ -397,7 +397,7 @@ function ApplicationDetailsDrawer({
             <p className="text-xs font-semibold uppercase tracking-wide text-[#6B747B]">{program.title}</p>
             <h2 className="mt-0.5 text-base font-semibold">{row.student?.full_name || "Student"}</h2>
           </div>
-          <button type="button" onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-full bg-[#F1F5F6] text-[#26323A] hover:bg-[#E3ECEF]">
+          <button type="button" onClick={onClose} aria-label="Close" className="flex h-8 w-8 items-center justify-center rounded-full bg-[#F1F5F6] text-[#26323A] hover:bg-[#E3ECEF]">
             <XIcon />
           </button>
         </div>

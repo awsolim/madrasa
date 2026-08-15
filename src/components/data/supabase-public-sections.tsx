@@ -10682,7 +10682,7 @@ export function TeacherStudentsData({ slug, programId }: { slug: string; program
               }
             }}
           />
-          <p className="text-xs font-medium text-[#9AA4AA]">
+          <p className="text-xs font-medium text-[#6B747B]">
             Showing {resultCount} {resultCount === 1 ? "result" : "results"}
           </p>
           {hasVisibleStudents ? (
@@ -11953,7 +11953,7 @@ function FinanceDetailsDrawer({
             <p className="text-xs font-semibold uppercase tracking-wide text-[#6B747B]">{program.title}</p>
             <h2 className="mt-1 text-lg font-semibold">{row.student?.full_name || "Student"}</h2>
           </div>
-          <button type="button" onClick={onClose} className="flex h-9 w-9 items-center justify-center rounded-full bg-[#F1F5F6] text-[#26323A] hover:bg-[#E3ECEF]">
+          <button type="button" onClick={onClose} aria-label="Close" className="flex h-9 w-9 items-center justify-center rounded-full bg-[#F1F5F6] text-[#26323A] hover:bg-[#E3ECEF]">
             <XIcon />
           </button>
         </div>
@@ -16552,7 +16552,7 @@ export function ApplicantDetailsDrawer({
             <p className="text-xs font-semibold uppercase tracking-wide text-[#6B747B]">{row.program?.title ?? "Class"}</p>
             <h2 className="mt-0.5 text-base font-semibold">{childName || "Your application"}</h2>
           </div>
-          <button type="button" onClick={onClose} className="flex h-8 w-8 items-center justify-center rounded-full bg-[#F1F5F6] text-[#26323A] hover:bg-[#E3ECEF]">
+          <button type="button" onClick={onClose} aria-label="Close" className="flex h-8 w-8 items-center justify-center rounded-full bg-[#F1F5F6] text-[#26323A] hover:bg-[#E3ECEF]">
             <XIcon />
           </button>
         </div>
@@ -16897,7 +16897,7 @@ function DisabledActionRow({ icon, label, tone = "default" }: { icon: ReactNode;
     <div className={cn("flex min-h-[58px] items-center gap-3 text-sm font-semibold", tone === "danger" ? "text-[#C83F31]" : "text-[#8A949B]")}>
       <span className="flex h-10 w-10 shrink-0 items-center justify-center" aria-hidden>{icon}</span>
       <span className="min-w-0 flex-1 text-left leading-5">{label}</span>
-      <span className="text-xs font-medium text-[#9AA4AA]">Soon</span>
+      <span className="text-xs font-medium text-[#6B747B]">Soon</span>
     </div>
   );
 }

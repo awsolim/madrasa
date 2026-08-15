@@ -591,7 +591,7 @@ function Badge({ count, actionRequired = false }: { count?: number; actionRequir
 
 function SidebarLogo({ src, name }: { src: string | null; name: string }) {
   if (src) {
-    return <Image src={src} alt="" width={44} height={44} className="h-11 w-11 shrink-0 rounded-xl object-contain" />;
+    return <Image src={src} alt={name} width={44} height={44} className="h-11 w-11 shrink-0 rounded-xl object-contain" />;
   }
 
   return (
