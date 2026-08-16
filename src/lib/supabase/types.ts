@@ -145,6 +145,8 @@ export type Database = {
           teacher_profile_id: string | null;
           role: string;
           can_manage_finances: boolean;
+          can_review_applications: boolean;
+          can_send_direct_invitations: boolean;
           invite_code: string | null;
           invite_code_created_at: string | null;
           created_at: string;
@@ -228,6 +230,8 @@ export type Database = {
           admission_completed_at: string | null;
           student_dismissed_at: string | null;
           teacher_dismissed_at: string | null;
+          admission_source: string;
+          source_student_invite_id: string | null;
         };
         Insert: Partial<Database["public"]["Tables"]["enrollment_requests"]["Row"]>;
         Update: Partial<Database["public"]["Tables"]["enrollment_requests"]["Row"]>;
@@ -576,6 +580,12 @@ export type Database = {
           payment_type: string;
           custom_price_monthly_cents: number | null;
           custom_price_annual_cents: number | null;
+          program_track_id: string | null;
+          max_students: number;
+          expires_at: string | null;
+          bypass_eligibility: boolean;
+          revoked_at: string | null;
+          selected_student_profile_ids: string[];
           claimed_by_profile_id: string | null;
           claimed_at: string | null;
           created_by: string | null;
@@ -814,7 +824,29 @@ export type Database = {
       };
       lookup_program_student_invite_code: {
         Args: { invite: string };
-        Returns: Array<{ program_id: string; title: string; director_name: string }>;
+        Returns: Array<{
+          invite_id: string;
+          program_id: string;
+          program_track_id: string | null;
+          title: string;
+          track_name: string;
+          director_name: string;
+          teacher_comment: string | null;
+          max_students: number;
+          expires_at: string | null;
+          bypass_eligibility: boolean;
+          payment_bypassed: boolean;
+          payment_type: string;
+          price_cents: number | null;
+        }>;
+      };
+      can_send_program_direct_invitations: {
+        Args: { check_program_id: string; check_profile_id?: string };
+        Returns: boolean;
+      };
+      can_review_program_applications: {
+        Args: { check_program_id: string; check_profile_id?: string };
+        Returns: boolean;
       };
       resign_program_instructor: {
         Args: { target_program_id: string };

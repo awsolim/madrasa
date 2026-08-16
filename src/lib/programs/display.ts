@@ -48,7 +48,11 @@ export function formatAgeRange(ageRange: string | null) {
   }
 
   const trimmed = ageRange.trim();
-  return trimmed.toLowerCase() === "all" ? "All ages" : trimmed;
+  if (trimmed.toLowerCase() === "all") return "All ages";
+  if (/^\d+\+$/.test(trimmed)) return `Ages ${trimmed}`;
+  if (/^\d+\s+or younger$/i.test(trimmed)) return `Ages ${trimmed.toLowerCase()}`;
+  if (/^\d+\s*-\s*\d+$/.test(trimmed)) return `Ages ${trimmed}`;
+  return trimmed;
 }
 
 export function formatGender(gender: string | null) {

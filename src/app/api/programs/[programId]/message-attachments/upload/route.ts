@@ -3,7 +3,8 @@ import { createSupabaseServiceClient } from "@/lib/supabase/service";
 export const runtime = "nodejs";
 
 const maxAttachmentBytes = 25 * 1024 * 1024;
-const allowedMimePrefixes = ["audio/", "image/"];
+const allowedImageTypes = new Set(["image/jpeg", "image/png", "image/webp", "image/gif"]);
+const allowedAudioTypes = new Set(["audio/mpeg", "audio/mp4", "audio/webm", "audio/ogg", "audio/wav"]);
 const allowedMimeTypes = new Set(["application/pdf", "text/plain"]);
 // Signed just long enough to cover the compose flow (preview + send); the persisted view
 // (MessageAttachmentList) never uses this URL -- it re-signs on render via signed-url/route.ts.
@@ -46,7 +47,7 @@ function attachmentKind(file: File) {
 }
 
 function isAllowedFile(file: File) {
-  return allowedMimePrefixes.some((prefix) => file.type.startsWith(prefix)) || allowedMimeTypes.has(file.type);
+  return allowedImageTypes.has(file.type) || allowedAudioTypes.has(file.type) || allowedMimeTypes.has(file.type);
 }
 
 export async function POST(request: Request, { params }: { params: Promise<{ programId: string }> }) {

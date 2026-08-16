@@ -3429,30 +3429,42 @@ export function PortalAccountData({ slug }: { slug: string }) {
         authUpdates.password = nextPassword;
       }
 
-      const { error } = await supabase.auth.updateUser(authUpdates);
-      if (error) {
-        setProfileMessage(error.message);
-        setProfileSaving(false);
-        return;
-      }
-
       if (field === "email") {
         const nextEmail = profileForm.email.trim();
-        const { data: updatedProfile, error: profileUpdateError } = await supabase
-          .from("profiles")
-          .update({ email: nextEmail, updated_at: new Date().toISOString() })
-          .eq("id", profile.id)
-          .select("*")
-          .maybeSingle();
-        if (profileUpdateError || !updatedProfile) {
-          setProfileMessage(friendlyErrorMessage(profileUpdateError, "Email was changed for login, but the profile row did not update."));
+        const {
+          data: { session },
+        } = await supabase.auth.getSession();
+        if (!session?.access_token) {
+          setProfileMessage("Please sign in again before changing your email.");
           setProfileSaving(false);
           return;
         }
-        setSessionEmail(nextEmail);
-        setProfile(updatedProfile);
-        setProfileForm((current) => ({ ...current, email: updatedProfile.email ?? nextEmail }));
+
+        const response = await fetch("/api/account/email", {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${session.access_token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ email: nextEmail }),
+        });
+        const result = (await response.json()) as { email?: string; profile?: Profile; error?: string };
+        if (!response.ok || !result.email || !result.profile) {
+          setProfileMessage(result.error ?? "Email could not be updated.");
+          setProfileSaving(false);
+          return;
+        }
+
+        setSessionEmail(result.email);
+        setProfile(result.profile);
+        setProfileForm((current) => ({ ...current, email: result.email ?? nextEmail }));
       } else {
+        const { error } = await supabase.auth.updateUser(authUpdates);
+        if (error) {
+          setProfileMessage(error.message);
+          setProfileSaving(false);
+          return;
+        }
         setProfileForm((current) => ({ ...current, password: "" }));
       }
     } else {
@@ -5458,7 +5470,7 @@ export function TeacherProgramCreateData({ slug }: { slug: string }) {
     const reader = new FileReader();
     reader.onload = () => {
       setMediaRows((current) =>
-        current.map((row) => row.id === rowId ? { ...row, file, previewUrl: typeof reader.result === "string" ? reader.result : row.previewUrl } : row),
+        current.map((row) => row.id === rowId ? { ...row, file, mediaType: file.type.startsWith("video/") ? "video" : "photo", previewUrl: typeof reader.result === "string" ? reader.result : row.previewUrl } : row),
       );
     };
     reader.readAsDataURL(file);
@@ -5476,11 +5488,11 @@ export function TeacherProgramCreateData({ slug }: { slug: string }) {
       headers: { Authorization: `Bearer ${accessToken}` },
       body: formData,
     });
-    const result = (await response.json()) as { url?: string; error?: string };
-    if (!response.ok || !result.url) {
+    const result = (await response.json()) as { url?: string; mediaType?: "photo" | "video"; error?: string };
+    if (!response.ok || !result.url || !result.mediaType) {
       throw new Error(result.error ?? "Could not upload media.");
     }
-    return result.url;
+    return { url: result.url, mediaType: result.mediaType };
   }
 
   async function saveNewProgram(statusOverride?: Partial<ProgramBuilderStatus>) {
@@ -5668,7 +5680,7 @@ export function TeacherProgramCreateData({ slug }: { slug: string }) {
       const program = result.program;
       let nextThumbnailUrl = thumbnailUrl;
       if (thumbnailFile) {
-        nextThumbnailUrl = await uploadFile(program.id, thumbnailFile);
+        nextThumbnailUrl = (await uploadFile(program.id, thumbnailFile)).url;
         const thumbnailResponse = await fetch(`/api/programs/${program.id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
@@ -5824,8 +5836,8 @@ export function TeacherProgramCreateData({ slug }: { slug: string }) {
         if (!row.file) {
           continue;
         }
-        const url = await uploadFile(program.id, row.file);
-        uploadedMedia.push({ program_id: program.id, sort_order: index + 1, media_type: "photo", url, thumbnail_url: url, title: row.title.trim() || null, short_label: row.title.trim() || null });
+        const uploaded = await uploadFile(program.id, row.file);
+        uploadedMedia.push({ program_id: program.id, sort_order: index + 1, media_type: uploaded.mediaType, url: uploaded.url, thumbnail_url: uploaded.mediaType === "photo" ? uploaded.url : null, title: row.title.trim() || null, short_label: row.title.trim() || null });
       }
       if (uploadedMedia.length) {
         const { error: mediaError } = await supabase.from("program_media").insert(uploadedMedia);
@@ -6123,6 +6135,7 @@ export function TeacherProgramCreateData({ slug }: { slug: string }) {
       ) : null}
 
       <ProgramEditorFields
+        masjidLabel={slug.charAt(0).toUpperCase() + slug.slice(1)}
         builderStatus={builderStatus}
         setBuilderStatus={setBuilderStatus}
         activeStep={builderStep}
@@ -6593,15 +6606,15 @@ export function TeacherProgramSettingsData({ slug, programId, returnHref }: { sl
       },
       body: formData,
     });
-    const result = (await response.json()) as { url?: string; error?: string };
+    const result = (await response.json()) as { url?: string; mediaType?: "photo" | "video"; error?: string };
     setBusy(false);
-    if (!response.ok || !result.url) {
+    if (!response.ok || !result.url || !result.mediaType) {
       setMessage(result.error ?? "Could not upload media.");
       return;
     }
 
-    setMediaRows((current) => current.map((row) => row.id === rowId ? { ...row, url: result.url ?? row.url, mediaType: "photo" } : row));
-    setMessage("Photo uploaded. Save changes to publish it.");
+    setMediaRows((current) => current.map((row) => row.id === rowId ? { ...row, url: result.url ?? row.url, mediaType: result.mediaType ?? row.mediaType } : row));
+    setMessage(`${result.mediaType === "video" ? "Video" : "Photo"} uploaded. Save changes to publish it.`);
   }
 
   async function saveProgram(statusOverride?: Partial<ProgramBuilderStatus>, confirmFutureApplicantsOnly = false) {
@@ -7259,6 +7272,7 @@ export function TeacherProgramSettingsData({ slug, programId, returnHref }: { sl
       ) : null}
 
       <ProgramEditorFields
+        masjidLabel={slug.charAt(0).toUpperCase() + slug.slice(1)}
         builderStatus={builderStatus}
         setBuilderStatus={setBuilderStatus}
         isEditMode
@@ -7643,8 +7657,9 @@ function computeProgramBuilderMissingFields(input: {
   if (!input.title.trim()) missing.push({ label: "Public name", step: "basics" });
   if (!input.location.trim()) missing.push({ label: "Location name", step: "basics" });
   if (!input.room.trim()) missing.push({ label: "Location address", step: "basics" });
-  if (!input.allAges && (!input.ageStart.trim() || !Number.isFinite(Number(input.ageStart)) || !input.ageEnd.trim() || !Number.isFinite(Number(input.ageEnd)))) {
-    missing.push({ label: "Age range (or choose All ages)", step: "basics" });
+  const ageBounds = [input.ageStart.trim(), input.ageEnd.trim()].filter(Boolean);
+  if (!input.allAges && ageBounds.some((value) => !Number.isFinite(Number(value)) || Number(value) < 0)) {
+    missing.push({ label: "Valid age limits", step: "basics" });
   }
 
   if (input.outcomeRows.length > 0) {
@@ -8081,6 +8096,7 @@ function SummaryLine({ label, value }: { label: string; value: string }) {
 }
 
 type ProgramEditorFieldsProps = {
+  masjidLabel?: string;
   activeStep?: ProgramBuilderStep;
   programType?: ProgramBuilderStatus["programType"];
   schedulePattern?: ProgramBuilderStatus["schedulePattern"];
@@ -8336,6 +8352,7 @@ function TrackTransferRuleBuilder({
 }
 
 function ProgramEditorFields({
+  masjidLabel = "Masjid",
   activeStep,
   programType = "recurring",
   schedulePattern = "weekly",
@@ -8605,7 +8622,7 @@ function ProgramEditorFields({
                     onChange={() => setBuilderStatus((current) => ({ ...current, publicationStatus: current.publicationStatus === "draft" ? "draft" : "published" }))}
                   />
                   <span>
-                    Show on {builderStatus.location.trim() || "masjid"} Program page
+                    Show on {masjidLabel} Program page
                     <span className="mt-1 block text-xs font-medium leading-5 text-[#6B747B]">Appears on the public masjid classes page.</span>
                   </span>
                 </label>
@@ -8824,7 +8841,7 @@ function ProgramEditorFields({
 
         {showPublic ? (contentSectionsVisible ? (
           <EditorFieldSection
-            title="Class Content"
+            title="Class Schedule"
             action={
               <div className="flex items-center gap-3">
                 <RemoveSectionButton onClick={removeContentSection} />
@@ -8935,23 +8952,29 @@ function ProgramEditorFields({
         )) : null}
 
         {showPublic ? (mediaVisible ? (
-          <EditorFieldSection title="Class Media" action={<RemoveSectionButton onClick={removeMediaSection} />}>
+          <section className="space-y-2">
+            <div className="flex items-center justify-between gap-3 px-1">
+              <h2 className="text-base font-semibold text-[#26323A]">Class Media</h2>
+              <RemoveSectionButton onClick={removeMediaSection} />
+            </div>
+            <div className="rounded-[14px] border border-[#D6DCE0] bg-white p-3">
             <div className="divide-y divide-[#E6ECEF]">
               {mediaRows.map((row) => {
                 const previewUrl = row.previewUrl || row.url;
                 return (
                   <div key={row.id} className="grid gap-2 py-3 first:pt-0">
-                    {previewUrl ? (
-                      <div className="relative h-32 overflow-hidden rounded-[8px] bg-[#E7EEF2]">
-                        <Image src={previewUrl} alt="" fill className="object-cover" sizes="320px" />
+                    <div className="grid grid-cols-[minmax(0,1fr)_40px] gap-2">
+                      {previewUrl ? (
+                        <div className="relative h-28 overflow-hidden rounded-[8px] bg-[#E7EEF2]">
+                          {row.mediaType === "video" ? <video src={previewUrl} className="h-full w-full object-cover" controls preload="metadata" /> : <Image src={previewUrl} alt="" fill className="object-cover" sizes="280px" />}
+                        </div>
+                      ) : <div className="flex h-28 items-center justify-center rounded-[8px] bg-[#F2F6F7] text-[#7B858C]"><PhotoIcon /></div>}
+                      <div className="flex flex-col gap-2">
+                        <label className="flex h-10 cursor-pointer items-center justify-center rounded-[8px] border border-[#D6DCE0] text-[#52616A]" aria-label="Replace media"><PhotoIcon /><input type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime" className="hidden" onChange={(event) => onMediaFile(row.id, event.target.files?.[0] ?? null)} /></label>
+                        <RowIconButton onClick={() => setMediaRows((current) => current.filter((item) => item.id !== row.id))} aria-label="Remove media item"><TrashIcon /></RowIconButton>
                       </div>
-                    ) : null}
-                    <label className="inline-flex min-h-10 cursor-pointer items-center justify-center rounded-[8px] border border-[#D6DCE0] bg-white px-3 text-sm font-semibold text-[#26323A]">
-                      {previewUrl ? "Replace photo" : "Upload photo"}
-                      <input type="file" accept="image/*" className="hidden" onChange={(event) => onMediaFile(row.id, event.target.files?.[0] ?? null)} />
-                    </label>
+                    </div>
                     <input value={row.title} onChange={(event) => setMediaRows((current) => current.map((item) => item.id === row.id ? { ...item, title: event.target.value } : item))} placeholder="Optional title" className="h-10 rounded-[8px] border border-[#B9C3C8] px-3 text-sm" />
-                    <button type="button" onClick={() => setMediaRows((current) => current.filter((item) => item.id !== row.id))} className="justify-self-start text-sm font-semibold text-[#C83F31]">Remove</button>
                   </div>
                 );
               })}
@@ -8959,7 +8982,8 @@ function ProgramEditorFields({
                 Add media
               </button>
             </div>
-          </EditorFieldSection>
+            </div>
+          </section>
         ) : (
           <button
             type="button"
@@ -9446,6 +9470,8 @@ function parseAgeRangeForEdit(value: string | null) {
   }
 
   const numbers = normalized.match(/\d+/g) ?? [];
+  if (normalized.endsWith("+")) return { allAges: false, start: numbers[0] ?? "", end: "" };
+  if (normalized.includes("younger")) return { allAges: false, start: "", end: numbers[0] ?? "" };
   return {
     allAges: false,
     start: numbers[0] ?? "",
@@ -9454,12 +9480,14 @@ function parseAgeRangeForEdit(value: string | null) {
 }
 
 function formatAgeRangeForSave(start: string, end: string) {
-  const cleanStart = start.trim();
-  const cleanEnd = end.trim();
+  const cleanStart = start.trim() === "0" ? "" : start.trim();
+  const cleanEnd = end.trim() === "0" ? "" : end.trim();
   if (cleanStart && cleanEnd) {
     return `${cleanStart}-${cleanEnd}`;
   }
-  return cleanStart || cleanEnd || null;
+  if (cleanStart) return `${cleanStart}+`;
+  if (cleanEnd) return `${cleanEnd} or younger`;
+  return null;
 }
 
 function normalizeAudienceGender(value: string | null) {
@@ -11080,6 +11108,7 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
   const [genderFilter, setGenderFilter] = useState("all");
   const [payStatusFilter, setPayStatusFilter] = useState("all");
   const [subStatusFilter, setSubStatusFilter] = useState("all");
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [actionTarget, setActionTarget] = useState<{ row: FinanceEnrollmentRow; action: FinanceAction } | null>(null);
   const [detailsTarget, setDetailsTarget] = useState<FinanceEnrollmentRow | null>(null);
   const [noteTarget, setNoteTarget] = useState<FinanceEnrollmentRow | null>(null);
@@ -11281,23 +11310,25 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
         </div>
       </div>
 
-      <label className="flex min-h-11 w-full items-center gap-2 rounded-[14px] border border-[#D6DCE0] bg-[#F8FAFB] px-3 text-[#6B747B]">
-        <SearchIcon />
-        <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search students, parents, status" className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-[#26323A] outline-none placeholder:text-[#9AA4AA]" />
-      </label>
-      <div className="flex flex-wrap gap-3">
-        <FinanceSelect label="Enrollment" value={statusFilter} options={["active", "kicked", "withdrawn"]} onChange={setStatusFilter} />
-        <FinanceSelect
-          label="Payment status"
-          value={payStatusFilter}
-          options={["paid", "awaiting payment", "no payment required", "waived", "paid externally", "past due", "payment failed", "checkout sent", "needs billing decision"]}
-          onChange={setPayStatusFilter}
-        />
-        <FinanceSelect label="Subscription" value={subStatusFilter} options={["n/a", "setup pending", "active", "paused", "ending", "past due", "payment failed", "ended"]} labels={{ "n/a": "N/A" }} onChange={setSubStatusFilter} />
-        <FinanceSelect label="Payment type" value={paymentFilter} options={["waived", "paid externally", "monthly", "pay in full"]} labels={{ "pay in full": "Pay in Full" }} onChange={setPaymentFilter} />
-        <FinanceSelect label="Type" value={typeFilter} options={["adult", "child"]} labels={{ adult: "Adult student", child: "Child student" }} onChange={setTypeFilter} />
-        <FinanceSelect label="Gender" value={genderFilter} options={["male", "female"]} labels={{ male: "Brothers", female: "Sisters" }} onChange={setGenderFilter} />
+      <div className="flex items-center gap-2">
+        <label className="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-[14px] border border-[#D6DCE0] bg-[#F8FAFB] px-3 text-[#6B747B] md:max-w-xl">
+          <SearchIcon />
+          <input aria-label="Search finance records" value={search} onChange={(event) => setSearch(event.target.value)} className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-[#26323A] outline-none" />
+        </label>
+        <button type="button" onClick={() => setFiltersOpen((open) => !open)} className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[#52616A] transition-colors", filtersOpen && "bg-[#DDF2EB] text-[#17624F]")} aria-label={filtersOpen ? "Close finance filters" : "Open finance filters"} aria-expanded={filtersOpen}>
+          <FilterSlidersIcon />
+        </button>
       </div>
+      {filtersOpen ? (
+        <div className="divide-y divide-[#EEF2F4] rounded-[16px] border border-[#DDE5E9] bg-white px-3">
+          <CompactFinanceSelect label="Enrollment" value={statusFilter} options={["active", "kicked", "withdrawn"]} onChange={setStatusFilter} />
+          <CompactFinanceSelect label="Payment status" value={payStatusFilter} options={["paid", "awaiting payment", "no payment required", "waived", "paid externally", "past due", "payment failed", "checkout sent", "needs billing decision"]} onChange={setPayStatusFilter} />
+          <CompactFinanceSelect label="Subscription" value={subStatusFilter} options={["n/a", "setup pending", "active", "paused", "ending", "past due", "payment failed", "ended"]} labels={{ "n/a": "N/A" }} onChange={setSubStatusFilter} />
+          <CompactFinanceSelect label="Payment type" value={paymentFilter} options={["waived", "paid externally", "monthly", "pay in full"]} labels={{ "pay in full": "Pay in Full" }} onChange={setPaymentFilter} />
+          <CompactFinanceSelect label="Type" value={typeFilter} options={["adult", "child"]} labels={{ adult: "Adult student", child: "Child student" }} onChange={setTypeFilter} />
+          <CompactFinanceSelect label="Gender" value={genderFilter} options={["male", "female"]} labels={{ male: "Brothers", female: "Sisters" }} onChange={setGenderFilter} />
+        </div>
+      ) : null}
 
       <div className="flex items-center justify-between px-1 text-sm font-semibold text-[#6B747B]">
         <span>Showing {filteredRows.length} of {rows.length} records</span>
@@ -11373,32 +11404,9 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
         </div>
       </div>
 
-      <section className="space-y-3">
-        <div className="flex items-center justify-between">
-          <h2 className="text-lg font-semibold text-[#26323A]">Audit Trail</h2>
-          <span className="rounded-full bg-[#EEF6F7] px-2.5 py-1 text-xs font-semibold text-[#17624F]">{auditEvents.length || rows.length}</span>
-        </div>
-        <div className="divide-y divide-[#EEF2F4]">
-          {auditEvents.length
-            ? auditEvents.map((event) => (
-                <div key={event.id} className="py-3">
-                  <div className="flex items-center gap-2">
-                    {event.event_type === "manual_note" ? (
-                      <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold", programStatusBadgeToneClass("neutral"))}>Note</span>
-                    ) : null}
-                    <p className="text-sm font-semibold text-[#26323A]">{financeAuditSummaryWithActor(event, auditActorsById)}</p>
-                  </div>
-                  <p className="mt-0.5 text-xs text-[#7B858C]">{formatFinanceDate(event.created_at)} - {event.event_type.replace(/_/g, " ")}</p>
-                </div>
-              ))
-            : rows.slice(0, 5).map((row) => (
-                <div key={row.enrollment.id} className="py-3">
-                  <p className="text-sm font-semibold text-[#26323A]">{financeAuditFallbackSummary(row, program)}</p>
-                  <p className="mt-0.5 text-xs text-[#7B858C]">{formatFinanceDate(row.enrollment.created_at)} - finance activity</p>
-                </div>
-              ))}
-        </div>
-      </section>
+      <Link href={`${mode === "admin" ? `/m/${slug}/admin/programs` : `/m/${slug}/teacher/classes`}/${programId}/finances/audit`} className="inline-flex min-h-11 items-center rounded-full bg-[#EEF6F7] px-4 text-sm font-semibold text-[#17624F]">
+        View audit trail{auditEvents.length ? ` (${auditEvents.length})` : ""}
+      </Link>
 
       {actionTarget ? (
         <FinanceActionModal
@@ -12626,6 +12634,14 @@ function selectCurrentPaymentTerms(
 }
 
 function financePaymentType(row: FinanceEnrollmentRow, program: Program | null) {
+  // Legacy waivers updated the reviewed application but did not supersede its
+  // earlier paid terms. The explicit final review decision wins in that case.
+  if (row.request?.payment_bypassed) {
+    return row.request.payment_bypass_external ? "Paid Externally" : "Waived";
+  }
+  if (row.subscription?.payment_waived) {
+    return "Waived";
+  }
   if (row.paymentTerms) {
     if (row.paymentTerms.payment_type === "pay_in_full") {
       return "Pay in Full";
@@ -12641,16 +12657,32 @@ function financePaymentType(row: FinanceEnrollmentRow, program: Program | null) 
   if (!program?.is_paid) {
     return "Free";
   }
+  return (row.subscription?.payment_type ?? row.request?.payment_type) === "annual" ? "Pay in Full" : "Monthly";
+}
+
+function CompactFinanceSelect({ label, value, options, labels = {}, onChange }: { label: string; value: string; options: string[]; labels?: Record<string, string>; onChange: (value: string) => void }) {
+  return (
+    <label className="flex min-h-11 items-center justify-between gap-3 py-1 text-sm font-semibold text-[#52616A]">
+      <span>{label}</span>
+      <select value={value} onChange={(event) => onChange(event.target.value)} className="h-8 max-w-[58%] rounded-[9px] border border-[#D6DCE0] bg-[#F8FAFB] px-2 text-xs font-semibold text-[#26323A] outline-none">
+        <option value="all">All</option>
+        {options.map((option) => <option key={option} value={option}>{labels[option] ?? titleCase(option)}</option>)}
+      </select>
+    </label>
+  );
+}
+
+function FilterSlidersIcon() {
+  return <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round"><path d="M4 7h10M18 7h2M4 17h3M11 17h9"/><circle cx="16" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg>;
+}
+
+function financePrice(row: FinanceEnrollmentRow, program: Program | null) {
   if (row.request?.payment_bypassed) {
     return row.request.payment_bypass_external ? "Paid Externally" : "Waived";
   }
   if (row.subscription?.payment_waived) {
     return "Waived";
   }
-  return (row.subscription?.payment_type ?? row.request?.payment_type) === "annual" ? "Pay in Full" : "Monthly";
-}
-
-function financePrice(row: FinanceEnrollmentRow, program: Program | null) {
   if (row.paymentTerms) {
     if (row.paymentTerms.payment_type === "free") {
       return "Free";
@@ -12660,12 +12692,6 @@ function financePrice(row: FinanceEnrollmentRow, program: Program | null) {
     }
     const amount = formatPrice(row.paymentTerms.amount_cents);
     return row.paymentTerms.payment_type === "monthly" ? `${amount}/month` : amount;
-  }
-  if (row.request?.payment_bypassed) {
-    return row.request.payment_bypass_external ? "Paid Externally" : "Waived";
-  }
-  if (row.subscription?.payment_waived) {
-    return "Waived";
   }
   if ((row.subscription?.payment_type ?? row.request?.payment_type) === "annual") {
     return formatPrice(row.request?.approved_price_annual_cents ?? program?.price_annual_cents ?? null);
@@ -12689,6 +12715,9 @@ function financeStudentType(row: FinanceEnrollmentRow) {
 }
 
 function financeSubscriptionStatus(row: FinanceEnrollmentRow) {
+  if (row.request?.payment_bypassed && !row.subscription?.stripe_subscription_id) {
+    return "N/A";
+  }
   if (row.subscription?.stripe_subscription_id) {
     const stripeStatus = row.subscription.status?.toLowerCase();
     if (stripeStatus === "past_due" || stripeStatus === "unpaid") {
@@ -12726,6 +12755,12 @@ function financeSubscriptionStatus(row: FinanceEnrollmentRow) {
 }
 
 function financePaymentStatus(row: FinanceEnrollmentRow, program: Program | null) {
+  if (row.request?.payment_bypassed) {
+    return row.request.payment_bypass_external ? "Paid Externally" : "Waived";
+  }
+  if (row.subscription?.payment_waived || row.subscription?.payment_paused) {
+    return "Waived";
+  }
   if (row.paymentTerms) {
     const stripeStatus = row.subscription?.status?.toLowerCase();
     if (row.paymentTerms.payment_type === "monthly" && row.subscription?.stripe_subscription_id && hasActiveRecurringSubscription(row.subscription)) {
@@ -12762,12 +12797,6 @@ function financePaymentStatus(row: FinanceEnrollmentRow, program: Program | null
   }
   if (!program?.is_paid) {
     return "No payment required";
-  }
-  if (row.request?.payment_bypassed) {
-    return row.request.payment_bypass_external ? "Paid Externally" : "Waived";
-  }
-  if (row.subscription?.payment_waived || row.subscription?.payment_paused) {
-    return "Waived";
   }
   const stripeStatus = row.subscription?.status?.toLowerCase();
   if (stripeStatus === "past_due") {
@@ -12887,6 +12916,9 @@ function financeStudentSubtitle(row: FinanceEnrollmentRow) {
 }
 
 function financeMonthlyAmountCents(row: FinanceEnrollmentRow, program: Program | null) {
+  if (row.request?.payment_bypassed || row.subscription?.payment_waived) {
+    return 0;
+  }
   if (row.paymentTerms) {
     if (row.paymentTerms.payment_type !== "monthly" || TERMINAL_PAYMENT_TERM_STATUSES.has(row.paymentTerms.status)) {
       return 0;
@@ -13258,7 +13290,7 @@ async function fetchTeacherPrograms(slug: string): Promise<TeacherProgramsResult
       ? supabase.from("enrollment_requests").select("program_id").in("program_id", programIds).eq("status", "pending")
       : Promise.resolve({ data: [] as Array<{ program_id: string }> }),
     programIds.length
-      ? supabase.from("program_teachers").select("program_id").in("program_id", programIds)
+      ? supabase.from("program_teachers").select("program_id").in("program_id", programIds).eq("role", "instructor").not("teacher_profile_id", "is", null)
       : Promise.resolve({ data: [] as Array<{ program_id: string }> }),
   ]);
   const nextProgramCounts: Record<string, { students: number; applications: number; instructors: number }> = {};
@@ -14605,7 +14637,7 @@ function TeacherStudentListControls({
   );
 }
 
-function StudentActionMenu({ busy, onNote, onKick }: { busy: boolean; onNote: () => void; onKick: () => void }) {
+function StudentActionMenu({ busy, onKick }: { busy: boolean; onKick: () => void }) {
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
@@ -14623,17 +14655,6 @@ function StudentActionMenu({ busy, onNote, onKick }: { busy: boolean; onNote: ()
       </button>
       {menuOpen ? (
         <span className="absolute right-0 top-11 z-30 w-40 overflow-hidden rounded-[16px] border border-[#DDE5E9] bg-white p-1 text-sm shadow-[0_18px_44px_rgba(38,50,58,0.18)]">
-          <button
-            type="button"
-            onClick={(event) => {
-              event.stopPropagation();
-              setMenuOpen(false);
-              onNote();
-            }}
-            className="flex w-full items-center gap-2 rounded-[12px] px-3 py-2.5 text-left font-semibold text-[#26323A] hover:bg-[#F4F8F9]"
-          >
-            Add note
-          </button>
           <button
             type="button"
             onClick={(event) => {
@@ -14687,7 +14708,10 @@ function TeacherStudentRow({
         >
           <ChevronIcon expanded={expanded} />
         </button>
-        <StudentActionMenu busy={busy} onNote={onNote} onKick={onKick} />
+        <button type="button" onClick={onNote} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[#52616A] hover:bg-[#EEF3F5]" aria-label={`Add note for ${studentName}`}>
+          <span className="relative text-lg leading-none" aria-hidden="true">▱<span className="absolute -right-1 -top-1 text-xs font-bold">+</span></span>
+        </button>
+        <StudentActionMenu busy={busy} onKick={onKick} />
       </div>
       <div className={cn("grid transition-[grid-template-rows] duration-200 ease-out", expanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]")}>
         <div className="overflow-hidden">
@@ -14761,9 +14785,11 @@ function TeacherFamilyRow({
                     <p className="truncate text-sm font-semibold text-[#26323A]">{student.profile?.full_name ?? "Student"}</p>
                     <p className="mt-0.5 truncate text-xs text-[#7B858C]">Child</p>
                   </div>
+                  <button type="button" onClick={() => onNote(student)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[#52616A] hover:bg-[#EEF3F5]" aria-label={`Add note for ${student.profile?.full_name ?? "student"}`}>
+                    <span className="relative text-lg leading-none" aria-hidden="true">▱<span className="absolute -right-1 -top-1 text-xs font-bold">+</span></span>
+                  </button>
                   <StudentActionMenu
                     busy={busyStudentId === student.enrollment.student_profile_id}
-                    onNote={() => onNote(student)}
                     onKick={() => onKick(student)}
                   />
                 </div>
@@ -15423,14 +15449,18 @@ function ProgramMediaGallery({ items }: { items: readonly ProgramMedia[] }) {
     <DetailSection title="Class Media">
       <div className="overflow-hidden rounded-xl border border-[#D6DCE0] bg-[var(--workspace)]">
         <div className="relative flex aspect-[16/10] items-end overflow-hidden p-5 text-white">
-          <Image src={mediaUrl(activeItem)} alt={mediaAltText(activeItem)} fill className="object-cover" sizes="(min-width: 1024px) 720px, 100vw" />
-          <div className="absolute inset-0 bg-gradient-to-t from-black/45 via-black/5 to-transparent" />
           {mediaType(activeItem) === "video" ? (
-            <span className="absolute left-1/2 top-1/2 flex h-14 w-14 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-[#17624F] shadow-lg" aria-hidden>
+            <video src={mediaUrl(activeItem)} className="absolute inset-0 h-full w-full object-cover" controls preload="metadata" />
+          ) : (
+            <Image src={mediaUrl(activeItem)} alt={mediaAltText(activeItem)} fill className="object-cover" sizes="(min-width: 1024px) 720px, 100vw" />
+          )}
+          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-black/45 via-black/5 to-transparent" />
+          {mediaType(activeItem) === "video" ? (
+            <span className="pointer-events-none absolute left-1/2 top-1/2 flex h-14 w-14 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-white/90 text-[#17624F] shadow-lg" aria-hidden>
               ▶
             </span>
           ) : null}
-          <div className="relative">
+          <div className="pointer-events-none relative">
             <p className="text-xs font-medium uppercase tracking-wide text-white/80">{mediaType(activeItem) === "video" ? "Video" : "Photo"}</p>
             <p className="mt-1 text-lg font-semibold">{mediaTitle(activeItem)}</p>
             {mediaCaption(activeItem) ? <p className="mt-1 max-w-xl text-sm leading-5 text-white/85">{mediaCaption(activeItem)}</p> : null}
@@ -15448,7 +15478,7 @@ function ProgramMediaGallery({ items }: { items: readonly ProgramMedia[] }) {
               )}
               aria-label={`Show ${mediaTitle(item)}`}
             >
-              <Image src={mediaThumbnail(item)} alt={mediaAltText(item)} fill className="object-cover" sizes="96px" />
+              {mediaType(item) === "video" ? <video src={mediaUrl(item)} className="h-full w-full object-cover" preload="metadata" /> : <Image src={mediaThumbnail(item)} alt={mediaAltText(item)} fill className="object-cover" sizes="96px" />}
               <span className="absolute inset-0 bg-black/15" />
               <span className="absolute bottom-1 left-1 right-1 truncate text-[10px] font-medium text-white">{mediaShortLabel(item)}</span>
             </button>
@@ -16837,7 +16867,6 @@ function HomeNotification({
 
   return (
     <div className="relative overflow-hidden rounded-[28px] bg-[linear-gradient(135deg,#E7FFF3_0%,#D4F3EA_52%,#BFE6F3_100%)] px-5 py-4 shadow-[0_14px_34px_rgba(38,50,58,0.08)]">
-      <div className="absolute right-[-28px] top-[-38px] h-28 w-28 rounded-full bg-white/45" aria-hidden />
       <div className="relative flex items-center gap-3">
         <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/80 text-xl font-medium text-[var(--brand-green)]">
           !
@@ -17206,11 +17235,13 @@ function HomeUpcomingLesson({
   markAttendanceDisabled?: boolean;
 }) {
   const detailParts = [lesson.ownerLabel, lessonTimeRange(lesson)].filter(Boolean);
+  const happeningNow = lesson.startsAt.getTime() <= Date.now() && Boolean(lesson.endsAt && Date.now() < lesson.endsAt.getTime());
   return (
-    <div className="flex items-center gap-3 rounded-[24px] bg-white px-4 py-3 shadow-[0_8px_24px_rgba(38,50,58,0.06)]">
+    <div className={cn("flex items-center gap-3 rounded-[24px] px-4 py-3 shadow-[0_8px_24px_rgba(38,50,58,0.06)]", happeningNow ? "border border-[#8FD4BD] bg-[#EAF8F2] shadow-[0_10px_26px_rgba(23,98,79,0.12)]" : "bg-white")}>
       <HomeProgramThumb program={lesson.program} />
       <div className="min-w-0 flex-1">
         <h3 className="truncate text-base font-semibold text-[var(--text-primary)]">{lesson.program.title}</h3>
+        {happeningNow ? <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#17624F]">Happening now</p> : null}
         <p className="mt-0.5 text-sm leading-5 text-[var(--text-muted)]">{detailParts.join(" • ")}</p>
       </div>
       {canCancel ? (
@@ -17470,6 +17501,12 @@ function weekdayShort(date: Date) {
 }
 
 function formatHomeDate(date: Date) {
+  const today = startOfToday();
+  const target = new Date(date);
+  target.setHours(0, 0, 0, 0);
+  const dayDifference = Math.round((target.getTime() - today.getTime()) / 86_400_000);
+  if (dayDifference === 0) return "Today";
+  if (dayDifference === 1) return "Tomorrow";
   return date.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" });
 }
 
@@ -17518,8 +17555,6 @@ function TeacherClassCard({
   const [resigning, setResigning] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleting, setDeleting] = useState(false);
-  const schedule = scheduleSummary(program.schedule, program.schedule_notes);
-  const sessionRows = parseProgramSchedule(program.schedule);
   const age = formatAgeRange(program.age_range_text);
   const gender = formatGender(program.audience_gender);
   const isDirector = role === "director";
@@ -17587,17 +17622,6 @@ function TeacherClassCard({
           <TransitionLink href={primaryHref} label={primaryLabel} className="line-clamp-2 text-lg font-semibold leading-6 text-[#26323A] hover:text-[#17624F]">
             {program.title}
           </TransitionLink>
-          {sessionRows.length ? (
-            <div className="mt-1 space-y-0.5">
-              {sessionRows.map((row) => (
-                <p key={scheduleRowKey(row)} className="text-sm text-[#6B747B]">
-                  {formatDayAbbreviation(row.day)} {formatScheduleRange(row.start, row.end)}
-                </p>
-              ))}
-            </div>
-          ) : (
-            <p className="mt-1 text-sm text-[#6B747B]">{schedule.full}</p>
-          )}
         </div>
         <AudienceDetails age={age} gender={gender} />
         <div className="divide-y divide-[#E3E8EC] border-t border-[#E3E8EC]">
@@ -18326,6 +18350,7 @@ function StudentInviteCodeTools({ slug }: { slug: string }) {
 function ProgramTeacherStaffTools({ program }: { program: Program }) {
   const [isDirector, setIsDirector] = useState(false);
   const [instructors, setInstructors] = useState<Array<ProgramTeacher & { profile?: Profile | null }>>([]);
+  const [inactiveInstructors, setInactiveInstructors] = useState<Array<ProgramInstructorEvent & { profile?: Profile | null }>>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [toast, setToast] = useState<EditorToastState | null>(null);
   const [latestInviteCode, setLatestInviteCode] = useState<string | null>(null);
@@ -18333,13 +18358,14 @@ function ProgramTeacherStaffTools({ program }: { program: Program }) {
 
   async function loadStaff() {
     const supabase = createSupabaseBrowserClient();
-    const [{ data: directorAllowed }, { data: assignments }] = await Promise.all([
+    const [{ data: directorAllowed }, { data: assignments }, { data: inactiveEvents }] = await Promise.all([
       supabase.rpc("is_program_director", { check_program_id: program.id }),
       supabase.from("program_teachers").select("*").eq("program_id", program.id).order("created_at", { ascending: true }),
+      supabase.from("program_instructor_events").select("*").eq("program_id", program.id).eq("event_type", "resigned").order("created_at", { ascending: false }),
     ]);
 
     setIsDirector(Boolean(directorAllowed));
-    const profileIds = (assignments ?? []).map((assignment) => assignment.teacher_profile_id).filter(Boolean) as string[];
+    const profileIds = Array.from(new Set([...(assignments ?? []).map((assignment) => assignment.teacher_profile_id), ...(inactiveEvents ?? []).map((event) => event.teacher_profile_id)].filter(Boolean) as string[]));
     const { data: profiles } = profileIds.length ? await supabase.from("profiles").select("*").in("id", profileIds) : { data: [] as Profile[] };
     setInstructors(
       (assignments ?? [])
@@ -18349,6 +18375,8 @@ function ProgramTeacherStaffTools({ program }: { program: Program }) {
           profile: assignment.teacher_profile_id ? (profiles ?? []).find((profile) => profile.id === assignment.teacher_profile_id) ?? null : null,
         })),
     );
+    const activeProfileIds = new Set((assignments ?? []).map((assignment) => assignment.teacher_profile_id).filter(Boolean));
+    setInactiveInstructors((inactiveEvents ?? []).filter((event) => event.teacher_profile_id && !activeProfileIds.has(event.teacher_profile_id)).map((event) => ({ ...event, profile: (profiles ?? []).find((profile) => profile.id === event.teacher_profile_id) ?? null })));
   }
 
   useEffect(() => {
@@ -18393,11 +18421,25 @@ function ProgramTeacherStaffTools({ program }: { program: Program }) {
   async function removeInstructor(assignmentId: string) {
     setBusy(true);
     setMessage(null);
-    const supabase = createSupabaseBrowserClient();
-    const { error: deleteError } = await supabase.from("program_teachers").delete().eq("id", assignmentId).eq("role", "instructor");
+    const token = await getCurrentAccessToken();
+    const response = token ? await fetch(`/api/programs/${program.id}/instructors/${assignmentId}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } }) : null;
     setBusy(false);
-    if (deleteError) {
-      setMessage(deleteError.message);
+    if (!response?.ok) {
+      const result = response ? await response.json().catch(() => ({})) as { error?: string } : {};
+      setMessage(result.error ?? "Could not remove instructor.");
+      return;
+    }
+    await loadStaff();
+  }
+
+  async function clearInactiveInstructor(eventId: string) {
+    setBusy(true);
+    const token = await getCurrentAccessToken();
+    const response = token ? await fetch(`/api/programs/${program.id}/instructors/history/${eventId}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } }) : null;
+    setBusy(false);
+    if (!response?.ok) {
+      const result = response ? await response.json().catch(() => ({})) as { error?: string } : {};
+      setMessage(result.error ?? "Could not clear inactive instructor.");
       return;
     }
     await loadStaff();
@@ -18456,7 +18498,7 @@ function ProgramTeacherStaffTools({ program }: { program: Program }) {
       {message ? <div className="px-1 text-sm font-semibold text-[#17624F]">{message}</div> : null}
 
       <section className="space-y-2">
-        <h2 className="px-1 text-lg font-semibold text-[#26323A]">Instructors</h2>
+        <h2 className="px-1 text-lg font-semibold text-[#26323A]">Active Instructors</h2>
         {activeInstructors.length ? (
           <div className="divide-y divide-[#EEF2F4]">
             {activeInstructors.map((assignment) => (
@@ -18477,7 +18519,7 @@ function ProgramTeacherStaffTools({ program }: { program: Program }) {
       </section>
 
       <section className="space-y-2">
-        <h2 className="px-1 text-lg font-semibold text-[#26323A]">Unused Codes</h2>
+        <h2 className="px-1 text-lg font-semibold text-[#26323A]">Inactive Invitations</h2>
         {unusedCodes.length ? (
           <div className="divide-y divide-[#EEF2F4]">
             {unusedCodes.map((assignment) => (
@@ -18491,15 +18533,20 @@ function ProgramTeacherStaffTools({ program }: { program: Program }) {
                     <CopyIcon />
                   </button>
                   <button type="button" disabled={busy} onClick={() => void removeInstructor(assignment.id)} className="min-h-9 rounded-full px-3 text-sm font-semibold text-[#C83F31] disabled:opacity-60">
-                    Remove
+                    Clear permanently
                   </button>
                 </div>
               </div>
             ))}
           </div>
         ) : (
-          <MiniEmpty text="No unused instructor codes." />
+          <MiniEmpty text="No inactive instructor invitations." />
         )}
+      </section>
+
+      <section className="space-y-2">
+        <h2 className="px-1 text-lg font-semibold text-[#26323A]">Inactive Instructors</h2>
+        {inactiveInstructors.length ? <div className="divide-y divide-[#EEF2F4]">{inactiveInstructors.map((event) => <div key={event.id} className="flex items-center justify-between gap-3 py-3"><div className="min-w-0"><p className="truncate font-semibold text-[#26323A]">{event.profile?.full_name || event.profile?.email || "Former instructor"}</p><p className="text-xs text-[#7B858C]">Inactive since {formatFinanceDate(event.created_at)}</p></div><button type="button" disabled={busy} onClick={() => void clearInactiveInstructor(event.id)} className="shrink-0 text-xs font-semibold text-[#52616A] disabled:opacity-50">Clear permanently</button></div>)}</div> : <MiniEmpty text="No inactive instructors." />}
       </section>
     </section>
   );
@@ -18524,9 +18571,17 @@ type ProgramStudentInviteRow = Database["public"]["Tables"]["program_student_inv
  * waive/custom-price controls.
  */
 function ProgramStudentInviteTools({ program }: { program: Program }) {
-  const [isDirector, setIsDirector] = useState(false);
+  const [canSendInvitations, setCanSendInvitations] = useState(false);
   const [toolOpen, setToolOpen] = useState(false);
   const [invites, setInvites] = useState<ProgramStudentInviteRow[]>([]);
+  const [tracks, setTracks] = useState<ProgramTrack[]>([]);
+  const [trackId, setTrackId] = useState("");
+  const [maxStudents, setMaxStudents] = useState("1");
+  const [expiresAt, setExpiresAt] = useState(() => {
+    const date = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+    return date.toISOString().slice(0, 10);
+  });
+  const [bypassEligibility, setBypassEligibility] = useState(true);
   const [comment, setComment] = useState("");
   const [paymentBypassed, setPaymentBypassed] = useState(false);
   const [paymentType, setPaymentType] = useState<"monthly" | "annual">("monthly");
@@ -18539,12 +18594,15 @@ function ProgramStudentInviteTools({ program }: { program: Program }) {
 
   async function loadInvites() {
     const supabase = createSupabaseBrowserClient();
-    const [{ data: directorAllowed }, { data: inviteRows }] = await Promise.all([
-      supabase.rpc("is_program_director", { check_program_id: program.id }),
+    const [{ data: invitationAllowed }, { data: inviteRows }, { data: trackRows }] = await Promise.all([
+      supabase.rpc("can_send_program_direct_invitations", { check_program_id: program.id }),
       supabase.from("program_student_invites").select("*").eq("program_id", program.id).order("created_at", { ascending: true }),
+      supabase.from("program_tracks").select("*").eq("program_id", program.id).eq("is_active", true).order("sort_order", { ascending: true }),
     ]);
-    setIsDirector(Boolean(directorAllowed));
+    setCanSendInvitations(Boolean(invitationAllowed));
     setInvites(inviteRows ?? []);
+    setTracks(trackRows ?? []);
+    setTrackId((current) => current || trackRows?.[0]?.id || "");
   }
 
   useEffect(() => {
@@ -18563,8 +18621,12 @@ function ProgramStudentInviteTools({ program }: { program: Program }) {
     const { data: sessionData } = await supabase.auth.getSession();
     const { error: insertError } = await supabase.from("program_student_invites").insert({
       program_id: program.id,
+      program_track_id: trackId || null,
       invite_code: code,
       comment: comment.trim() || null,
+      max_students: Math.max(1, Math.min(25, Math.round(Number(maxStudents) || 1))),
+      expires_at: expiresAt ? new Date(`${expiresAt}T23:59:59`).toISOString() : null,
+      bypass_eligibility: bypassEligibility,
       payment_bypassed: paymentBypassed,
       payment_bypass_external: false,
       payment_type: paymentType,
@@ -18604,7 +18666,7 @@ function ProgramStudentInviteTools({ program }: { program: Program }) {
     await loadInvites();
   }
 
-  if (!isDirector) {
+  if (!canSendInvitations) {
     return null;
   }
 
@@ -18618,7 +18680,7 @@ function ProgramStudentInviteTools({ program }: { program: Program }) {
         <EditorToast toast={toast} onClose={() => setToast(null)} />
         <div className="flex items-center justify-between gap-3 rounded-[24px] bg-[#17624F] px-4 py-3 text-white shadow-[0_14px_30px_rgba(23,98,79,0.20)]">
           <div className="min-w-0">
-            <h2 className="text-sm font-semibold">Registration codes</h2>
+            <h2 className="text-sm font-semibold">Direct Invitations</h2>
             <p className="mt-0.5 text-xs font-medium text-white/72">
               {unusedInvites.length ? `${unusedInvites.length} unused ${unusedInvites.length === 1 ? "code" : "codes"}` : "Generate invite-only student access"}
             </p>
@@ -18639,16 +18701,33 @@ function ProgramStudentInviteTools({ program }: { program: Program }) {
     <section className="space-y-6 bg-white px-4 pb-8 pt-4">
       <EditorToast toast={toast} onClose={() => setToast(null)} />
       <div className="flex items-center justify-between gap-3 px-1">
-        <h2 className="text-lg font-semibold text-[#26323A]">Registration codes</h2>
+        <h2 className="text-lg font-semibold text-[#26323A]">Direct Invitations</h2>
         <button type="button" onClick={() => setToolOpen(false)} className="rounded-full bg-[#EEF3F5] px-3 py-1.5 text-xs font-semibold text-[#52616A]">
           Close
         </button>
       </div>
       <div className="rounded-[30px] bg-[#17624F] p-5 text-white shadow-[0_18px_40px_rgba(23,98,79,0.24)]">
-        <h2 className="text-xl font-semibold leading-6">Generate Student Registration Code</h2>
+        <h2 className="text-xl font-semibold leading-6">Configure Direct Invitation</h2>
         <p className="mt-1 truncate text-sm font-medium text-white/72">{program.title}</p>
 
         <div className="mt-5 space-y-3">
+          <label className="block">
+            <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-white/70">Track</span>
+            <select value={trackId} onChange={(event) => setTrackId(event.target.value)} className="h-10 w-full rounded-[8px] border-0 bg-white/12 px-3 text-sm text-white outline-none ring-1 ring-white/20 focus:ring-white/50">
+              {!tracks.length ? <option value="" className="text-[#26323A]">General admission</option> : null}
+              {tracks.map((track) => <option key={track.id} value={track.id} className="text-[#26323A]">{track.name}</option>)}
+            </select>
+          </label>
+          <div className="grid grid-cols-2 gap-3">
+            <label className="block">
+              <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-white/70">Students</span>
+              <input type="number" min={1} max={25} value={maxStudents} onChange={(event) => setMaxStudents(event.target.value)} className="h-10 w-full rounded-[8px] border-0 bg-white/12 px-3 text-sm text-white outline-none ring-1 ring-white/20 focus:ring-white/50" />
+            </label>
+            <label className="block">
+              <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-white/70">Expires</span>
+              <input type="date" value={expiresAt} min={new Date().toISOString().slice(0, 10)} onChange={(event) => setExpiresAt(event.target.value)} className="h-10 w-full rounded-[8px] border-0 bg-white/12 px-3 text-sm text-white outline-none ring-1 ring-white/20 focus:ring-white/50" />
+            </label>
+          </div>
           <label className="block">
             <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-white/70">Comment</span>
             <input
@@ -18656,6 +18735,10 @@ function ProgramStudentInviteTools({ program }: { program: Program }) {
               onChange={(event) => setComment(event.target.value)}
               className="h-10 w-full rounded-[8px] border-0 bg-white/12 px-3 text-sm text-white placeholder:text-white/50 outline-none ring-1 ring-white/20 focus:ring-white/50"
             />
+          </label>
+          <label className="flex items-start gap-2 text-sm font-semibold text-white">
+            <input className="mt-0.5" type="checkbox" checked={bypassEligibility} onChange={(event) => setBypassEligibility(event.target.checked)} />
+            <span>Bypass eligibility and capacity <span className="block text-xs font-medium text-white/65">Turn off to enforce age, gender, existing enrollment, and available track capacity.</span></span>
           </label>
           <label className="flex items-center gap-2 text-sm font-semibold text-white">
             <input type="checkbox" checked={paymentBypassed} onChange={(event) => setPaymentBypassed(event.target.checked)} />
@@ -18710,7 +18793,7 @@ function ProgramStudentInviteTools({ program }: { program: Program }) {
             onClick={() => void generateCode()}
             className="min-h-11 rounded-full bg-white px-4 text-sm font-semibold text-[#17624F] shadow-[0_10px_22px_rgba(10,45,36,0.16)] disabled:opacity-60"
           >
-            Generate Code
+            Generate Invitation
           </button>
           <button
             type="button"
@@ -18727,14 +18810,15 @@ function ProgramStudentInviteTools({ program }: { program: Program }) {
       {message ? <div className="px-1 text-sm font-semibold text-[#17624F]">{message}</div> : null}
 
       <section className="space-y-2">
-        <h2 className="px-1 text-lg font-semibold text-[#26323A]">Unused Codes</h2>
+        <h2 className="px-1 text-lg font-semibold text-[#26323A]">Available Invitations</h2>
         {unusedInvites.length ? (
           <div className="divide-y divide-[#EEF2F4]">
             {unusedInvites.map((invite) => (
               <div key={invite.id} className="flex items-center justify-between gap-3 py-3">
                 <div className="min-w-0">
                   <p className="truncate font-semibold tracking-[0.12em] text-[#26323A]">{invite.invite_code}</p>
-                  <p className="mt-0.5 truncate text-sm text-[#7B858C]">{invite.comment || "Not claimed yet"}</p>
+                  <p className="mt-0.5 truncate text-sm text-[#7B858C]">{tracks.find((track) => track.id === invite.program_track_id)?.name || "General admission"} · up to {invite.max_students} {invite.max_students === 1 ? "student" : "students"}</p>
+                  <p className="mt-0.5 truncate text-xs text-[#8A949A]">{invite.comment || "No message"} · {invite.expires_at ? `expires ${formatFinanceDate(invite.expires_at)}` : "no expiry"}</p>
                 </div>
                 <div className="flex shrink-0 items-center gap-1">
                   <button type="button" onClick={() => void copyCode(invite.invite_code)} className="flex h-9 w-9 items-center justify-center rounded-full text-[#52616A] hover:bg-[#EEF3F5]" aria-label="Copy registration code">
@@ -18754,7 +18838,7 @@ function ProgramStudentInviteTools({ program }: { program: Program }) {
 
       {claimedInvites.length ? (
         <section className="space-y-2">
-          <h2 className="px-1 text-lg font-semibold text-[#26323A]">Claimed Codes</h2>
+          <h2 className="px-1 text-lg font-semibold text-[#26323A]">Redeemed Invitations</h2>
           <div className="divide-y divide-[#EEF2F4]">
             {claimedInvites.map((invite) => (
               <div key={invite.id} className="py-3">
@@ -19020,15 +19104,15 @@ function PushNotificationNudge() {
     setDismissed(true);
   }
 
-  return (
-    <div className="relative overflow-hidden rounded-[28px] bg-[linear-gradient(135deg,#E7FFF3_0%,#D4F3EA_52%,#BFE6F3_100%)] px-5 py-4 shadow-[0_14px_34px_rgba(38,50,58,0.08)]">
-      <div className="absolute right-[-28px] top-[-38px] h-28 w-28 rounded-full bg-white/45" aria-hidden />
-      <div className="relative flex items-center gap-3">
+  return createPortal(
+    <div className="fixed inset-0 z-[2147483647] flex items-center justify-center bg-[#26323A]/45 px-5 backdrop-blur-sm">
+      <div role="dialog" aria-modal="true" aria-labelledby="push-notification-title" className="w-full max-w-sm rounded-[28px] bg-[#E7F7F1] px-5 py-5 shadow-[0_24px_70px_rgba(38,50,58,0.24)]">
+        <div className="flex items-center gap-3">
         <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/80 text-xl font-medium text-[#17624F]" aria-hidden>
           🔔
         </div>
         <div className="min-w-0 flex-1">
-          <h2 className="text-base font-semibold text-[#26323A]">Stay in the loop</h2>
+          <h2 id="push-notification-title" className="text-base font-semibold text-[#26323A]">Stay in the loop</h2>
           <p className="mt-0.5 text-sm leading-5 text-[#52616A]">Turn on notifications so you never miss an update from your inbox.</p>
         </div>
         <div className="flex shrink-0 flex-col items-end gap-1.5">
@@ -19046,6 +19130,8 @@ function PushNotificationNudge() {
         </div>
       </div>
     </div>
+    </div>,
+    document.body,
   );
 }
 

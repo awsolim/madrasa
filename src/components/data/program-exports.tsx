@@ -161,7 +161,7 @@ function ProgramExportsData({ slug, programId }: { slug: string; programId: stri
       <div className="space-y-2">
         <h2 className="text-2xl font-semibold leading-7">{program?.title ?? "Class data"}</h2>
         <p className="max-w-2xl text-sm font-medium leading-6 text-[#6B747B]">
-          Download class records as CSV files. Finance exports use finance permissions; roster and application exports use class management permissions.
+          Download class records as CSV files.
         </p>
       </div>
 
@@ -178,8 +178,7 @@ function ProgramExportsData({ slug, programId }: { slug: string; programId: stri
                 selected ? "border-[#17624F] bg-[#F3FAF7] text-[#17624F]" : "border-[#DDE5E9] bg-white text-[#26323A] hover:bg-[#F8FAFB]",
               )}
             >
-              <span className="text-[10px] font-semibold uppercase tracking-[0.18em] text-[#7B858C]">{option.access === "finance" ? "Finance" : "Class"}</span>
-              <span className="mt-2 block text-sm font-semibold leading-5">{option.title}</span>
+              <span className="block text-sm font-semibold leading-5">{option.title}</span>
               <span className="mt-2 block text-xs font-medium leading-5 text-[#6B747B]">{option.description}</span>
             </button>
           );

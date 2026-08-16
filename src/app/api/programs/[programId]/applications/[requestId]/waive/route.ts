@@ -1,5 +1,6 @@
 import { requireProgramManageAccess } from "@/lib/programs/auth";
 import { recordFinanceAuditEvent } from "@/lib/finance/audit";
+import { createApprovedPaymentTerms } from "@/lib/finance/payment-terms";
 import { sendPushNotification } from "@/lib/push/send-push";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
 
@@ -50,18 +51,23 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
 
     const note = body.note?.trim() || null;
     const external = Boolean(body.external);
-    const { error: updateError } = await supabase
-      .from("enrollment_requests")
-      .update({
-        payment_bypassed: true,
-        payment_bypass_external: external,
-        approved_price_monthly_cents: 0,
-        approved_price_annual_cents: 0,
-        decision_note: note ?? enrollmentRequest.decision_note,
-      })
-      .eq("id", requestId);
-    if (updateError) {
-      return Response.json({ error: updateError.message }, { status: 500 });
+    const { data: program, error: programError } = await supabase.from("programs").select("*").eq("id", programId).maybeSingle();
+    if (programError || !program) {
+      return Response.json({ error: programError?.message ?? "Class not found." }, { status: 404 });
+    }
+
+    await createApprovedPaymentTerms(supabase, {
+      enrollmentRequest,
+      program,
+      actorProfileId: user.id,
+      paymentType: enrollmentRequest.payment_type === "annual" ? "annual" : "monthly",
+      paymentBypassed: true,
+      paymentBypassedExternal: external,
+      note,
+    });
+
+    if (note) {
+      await supabase.from("enrollment_requests").update({ decision_note: note }).eq("id", requestId);
     }
 
     const { data: student } = await supabase.from("profiles").select("full_name, email").eq("id", enrollmentRequest.student_profile_id).maybeSingle();
@@ -77,9 +83,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
       metadata: { external },
     });
 
-    const { data: program } = await supabase.from("programs").select("title, mosque_id").eq("id", programId).maybeSingle();
-    const { data: mosque } = program ? await supabase.from("mosques").select("slug").eq("id", program.mosque_id).maybeSingle() : { data: null };
-    if (program && mosque) {
+    const { data: mosque } = await supabase.from("mosques").select("slug").eq("id", program.mosque_id).maybeSingle();
+    if (mosque) {
       void sendPushNotification(supabase, {
         recipientProfileIds: [enrollmentRequest.parent_profile_id, enrollmentRequest.student_profile_id],
         title: "Payment waived",

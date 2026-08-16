@@ -7,7 +7,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import type { NavItem } from "@/components/layout/horizontal-nav";
 import { useStudentNotificationCounts, useTeacherNotificationCounts } from "@/hooks/use-notification-counts";
-import { emptyUserAccess, type UserAccess } from "@/lib/authz";
+import { emptyUserAccess, getAccountLabel, type UserAccess } from "@/lib/authz";
 import {
   getCachedMosqueChrome,
   getCachedProfileName,
@@ -120,6 +120,8 @@ function BottomNav({ items, inboxBadgeCount = 0, inboxActionRequired = false }: 
               href={item.href}
               onClick={(event) => {
                 if (pathname === item.href && !pendingHref) {
+                  event.preventDefault();
+                  router.refresh();
                   return;
                 }
 
@@ -480,11 +482,11 @@ export function AppTopBar({
   }, [session]);
 
   const userFirstName = useMemo(() => {
-    const display = profileName?.trim() || session?.user.email?.replace(/@.*/, "") || "Guest";
-    return display.split(/\s+/)[0] || "Guest";
+    const displayName = profileName?.trim() || session?.user.email?.replace(/@.*/, "") || "Guest";
+    return displayName.split(/\s+/)[0] || "Guest";
   }, [profileName, session]);
 
-  const accountInitial = useMemo(() => getAccountInitial(access, session ?? null), [access, session]);
+  const accountLabel = useMemo(() => (session ? getAccountLabel(access) : "Not signed in"), [access, session]);
   const accountReady = session !== undefined && (session === null || (accessResolved && profileResolved));
 
   if (!showTopBar) {
@@ -505,19 +507,16 @@ export function AppTopBar({
         </div>
         <div className="flex min-w-0 items-center justify-end gap-1.5">
           {!accountReady ? (
-            <>
-              <span className="h-6 w-6 shrink-0 animate-pulse rounded-md bg-[#E4E9EC]" />
-              <span className="h-3 w-12 animate-pulse rounded bg-[#E4E9EC]" />
-            </>
+            <span className="h-7 w-20 animate-pulse rounded bg-[#E4E9EC]" />
           ) : (
-            <>
-              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-md bg-[var(--brand-green)] text-[11px] font-semibold leading-none text-white">
-                {accountInitial ?? <GuestProfileIcon />}
-              </span>
-              <span className="min-w-0 flex-1 truncate text-right text-[12px] font-semibold leading-4 text-[var(--text-primary)]">
+            <span className="flex min-w-0 max-w-full flex-col items-end justify-center leading-none">
+              <span className="max-w-full truncate text-right text-[12px] font-semibold leading-[13px] text-[var(--text-primary)]">
                 {userFirstName}
               </span>
-            </>
+              <span className="mt-px max-w-full truncate text-right text-[8px] font-medium leading-[9px] text-[var(--text-subtle)]">
+                {accountLabel}
+              </span>
+            </span>
           )}
         </div>
       </div>
@@ -554,42 +553,6 @@ function MosqueIcon({ className = "h-5 w-5" }: { className?: string }) {
       <path d="M16.3 20.5v-7a1.6 1.6 0 0 1 3.2 0v7" />
       <path d="M7.2 20.5v-10h9.6v10" />
       <path d="M10.5 20.5v-4a1.5 1.5 0 0 1 3 0v4" />
-    </svg>
-  );
-}
-
-// Returns null for "no letter to show" (guest, or a signed-in session whose
-// role couldn't be matched) so the caller can render a neutral icon instead
-// of ever falling back to a "?" character.
-function getAccountInitial(access: UserAccess, session: Session | null): string | null {
-  if (!session) {
-    return null;
-  }
-
-  if (access.isMosqueAdmin) {
-    return "A";
-  }
-
-  if (access.isTeacher) {
-    return "T";
-  }
-
-  if (access.isParent) {
-    return "P";
-  }
-
-  if (access.isStudent) {
-    return "S";
-  }
-
-  return null;
-}
-
-function GuestProfileIcon({ className = "h-3.5 w-3.5" }: { className?: string }) {
-  return (
-    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <circle cx="12" cy="8" r="3.2" />
-      <path d="M5.5 19c1-3.2 3.2-5 6.5-5s5.5 1.8 6.5 5" />
     </svg>
   );
 }
