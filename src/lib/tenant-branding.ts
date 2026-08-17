@@ -24,6 +24,7 @@ type MosqueBrandingRow = {
   slug: string | null;
   short_name: string | null;
   logo_url: string | null;
+  picture_url: string | null;
   pwa_name: string | null;
   app_icon_url: string | null;
 };
@@ -59,7 +60,7 @@ export async function loadTenantBrandingBySlug(slug: string): Promise<TenantBran
     const supabase = createSupabaseServiceClient();
     const { data } = await supabase
       .from("mosques")
-      .select("name, slug, short_name, logo_url, pwa_name, app_icon_url")
+      .select("name, slug, short_name, logo_url, picture_url, pwa_name, app_icon_url")
       .eq("slug", slug)
       .maybeSingle<MosqueBrandingRow>();
 
@@ -78,7 +79,7 @@ function tenantBrandingFromMosque(data: MosqueBrandingRow, fallbackSlug: string)
   const chromeName = data.short_name?.trim() || fallbackName;
   const name = data.pwa_name?.trim() || fallbackName;
   const shortName = chromeName.slice(0, 24);
-  const iconUrl = data.app_icon_url?.trim() || data.logo_url?.trim() || DEFAULT_BRANDING.iconUrl;
+  const iconUrl = data.app_icon_url?.trim() || data.logo_url?.trim() || data.picture_url?.trim() || DEFAULT_BRANDING.iconUrl;
 
   return {
     slug: data.slug || fallbackSlug,
@@ -97,3 +98,4 @@ function titleFromSlug(slug: string) {
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
 }
+

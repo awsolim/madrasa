@@ -14,7 +14,7 @@ export async function generateMetadata(): Promise<Metadata> {
     applicationName: branding.name,
     title: {
       default: branding.name,
-      template: `%s | ${branding.name}`,
+      template: "%s",
     },
     description: "Masjid class registration and management portal",
     manifest: "/manifest.webmanifest",
@@ -28,11 +28,11 @@ export async function generateMetadata(): Promise<Metadata> {
     },
     icons: {
       icon: [
-        { url: "/favicon.ico", sizes: "any" },
-        { url: "/favicon-32x32.png", sizes: "32x32", type: "image/png" },
-        { url: "/favicon-16x16.png", sizes: "16x16", type: "image/png" },
+        { url: "/api/pwa/icon?size=32", sizes: "32x32", type: "image/png" },
+        { url: "/api/pwa/icon?size=192", sizes: "192x192", type: "image/png" },
+        { url: "/api/pwa/icon?size=512", sizes: "512x512", type: "image/png" },
       ],
-      shortcut: [{ url: "/favicon.ico" }],
+      shortcut: [{ url: "/api/pwa/icon?size=32" }],
       apple: [{ url: "/api/pwa/icon?size=180&purpose=apple", sizes: "180x180", type: "image/png" }],
     },
   };

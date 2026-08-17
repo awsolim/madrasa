@@ -8,13 +8,12 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   const host = headerStore.get("x-forwarded-host") || headerStore.get("host") || "";
   const hostTenantSlug = tenantSlugFromHost(host);
   const branding = await loadTenantBrandingBySlug(slug);
-  const tenantIconUrl = `/api/pwa/icon?tenant=${encodeURIComponent(slug)}&size=180&purpose=apple`;
+  const tenantIcon = `/api/pwa/icon?tenant=${encodeURIComponent(slug)}`;
 
   return {
     applicationName: branding.name,
     title: {
-      default: branding.name,
-      template: `%s | ${branding.name}`,
+      absolute: branding.name,
     },
     manifest: hostTenantSlug === slug ? "/manifest.webmanifest" : `/m/${slug}/manifest.webmanifest`,
     appleWebApp: {
@@ -23,7 +22,13 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
       title: branding.shortName,
     },
     icons: {
-      apple: [{ url: tenantIconUrl, sizes: "180x180", type: "image/png" }],
+      icon: [
+        { url: `${tenantIcon}&size=32`, sizes: "32x32", type: "image/png" },
+        { url: `${tenantIcon}&size=192`, sizes: "192x192", type: "image/png" },
+        { url: `${tenantIcon}&size=512`, sizes: "512x512", type: "image/png" },
+      ],
+      shortcut: [{ url: `${tenantIcon}&size=32` }],
+      apple: [{ url: `${tenantIcon}&size=180&purpose=apple`, sizes: "180x180", type: "image/png" }],
     },
   };
 }
@@ -31,3 +36,4 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
 export default function TenantLayout({ children }: { children: React.ReactNode }) {
   return children;
 }
+
