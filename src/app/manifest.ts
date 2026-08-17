@@ -1,9 +1,18 @@
 import type { MetadataRoute } from "next";
+import { headers } from "next/headers";
+import { loadTenantBrandingFromHost } from "@/lib/tenant-branding";
 
-export default function manifest(): MetadataRoute.Manifest {
+export const dynamic = "force-dynamic";
+
+export default async function manifest(): Promise<MetadataRoute.Manifest> {
+  const headerStore = await headers();
+  const host = headerStore.get("x-forwarded-host") || headerStore.get("host") || "";
+  const branding = await loadTenantBrandingFromHost(host);
+  const iconSrc = "/api/pwa/icon";
+
   return {
-    name: "Madrasa",
-    short_name: "Madrasa",
+    name: branding.name,
+    short_name: branding.shortName,
     description: "Masjid class registration and management portal",
     start_url: "/",
     scope: "/",
@@ -24,55 +33,55 @@ export default function manifest(): MetadataRoute.Manifest {
         type: "image/png",
       },
       {
-        src: "/icon-72x72.png",
+        src: `${iconSrc}?size=72`,
         sizes: "72x72",
         type: "image/png",
         purpose: "any",
       },
       {
-        src: "/icon-96x96.png",
+        src: `${iconSrc}?size=96`,
         sizes: "96x96",
         type: "image/png",
         purpose: "any",
       },
       {
-        src: "/icon-128x128.png",
+        src: `${iconSrc}?size=128`,
         sizes: "128x128",
         type: "image/png",
         purpose: "any",
       },
       {
-        src: "/icon-144x144.png",
+        src: `${iconSrc}?size=144`,
         sizes: "144x144",
         type: "image/png",
         purpose: "any",
       },
       {
-        src: "/icon-192x192.png",
+        src: `${iconSrc}?size=192`,
         sizes: "192x192",
         type: "image/png",
         purpose: "any",
       },
       {
-        src: "/icon-384x384.png",
+        src: `${iconSrc}?size=384`,
         sizes: "384x384",
         type: "image/png",
         purpose: "any",
       },
       {
-        src: "/icon-512x512.png",
+        src: `${iconSrc}?size=512`,
         sizes: "512x512",
         type: "image/png",
         purpose: "any",
       },
       {
-        src: "/maskable-icon-192x192.png",
+        src: `${iconSrc}?size=192&purpose=maskable`,
         sizes: "192x192",
         type: "image/png",
         purpose: "maskable",
       },
       {
-        src: "/maskable-icon-512x512.png",
+        src: `${iconSrc}?size=512&purpose=maskable`,
         sizes: "512x512",
         type: "image/png",
         purpose: "maskable",

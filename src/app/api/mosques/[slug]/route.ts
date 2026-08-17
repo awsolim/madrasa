@@ -8,6 +8,9 @@ type UpdateMosqueBody = {
   address?: string | null;
   logoUrl?: string | null;
   pictureUrl?: string | null;
+  pwaName?: string | null;
+  pwaShortName?: string | null;
+  appIconUrl?: string | null;
 };
 
 function cleanText(value: unknown, max = 240) {
@@ -96,6 +99,9 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
         address: cleanText(body.address, 240),
         logo_url: cleanText(body.logoUrl, 1000),
         picture_url: cleanText(body.pictureUrl, 1000),
+        pwa_name: cleanText(body.pwaName, 160),
+        pwa_short_name: cleanText(body.pwaShortName, 24),
+        app_icon_url: cleanText(body.appIconUrl, 1000),
         updated_at: new Date().toISOString(),
       })
       .eq("id", mosque.id)
@@ -112,3 +118,5 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
     return Response.json({ error: message }, { status: 500 });
   }
 }
+
+

@@ -1,3 +1,4 @@
+import { AdminRouteGuard } from "@/components/auth/admin-route-guard";
 import { AppChrome } from "@/components/layout/page-shell";
 
 // Mirrors portal/layout.tsx and teacher/layout.tsx: admin previously had no persistent
@@ -12,8 +13,10 @@ export default async function Layout({
 }) {
   const { slug } = await params;
   return (
-    <AppChrome section="admin" slug={slug}>
-      {children}
-    </AppChrome>
+    <AdminRouteGuard slug={slug}>
+      <AppChrome section="admin" slug={slug}>
+        {children}
+      </AppChrome>
+    </AdminRouteGuard>
   );
 }

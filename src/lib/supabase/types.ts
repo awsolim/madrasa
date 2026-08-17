@@ -9,6 +9,9 @@ export type Database = {
           name: string;
           slug: string;
           logo_url: string | null;
+          pwa_name: string | null;
+          pwa_short_name: string | null;
+          app_icon_url: string | null;
           picture_url: string | null;
           address: string | null;
           primary_color: string | null;
@@ -861,3 +864,4 @@ export type Database = {
     CompositeTypes: Record<string, never>;
   };
 };
+

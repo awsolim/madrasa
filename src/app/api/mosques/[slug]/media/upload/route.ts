@@ -30,7 +30,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
     const formData = await request.formData();
     const file = formData.get("file");
     const kindValue = formData.get("kind");
-    const kind = kindValue === "logo" ? "logo" : "picture";
+    const kind = kindValue === "logo" ? "logo" : kindValue === "appIcon" ? "app-icon" : "picture";
     if (!(file instanceof File)) {
       return Response.json({ error: "Missing media file." }, { status: 400 });
     }
@@ -87,3 +87,4 @@ export async function POST(request: Request, { params }: { params: Promise<{ slu
     return Response.json({ error: message }, { status: 500 });
   }
 }
+

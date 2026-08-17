@@ -4763,14 +4763,20 @@ export function AdminMasjidInformationData({ slug }: { slug: string }) {
   const [address, setAddress] = useState("");
   const [logoUrl, setLogoUrl] = useState("");
   const [pictureUrl, setPictureUrl] = useState("");
+  const [pwaName, setPwaName] = useState("");
+  const [pwaShortName, setPwaShortName] = useState("");
+  const [appIconUrl, setAppIconUrl] = useState("");
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [pictureFile, setPictureFile] = useState<File | null>(null);
+  const [appIconFile, setAppIconFile] = useState<File | null>(null);
   const [logoPreview, setLogoPreview] = useState("");
   const [picturePreview, setPicturePreview] = useState("");
+  const [appIconPreview, setAppIconPreview] = useState("");
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<EditorToastState | null>(null);
   const logoInputRef = useRef<HTMLInputElement | null>(null);
   const pictureInputRef = useRef<HTMLInputElement | null>(null);
+  const appIconInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
@@ -4787,8 +4793,12 @@ export function AdminMasjidInformationData({ slug }: { slug: string }) {
         setAddress(data?.address ?? "");
         setLogoUrl(data?.logo_url ?? "");
         setPictureUrl(data?.picture_url ?? "");
+        setPwaName(data?.pwa_name ?? "");
+        setPwaShortName(data?.pwa_short_name ?? "");
+        setAppIconUrl(data?.app_icon_url ?? "");
         setLogoFile(null);
         setPictureFile(null);
+        setAppIconFile(null);
         setLoading(false);
       })();
     }, 0);
@@ -4815,7 +4825,17 @@ export function AdminMasjidInformationData({ slug }: { slug: string }) {
     return () => URL.revokeObjectURL(nextUrl);
   }, [pictureFile]);
 
-  async function uploadMosqueMedia(kind: "logo" | "picture", file: File) {
+  useEffect(() => {
+    if (!appIconFile) {
+      setAppIconPreview("");
+      return;
+    }
+    const nextUrl = URL.createObjectURL(appIconFile);
+    setAppIconPreview(nextUrl);
+    return () => URL.revokeObjectURL(nextUrl);
+  }, [appIconFile]);
+
+  async function uploadMosqueMedia(kind: "logo" | "picture" | "appIcon", file: File) {
     const accessToken = await getCurrentAccessToken();
     if (!accessToken) {
       throw new Error("Log in required.");
@@ -4851,6 +4871,7 @@ export function AdminMasjidInformationData({ slug }: { slug: string }) {
 
       const nextLogoUrl = logoFile ? await uploadMosqueMedia("logo", logoFile) : logoUrl.trim();
       const nextPictureUrl = pictureFile ? await uploadMosqueMedia("picture", pictureFile) : pictureUrl.trim();
+      const nextAppIconUrl = appIconFile ? await uploadMosqueMedia("appIcon", appIconFile) : appIconUrl.trim();
       const response = await fetch(`/api/mosques/${slug}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
@@ -4860,6 +4881,9 @@ export function AdminMasjidInformationData({ slug }: { slug: string }) {
           address: address.trim() || null,
           logoUrl: nextLogoUrl || null,
           pictureUrl: nextPictureUrl || null,
+          pwaName: pwaName.trim() || null,
+          pwaShortName: pwaShortName.trim() || null,
+          appIconUrl: nextAppIconUrl || null,
         }),
       });
       const result = (await response.json()) as { mosque?: Mosque; error?: string };
@@ -4873,8 +4897,12 @@ export function AdminMasjidInformationData({ slug }: { slug: string }) {
       setAddress(result.mosque.address ?? "");
       setLogoUrl(result.mosque.logo_url ?? "");
       setPictureUrl(result.mosque.picture_url ?? "");
+      setPwaName(result.mosque.pwa_name ?? "");
+      setPwaShortName(result.mosque.pwa_short_name ?? "");
+      setAppIconUrl(result.mosque.app_icon_url ?? "");
       setLogoFile(null);
       setPictureFile(null);
+      setAppIconFile(null);
       setToast({ tone: "success", message: "Masjid information updated." });
       if (result.mosque.slug !== slug) {
         window.location.href = `/m/${result.mosque.slug}/admin/masjid/information`;
@@ -4901,6 +4929,7 @@ export function AdminMasjidInformationData({ slug }: { slug: string }) {
 
   const activeLogo = logoPreview || logoUrl;
   const activePicture = picturePreview || pictureUrl;
+  const activeAppIcon = appIconPreview || appIconUrl || activeLogo;
 
   return (
     <section className="space-y-4 bg-[var(--workspace)] p-3 sm:p-4">
@@ -4953,6 +4982,35 @@ export function AdminMasjidInformationData({ slug }: { slug: string }) {
                   </button>
                   <input ref={logoInputRef} type="file" accept="image/*" className="hidden" onChange={(event) => setLogoFile(event.target.files?.[0] ?? null)} />
                   {logoFile ? <p className="mt-2 truncate text-xs text-[#7B858C]">{logoFile.name}</p> : null}
+                </div>
+              </div>
+            </div>
+            <div className="grid gap-3 rounded-[18px] border border-[#D7E4E8] bg-white p-3">
+              <div>
+                <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#7B858C]">Installed app branding</span>
+                <p className="mt-1 text-xs leading-5 text-[#68747C]">Used for the PWA name and home-screen icon on this masjid subdomain.</p>
+              </div>
+              <label className="grid gap-1">
+                <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#7B858C]">App display name</span>
+                <input value={pwaName} onChange={(event) => setPwaName(event.target.value)} className="h-12 min-w-0 rounded-[10px] border border-[#B9C3C8] bg-white px-3 text-sm font-semibold text-[#26323A] outline-none focus:border-[#2F8FB3]" placeholder={name || "Assiddiq"} />
+              </label>
+              <label className="grid gap-1">
+                <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#7B858C]">Short name</span>
+                <input value={pwaShortName} onChange={(event) => setPwaShortName(event.target.value)} className="h-12 min-w-0 rounded-[10px] border border-[#B9C3C8] bg-white px-3 text-sm font-semibold text-[#26323A] outline-none focus:border-[#2F8FB3]" placeholder={(pwaName || name || "Madrasa").slice(0, 24)} maxLength={24} />
+              </label>
+              <div className="grid gap-3 rounded-[16px] border border-[#E1E8EC] bg-[#F8FAFA] p-3">
+                <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#7B858C]">App icon</span>
+                <div className="grid grid-cols-[64px_minmax(0,1fr)] items-center gap-3">
+                  <div className="flex h-16 w-16 shrink-0 items-center justify-center overflow-hidden rounded-[18px] border border-[#DDE5E9] bg-white">
+                    {activeAppIcon ? <img src={activeAppIcon} alt="" className="h-full w-full object-contain" /> : <span className="text-lg font-semibold text-[#17624F]">{initials(name || mosque.name)}</span>}
+                  </div>
+                  <div className="min-w-0 space-y-2">
+                    <button type="button" onClick={() => appIconInputRef.current?.click()} className="min-h-10 rounded-full bg-[#26323A] px-4 text-sm font-semibold text-white">
+                      Change app icon
+                    </button>
+                    <input ref={appIconInputRef} type="file" accept="image/*" className="hidden" onChange={(event) => setAppIconFile(event.target.files?.[0] ?? null)} />
+                    <input value={appIconUrl} onChange={(event) => setAppIconUrl(event.target.value)} className="h-10 min-w-0 rounded-[10px] border border-[#D9E1E5] bg-white px-3 text-xs font-medium text-[#26323A] outline-none focus:border-[#2F8FB3]" placeholder="Icon URL, or upload an icon" />
+                  </div>
                 </div>
               </div>
             </div>
@@ -19798,4 +19856,17 @@ function mockProgramDescription(title: string) {
 function mockTeacherCredentials(title: string) {
   return `Certified instructor with experience teaching ${title.toLowerCase()} in a masjid classroom setting. Credentials and ijazah details can be updated from the teacher profile in Supabase.`;
 }
+
+
+
+
+
+
+
+
+
+
+
+
+
 
