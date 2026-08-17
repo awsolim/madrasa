@@ -6,8 +6,9 @@ const RESERVED_SUBDOMAINS = new Set(["www"]);
 function hostnameFromRequest(request: NextRequest) {
   const forwardedHost = request.headers.get("x-forwarded-host");
   const host = forwardedHost || request.headers.get("host") || "";
+  const firstHost = host.split(",")[0]?.trim() ?? "";
 
-  return host.split(":")[0]?.toLowerCase() ?? "";
+  return firstHost.split(":")[0]?.toLowerCase() ?? "";
 }
 
 function rootDomain() {
@@ -34,6 +35,10 @@ function subdomainFromHost(hostname: string) {
   return null;
 }
 
+function shouldRedirectWwwToRoot(hostname: string) {
+  return hostname === `www.${rootDomain()}`;
+}
+
 function cleanPathFromInternalPath(pathname: string, slug: string) {
   const scopedRoot = `/m/${slug}`;
 
@@ -54,6 +59,13 @@ function cleanPathFromInternalPath(pathname: string, slug: string) {
 
 export function proxy(request: NextRequest) {
   const hostname = hostnameFromRequest(request);
+
+  if (shouldRedirectWwwToRoot(hostname)) {
+    const url = request.nextUrl.clone();
+    url.hostname = rootDomain();
+    return NextResponse.redirect(url, 308);
+  }
+
   const slug = subdomainFromHost(hostname);
 
   if (!slug) {
