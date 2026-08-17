@@ -178,8 +178,14 @@ export function MobileBottomNav({
 // dispatch this event on mount/unmount to force-hide the top bar and bottom nav regardless
 // of route, independent of the tareeqah:nav-preview transition-only signal below.
 function useOverlayChromeHidden() {
+  const pathname = usePathname();
   const [hidden, setHidden] = useState(false);
   const activeOverlayCountRef = useRef(0);
+
+  useEffect(() => {
+    activeOverlayCountRef.current = 0;
+    setHidden(false);
+  }, [pathname]);
 
   useEffect(() => {
     function handleOverlayChrome(event: Event) {
