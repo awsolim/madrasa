@@ -194,7 +194,6 @@ const accountPanelItems = [
   { label: "Billing", panel: "billing" },
   { label: "Privacy and Security", panel: "security" },
   { label: "Add App to Homescreen", panel: "homescreen" },
-  { label: "Switch Account", panel: "switchAccount" },
 ] as const;
 
 function useHasMounted() {

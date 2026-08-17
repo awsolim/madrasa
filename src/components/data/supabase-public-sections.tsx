@@ -18,7 +18,7 @@ import { FlatLink } from "@/components/ui/flat-button";
 import { useHideMobileChromeWhileMounted, useModalFocusTrap } from "@/hooks/use-modal-behavior";
 import { useStudentNotificationCounts, useTeacherNotificationCounts } from "@/hooks/use-notification-counts";
 import { getAccountLabel, getDefaultLandingHref, loadUserAccessByMosqueSlug } from "@/lib/authz";
-import { clearUserScopedCaches, getCachedProfileSummary, getCachedSessionSnapshot, getCachedUserAccess, loadCachedSession, loadCachedUserAccess, performClientLogout, setCachedProfileName, setCachedProfileSummary, setCachedSessionSnapshot, subscribeCachedSession } from "@/lib/client-cache";
+import { getCachedProfileSummary, getCachedSessionSnapshot, getCachedUserAccess, loadCachedSession, loadCachedUserAccess, performClientLogout, setCachedProfileName, setCachedProfileSummary, subscribeCachedSession } from "@/lib/client-cache";
 import { friendlyErrorMessage } from "@/lib/errors";
 import { attachmentDisplayName, attachmentMetaLabel, formatAttachmentSize, normalizeMessageAttachments, type MessageAttachment } from "@/lib/messages/attachments";
 import { buildAnnouncementThreads, buildNoteThreads } from "@/lib/messages/threads";
@@ -524,22 +524,6 @@ type StudentInboxThread =
 type ProgramScheduleSource = (Program | ProgramWithTeacher) & { scheduleTracks?: ProgramTrack[] };
 type EnrollmentTrackSelection = Pick<Enrollment, "id" | "program_id" | "student_profile_id" | "program_track_id" | "created_at" | "status">;
 
-type DevSwitchAccount = {
-  id?: string;
-  label: string;
-  email: string;
-  password?: string;
-  accountType: "student" | "parent" | "teacher" | "admin";
-};
-
-const fallbackDevSwitchAccounts: DevSwitchAccount[] = [
-  { label: "Student", email: "student@gmail.com", password: "password", accountType: "student" },
-  { label: "Parent", email: "parent@gmail.com", password: "password", accountType: "parent" },
-  { label: "Teacher", email: "teacher@gmail.com", password: "password", accountType: "teacher" },
-  { label: "Admin", email: "admin@gmail.com", password: "password", accountType: "admin" },
-];
-
-const devSwitchAccountsStorageKey = "tareeqah:dev-switch-accounts";
 function getAnnouncementTargetTrackIds(announcement: Pick<AnnouncementWithContext, "target_program_track_ids">) {
   return announcement.target_program_track_ids ?? [];
 }
@@ -738,105 +722,6 @@ function notifyWithdrawalRequested(programId: string, studentProfileId: string) 
       body: JSON.stringify({ programId, studentProfileId }),
     });
   })().catch(() => null);
-}
-
-function getDevSwitchAccounts() {
-  const storedAccounts = readStoredDevSwitchAccounts();
-  const rawAccounts = process.env.NEXT_PUBLIC_DEV_SWITCH_ACCOUNTS;
-  if (!rawAccounts) {
-    return mergeDevSwitchAccounts(storedAccounts, fallbackDevSwitchAccounts);
-  }
-
-  try {
-    const parsedAccounts = JSON.parse(rawAccounts);
-    if (!Array.isArray(parsedAccounts)) {
-      return mergeDevSwitchAccounts(storedAccounts, fallbackDevSwitchAccounts);
-    }
-
-    const accounts = parsedAccounts
-      .map((account): DevSwitchAccount | null => {
-        if (!account || typeof account !== "object") {
-          return null;
-        }
-
-        const label = "label" in account && typeof account.label === "string" ? account.label : "";
-        const email = "email" in account && typeof account.email === "string" ? account.email : "";
-        const password = "password" in account && typeof account.password === "string" ? account.password : "";
-        const accountType = "accountType" in account && typeof account.accountType === "string" ? account.accountType.toLowerCase() : "";
-        if (!label || !email || !password || !isDevAccountType(accountType)) {
-          return null;
-        }
-
-        return { label, email, password, accountType };
-      })
-      .filter((account): account is DevSwitchAccount => Boolean(account));
-
-    return mergeDevSwitchAccounts(storedAccounts, accounts.length ? accounts : fallbackDevSwitchAccounts);
-  } catch {
-    return mergeDevSwitchAccounts(storedAccounts, fallbackDevSwitchAccounts);
-  }
-}
-
-function isDevAccountType(value: string): value is DevSwitchAccount["accountType"] {
-  return value === "student" || value === "parent" || value === "teacher" || value === "admin";
-}
-
-function normalizeDevSwitchAccount(account: unknown): DevSwitchAccount | null {
-  if (!account || typeof account !== "object") {
-    return null;
-  }
-
-  const label = "label" in account && typeof account.label === "string" ? account.label : "";
-  const email = "email" in account && typeof account.email === "string" ? account.email : "";
-  const password = "password" in account && typeof account.password === "string" ? account.password : "";
-  const accountType = "accountType" in account && typeof account.accountType === "string" ? account.accountType.toLowerCase() : "";
-  if (!label || !email || !password || !isDevAccountType(accountType)) {
-    return null;
-  }
-
-  return { label, email, password, accountType };
-}
-
-function readStoredDevSwitchAccounts() {
-  if (typeof window === "undefined") {
-    return [] as DevSwitchAccount[];
-  }
-
-  try {
-    const stored = window.localStorage.getItem(devSwitchAccountsStorageKey);
-    const parsed = stored ? JSON.parse(stored) : [];
-    if (!Array.isArray(parsed)) {
-      return [];
-    }
-    return parsed.map(normalizeDevSwitchAccount).filter((account): account is DevSwitchAccount => Boolean(account));
-  } catch {
-    return [];
-  }
-}
-
-function mergeDevSwitchAccounts(primary: DevSwitchAccount[], fallback: DevSwitchAccount[]) {
-  const seen = new Set<string>();
-  return [...primary, ...fallback].filter((account) => {
-    const key = account.email.toLowerCase();
-    if (seen.has(key)) {
-      return false;
-    }
-    seen.add(key);
-    return true;
-  });
-}
-
-function saveDevSwitchAccount(account: DevSwitchAccount) {
-  if (typeof window === "undefined") {
-    return;
-  }
-  if (!account.password) {
-    return;
-  }
-
-  const current = readStoredDevSwitchAccounts();
-  const next = [account, ...current.filter((saved) => saved.email.toLowerCase() !== account.email.toLowerCase())].slice(0, 12);
-  window.localStorage.setItem(devSwitchAccountsStorageKey, JSON.stringify(next));
 }
 
 export function MosqueDirectoryRows() {
@@ -2998,7 +2883,7 @@ export function StudentScheduleOptionsData({ slug, programId }: { slug: string; 
   );
 }
 
-type AccountPanel = "menu" | "settings" | "family" | "billing" | "security" | "homescreen" | "photo" | "switchAccount";
+type AccountPanel = "menu" | "settings" | "family" | "billing" | "security" | "homescreen" | "photo";
 type EditableProfileField = "fullName" | "password" | "email" | "dateOfBirth" | "phone";
 
 type BillingPaymentRow = {
@@ -3060,16 +2945,11 @@ export function PortalAccountData({ slug }: { slug: string }) {
   const [photoDraftUrl, setPhotoDraftUrl] = useState("");
   const [photoScale, setPhotoScale] = useState(1);
   const [photoOffset, setPhotoOffset] = useState({ x: 0, y: 0 });
-  const [switchBusy, setSwitchBusy] = useState(false);
-  const [switchBusyEmail, setSwitchBusyEmail] = useState<string | null>(null);
-  const [switchMessage, setSwitchMessage] = useState<string | null>(null);
-  const [devSwitchAccounts, setDevSwitchAccounts] = useState<DevSwitchAccount[]>([]);
   const [payments, setPayments] = useState<BillingPaymentRow[] | null>(null);
   const [paymentsLoading, setPaymentsLoading] = useState(false);
   const [paymentsError, setPaymentsError] = useState<string | null>(null);
   const [loading, setLoading] = useState(initialSession === undefined);
   const photoInputRef = useRef<HTMLInputElement | null>(null);
-  const canUseAccountSwitcher = process.env.NODE_ENV !== "production";
 
   async function loadBillingPayments() {
     setPaymentsLoading(true);
@@ -3142,7 +3022,6 @@ export function PortalAccountData({ slug }: { slug: string }) {
     setHasPanelNavigated(false);
     setEditingField(null);
     setProfileMessage(null);
-    setSwitchMessage(null);
   }, [searchParams]);
 
   useEffect(() => {
@@ -3208,100 +3087,12 @@ export function PortalAccountData({ slug }: { slug: string }) {
     };
   }, [router, slug]);
 
-  useEffect(() => {
-    if (!canUseAccountSwitcher) {
-      return;
-    }
-
-    let active = true;
-
-    async function loadDevAccounts() {
-      const fallbackAccounts = getDevSwitchAccounts();
-      setDevSwitchAccounts(fallbackAccounts);
-
-      const response = await fetch("/api/dev/accounts");
-      const result = (await response.json()) as { accounts?: DevSwitchAccount[]; error?: string };
-      if (!active) {
-        return;
-      }
-
-      if (!response.ok) {
-        setSwitchMessage(result.error ?? "Could not load development accounts.");
-        return;
-      }
-
-      setDevSwitchAccounts(result.accounts?.length ? result.accounts : fallbackAccounts);
-    }
-
-    void loadDevAccounts().catch((loadError: unknown) => {
-      if (active) {
-        setSwitchMessage(loadError instanceof Error ? loadError.message : "Could not load development accounts.");
-      }
-    });
-
-    return () => {
-      active = false;
-    };
-  }, [canUseAccountSwitcher]);
 
   function handleLogout() {
     router.replace(`/m/${slug}/login`);
     void performClientLogout();
   }
 
-  async function switchAccount(account: DevSwitchAccount) {
-    setSwitchBusy(true);
-    setSwitchBusyEmail(account.email);
-    setSwitchMessage(null);
-    clearUserScopedCaches();
-    setCachedSessionSnapshot(null);
-
-    const supabase = createSupabaseBrowserClient();
-    await supabase.auth.signOut();
-    if (account.id && !account.password) {
-      const response = await fetch("/api/dev/accounts", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ profileId: account.id, slug }),
-      });
-      const result = (await response.json()) as { url?: string; error?: string };
-      if (!response.ok || !result.url) {
-        setSwitchMessage(result.error ?? `Could not switch to ${account.label}.`);
-        setSwitchBusy(false);
-        setSwitchBusyEmail(null);
-        return;
-      }
-
-      window.location.href = result.url;
-      return;
-    }
-
-    if (!account.password) {
-      setSwitchMessage(`No switch method is available for ${account.label}.`);
-      setSwitchBusy(false);
-      setSwitchBusyEmail(null);
-      return;
-    }
-
-    const { data, error } = await supabase.auth.signInWithPassword({ email: account.email, password: account.password });
-    if (error || !data.user?.id) {
-      setSwitchMessage(error?.message ?? `Could not switch to ${account.label}.`);
-      setSwitchBusy(false);
-      setSwitchBusyEmail(null);
-      return;
-    }
-
-    saveDevSwitchAccount(account);
-
-    const { data: profileRow } = await supabase.from("profiles").select("account_type").eq("id", data.user.id).maybeSingle();
-    const access = await loadCachedUserAccess(slug, data.user.id);
-    const accountType = (profileRow?.account_type ?? access.accountType ?? account.accountType).toLowerCase();
-    const resolvedAccess = { ...access, accountType };
-
-    const targetPath = getDefaultLandingHref(slug, resolvedAccess);
-    router.replace(targetPath);
-    router.refresh();
-  }
 
   function openPanel(panel: AccountPanel) {
     setHasPanelNavigated(true);
@@ -3315,7 +3106,6 @@ export function PortalAccountData({ slug }: { slug: string }) {
     setActivePanel("menu");
     setEditingField(null);
     setProfileMessage(null);
-    setSwitchMessage(null);
   }
 
   function openPhotoPanel() {
@@ -3564,7 +3354,6 @@ export function PortalAccountData({ slug }: { slug: string }) {
           <AccountMenuButton icon={<ShieldIcon />} label="Privacy and Security" onClick={() => openPanel("security")} />
           <AccountMenuButton icon={<HomeScreenIcon />} label="Add App to Homescreen" onClick={() => openPanel("homescreen")} />
           <AccountMenuButton icon={<LogoutIcon />} label="Log out" tone="danger" onClick={handleLogout} />
-          {canUseAccountSwitcher ? <AccountMenuButton icon={<SwitchAccountIcon />} label="Switch Account" onClick={() => openPanel("switchAccount")} /> : null}
         </nav>
       </>
     ),
@@ -3663,18 +3452,6 @@ export function PortalAccountData({ slug }: { slug: string }) {
         onFileChange={handlePhotoFile}
         onConfirm={confirmPhotoChanges}
       />
-    ),
-    switchAccount: (
-      <>
-        <AccountSubpageHeader title="Switch Account" onBack={closePanel} />
-        <AccountSwitchPanel
-          accounts={devSwitchAccounts}
-          busy={switchBusy}
-          busyEmail={switchBusyEmail}
-          message={switchMessage}
-          onSwitch={switchAccount}
-        />
-      </>
     ),
     family: (
       <>
@@ -3806,7 +3583,7 @@ export function PortalAccountData({ slug }: { slug: string }) {
 }
 
 function isAccountPanel(value: string): value is AccountPanel {
-  return value === "menu" || value === "settings" || value === "family" || value === "billing" || value === "security" || value === "homescreen" || value === "photo" || value === "switchAccount";
+  return value === "menu" || value === "settings" || value === "family" || value === "billing" || value === "security" || value === "homescreen" || value === "photo";
 }
 
 function ConfirmStudentRescindModal({
@@ -19415,75 +19192,6 @@ function EditProfilePhotoPanel({
   );
 }
 
-function AccountSwitchPanel({
-  accounts,
-  busy,
-  busyEmail,
-  message,
-  onSwitch,
-}: {
-  accounts: DevSwitchAccount[];
-  busy: boolean;
-  busyEmail: string | null;
-  message: string | null;
-  onSwitch: (account: DevSwitchAccount) => void;
-}) {
-  const [selectedEmail, setSelectedEmail] = useState(accounts[0]?.email ?? "");
-  const selectedAccount = accounts.find((account) => account.email === selectedEmail) ?? accounts[0] ?? null;
-  const selectedValue = selectedAccount?.email ?? "";
-
-  return (
-    <section className="mt-8">
-      <p className="text-sm leading-6 text-[#6B747B]">Temporary development switcher. Choose any local account and sign in immediately.</p>
-
-      <div className="mt-7 rounded-[28px] bg-white p-5 shadow-[0_18px_45px_rgba(38,50,58,0.08)] ring-1 ring-[#E4EAEE]">
-        {accounts.length ? (
-          <div className="space-y-4">
-            <label className="block">
-              <span className="text-sm font-medium text-[#26323A]">Account</span>
-              <select
-                value={selectedValue}
-                onChange={(event) => setSelectedEmail(event.target.value)}
-                disabled={busy}
-                className="mt-2 h-12 w-full rounded-[8px] border border-[#B9C3C8] bg-white px-3 text-sm font-semibold text-[#26323A] outline-none focus:border-[#2F8FB3]"
-              >
-                {accounts.map((account) => (
-                  <option key={`${account.id ?? account.accountType}-${account.email}`} value={account.email}>
-                    {account.label} - {titleCase(account.accountType)} - {account.email}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            {selectedAccount ? (
-              <div className="rounded-[18px] bg-[#F7FBFC] px-4 py-3">
-                <p className="font-semibold text-[#26323A]">{selectedAccount.label}</p>
-                <p className="mt-1 text-sm text-[#6B747B]">{selectedAccount.email}</p>
-                <p className="mt-1 text-xs font-semibold uppercase tracking-wide text-[#17624F]">{selectedAccount.accountType}</p>
-              </div>
-            ) : null}
-
-            <button
-              type="button"
-              onClick={() => selectedAccount && onSwitch(selectedAccount)}
-              disabled={busy || !selectedAccount}
-              className="min-h-11 w-full rounded-[8px] bg-[#17624F] px-4 text-sm font-semibold text-white disabled:cursor-wait disabled:opacity-60"
-            >
-              {busy && selectedAccount && busyEmail === selectedAccount.email ? "Switching..." : "Switch account"}
-            </button>
-          </div>
-        ) : null}
-        {!accounts.length ? <p className="px-5 py-6 text-sm leading-6 text-[#6B747B]">No test accounts are configured.</p> : null}
-      </div>
-
-      <div className="mt-5 space-y-3">
-        <p className="text-xs leading-5 text-[#8A949B]">Loaded from app profiles in development. Password-based fallback accounts still use <span className="font-semibold text-[#26323A]">NEXT_PUBLIC_DEV_SWITCH_ACCOUNTS</span>.</p>
-        {message ? <p className="rounded-2xl bg-[#FCEDEC] px-4 py-3 text-sm leading-6 text-[#8F2D23]">{message}</p> : null}
-      </div>
-    </section>
-  );
-}
-
 function AccountDetailRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="py-4">
@@ -19558,19 +19266,6 @@ function LogoutIcon() {
       <path d="M10 17 15 12l-5-5" />
       <path d="M15 12H3" />
       <path d="M12 3h6a3 3 0 0 1 3 3v12a3 3 0 0 1-3 3h-6" />
-    </svg>
-  );
-}
-
-function SwitchAccountIcon() {
-  return (
-    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <path d="M16 3h3v3" />
-      <path d="M8 21H5v-3" />
-      <path d="M19 6a7.5 7.5 0 0 0-12.7-1.9L5 5.4" />
-      <path d="M5 18a7.5 7.5 0 0 0 12.7 1.9l1.3-1.3" />
-      <circle cx="12" cy="9" r="2.7" />
-      <path d="M7.8 15.5c.8-2 2.2-3 4.2-3s3.4 1 4.2 3" />
     </svg>
   );
 }

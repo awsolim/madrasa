@@ -11,48 +11,11 @@ import { cn } from "@/lib/utils";
 
 type AuthMode = "login" | "signup";
 type AccountType = "student" | "parent" | "teacher";
-type DevSwitchAccountType = "student" | "parent" | "teacher" | "admin";
-
 const accountTypes: Array<{ value: AccountType; label: string }> = [
   { value: "student", label: "Student" },
   { value: "parent", label: "Parent" },
   { value: "teacher", label: "Teacher" },
 ];
-
-const devSwitchAccountsStorageKey = "tareeqah:dev-switch-accounts";
-
-function isDevSwitchAccountType(value: string | null | undefined): value is DevSwitchAccountType {
-  return value === "student" || value === "parent" || value === "teacher" || value === "admin";
-}
-
-function saveDevSwitchAccountForTesting(account: { label: string; email: string; password: string; accountType: DevSwitchAccountType }) {
-  if (typeof window === "undefined" || process.env.NODE_ENV === "production" || !account.email || !account.password) {
-    return;
-  }
-
-  try {
-    const existingRaw = window.localStorage.getItem(devSwitchAccountsStorageKey);
-    const existingParsed: unknown = existingRaw ? JSON.parse(existingRaw) : [];
-    const existingAccounts = Array.isArray(existingParsed) ? existingParsed : [];
-    const validAccounts = existingAccounts.filter((entry): entry is typeof account => {
-      if (!entry || typeof entry !== "object") {
-        return false;
-      }
-
-      const maybeAccount = entry as Partial<typeof account>;
-      return (
-        typeof maybeAccount.label === "string" &&
-        typeof maybeAccount.email === "string" &&
-        typeof maybeAccount.password === "string" &&
-        isDevSwitchAccountType(maybeAccount.accountType)
-      );
-    });
-    const nextAccounts = [account, ...validAccounts.filter((entry) => entry.email.toLowerCase() !== account.email.toLowerCase())].slice(0, 12);
-    window.localStorage.setItem(devSwitchAccountsStorageKey, JSON.stringify(nextAccounts));
-  } catch {
-    // Test-only convenience cache. Ignore storage failures.
-  }
-}
 
 export function AuthPanel({ mode, slug, returnTo }: { mode: AuthMode; slug: string; returnTo?: string }) {
   const router = useRouter();
@@ -77,6 +40,7 @@ export function AuthPanel({ mode, slug, returnTo }: { mode: AuthMode; slug: stri
   const routeSlug = pathname.match(/^\/m\/([^/]+)/)?.[1];
   const activeSlug = routeSlug ?? slug;
   const submitLabel = useMemo(() => (isSignup ? "Create Account" : "Log In"), [isSignup]);
+  const passwordChecks = useMemo(() => getPasswordChecks(password), [password]);
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -153,18 +117,17 @@ export function AuthPanel({ mode, slug, returnTo }: { mode: AuthMode; slug: stri
       setSubmitting(false);
 
       if (signUpError) {
-        setError(signUpError.message);
+        setError(getSignupErrorMessage(signUpError.message));
+        return;
+      }
+
+      if (data.user && Array.isArray(data.user.identities) && data.user.identities.length === 0) {
+        setError("This email is already in use. Log in to your account or reset your password.");
         return;
       }
 
       if (data.session) {
         const access = await loadUserAccessByMosqueSlug(activeSlug);
-        saveDevSwitchAccountForTesting({
-          label: trimmedFullName || trimmedEmail,
-          email: trimmedEmail,
-          password,
-          accountType,
-        });
         router.push(returnTo ?? getDefaultLandingHref(activeSlug, access));
         router.refresh();
         return;
@@ -187,13 +150,6 @@ export function AuthPanel({ mode, slug, returnTo }: { mode: AuthMode; slug: stri
     }
 
     const access = await loadUserAccessByMosqueSlug(activeSlug);
-    const loginAccountType = access.accountType?.toLowerCase();
-    saveDevSwitchAccountForTesting({
-      label: trimmedEmail,
-      email: trimmedEmail,
-      password,
-      accountType: isDevSwitchAccountType(loginAccountType) ? loginAccountType : "student",
-    });
     router.push(returnTo ?? getDefaultLandingHref(activeSlug, access));
     router.refresh();
   }
@@ -329,6 +285,7 @@ export function AuthPanel({ mode, slug, returnTo }: { mode: AuthMode; slug: stri
             <PasswordVisibilityButton visible={showPassword} onClick={() => setShowPassword((current) => !current)} controls="password" />
           }
         />
+        {isSignup ? <PasswordRequirements checks={passwordChecks} /> : null}
         {isSignup ? (
           <AuthInput
             label="Confirm password"
@@ -482,6 +439,32 @@ function AuthInput({
   );
 }
 
+function PasswordRequirements({ checks }: { checks: ReturnType<typeof getPasswordChecks> }) {
+  return (
+    <div className="-mt-2 rounded-lg border border-[#E1E6E9] bg-[#F8FAFB] px-3 py-2" aria-live="polite">
+      <p className="text-xs font-semibold uppercase tracking-[0.12em] text-[#6B747B]">Password requirements</p>
+      <ul className="mt-2 grid gap-1.5 text-sm">
+        {checks.map((check) => (
+          <li key={check.label} className={cn("flex items-center gap-2", check.passed ? "text-[#2F6B53]" : "text-[#8A949B]")}>
+            <span
+              className={cn(
+                "flex h-4 w-4 shrink-0 items-center justify-center rounded-full border text-[10px] font-bold",
+                check.passed ? "border-[#2F6B53] bg-[#2F6B53] text-white" : "border-[#B9C3C8] bg-white text-transparent",
+              )}
+              aria-hidden="true"
+            >
+              <svg aria-hidden="true" viewBox="0 0 12 12" className="h-3 w-3" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M2.5 6.2 5 8.7 9.5 3.3" />
+              </svg>
+            </span>
+            <span>{check.label}</span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
 function PasswordVisibilityButton({ visible, onClick, controls }: { visible: boolean; onClick: () => void; controls: string }) {
   return (
     <button type="button" onClick={onClick} className="flex h-8 w-8 items-center justify-center rounded-full text-[#6B747B] hover:bg-[#F2F4F5] hover:text-[#26323A]" aria-label={visible ? `Hide ${controls}` : `Show ${controls}`}>
@@ -510,14 +493,36 @@ function EyeOffIcon() {
   );
 }
 
+function getPasswordChecks(value: string) {
+  return [
+    { label: "At least 8 characters", passed: value.length >= 8 },
+    { label: "One uppercase letter", passed: /[A-Z]/.test(value) },
+    { label: "One lowercase letter", passed: /[a-z]/.test(value) },
+    { label: "One number", passed: /\d/.test(value) },
+    { label: "One symbol", passed: /[^A-Za-z0-9]/.test(value) },
+  ];
+}
+
 function validatePassword(value: string) {
-  if (value.length < 8) {
-    return "Password must be at least 8 characters.";
+  const failedCheck = getPasswordChecks(value).find((check) => !check.passed);
+  if (!failedCheck) {
+    return null;
   }
-  if (!/[a-z]/.test(value) || !/[A-Z]/.test(value) || !/\d/.test(value) || !/[^A-Za-z0-9]/.test(value)) {
-    return "Password must include uppercase, lowercase, number, and symbol.";
+  return "Password must include at least 8 characters, uppercase, lowercase, number, and symbol.";
+}
+
+function getSignupErrorMessage(message: string) {
+  const normalized = message.toLowerCase();
+  if (
+    normalized.includes("already") ||
+    normalized.includes("registered") ||
+    normalized.includes("exists") ||
+    normalized.includes("duplicate") ||
+    normalized.includes("user_not_unique")
+  ) {
+    return "This email is already in use. Log in to your account or reset your password.";
   }
-  return null;
+  return message;
 }
 
 function isAtLeastAge(dateValue: string, minimumAge: number) {
