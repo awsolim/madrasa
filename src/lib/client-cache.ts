@@ -97,13 +97,13 @@ export async function loadMosqueChrome(slug: string) {
   }
 
   const promise = (async () => {
-    const { data } = await createSupabaseBrowserClient().from("mosques").select("name, slug, logo_url, pwa_name").eq("slug", slug).maybeSingle();
+    const { data } = await createSupabaseBrowserClient().from("mosques").select("name, slug, short_name, logo_url").eq("slug", slug).maybeSingle();
 
       if (!data?.name) {
         return null;
       }
 
-      const chrome = { name: data.pwa_name?.trim() || titleFromSlug(data.slug || slug), logoUrl: data.logo_url ?? null };
+      const chrome = { name: data.short_name?.trim() || titleFromSlug(data.slug || slug), logoUrl: data.logo_url ?? null };
       mosqueChromeCache.set(slug, chrome);
       return chrome;
   })().finally(() => {

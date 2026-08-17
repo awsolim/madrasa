@@ -9,7 +9,7 @@ type UpdateMosqueBody = {
   logoUrl?: string | null;
   pictureUrl?: string | null;
   pwaName?: string | null;
-  pwaShortName?: string | null;
+  shortName?: string | null;
   appIconUrl?: string | null;
 };
 
@@ -100,7 +100,7 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
         logo_url: cleanText(body.logoUrl, 1000),
         picture_url: cleanText(body.pictureUrl, 1000),
         pwa_name: cleanText(body.pwaName, 160),
-        pwa_short_name: cleanText(body.pwaShortName, 24),
+        short_name: cleanText(body.shortName, 24),
         app_icon_url: cleanText(body.appIconUrl, 1000),
         updated_at: new Date().toISOString(),
       })

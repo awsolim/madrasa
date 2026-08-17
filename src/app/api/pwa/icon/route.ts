@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { loadTenantBrandingFromHost } from "@/lib/tenant-branding";
+import { loadTenantBrandingBySlug, loadTenantBrandingFromHost } from "@/lib/tenant-branding";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -32,7 +32,8 @@ function fallbackResponse(request: NextRequest, size: string) {
 export async function GET(request: NextRequest) {
   const host = request.headers.get("x-forwarded-host") || request.headers.get("host") || "";
   const size = request.nextUrl.searchParams.get("size") || "512";
-  const branding = await loadTenantBrandingFromHost(host);
+  const explicitTenant = request.nextUrl.searchParams.get("tenant");
+  const branding = explicitTenant ? await loadTenantBrandingBySlug(explicitTenant) : await loadTenantBrandingFromHost(host);
   const fallbackPath = DEFAULT_BY_SIZE[size] ?? "/icon-512x512.png";
   const iconUrl = branding.iconUrl || fallbackPath;
 

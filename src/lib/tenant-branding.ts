@@ -14,8 +14,18 @@ export type TenantBranding = {
   slug: string | null;
   name: string;
   shortName: string;
+  chromeName: string;
   iconUrl: string;
   appleIconUrl: string;
+};
+
+type MosqueBrandingRow = {
+  name: string | null;
+  slug: string | null;
+  short_name: string | null;
+  logo_url: string | null;
+  pwa_name: string | null;
+  app_icon_url: string | null;
 };
 
 export function tenantSlugFromHost(hostname: string) {
@@ -41,36 +51,43 @@ export function tenantSlugFromHost(hostname: string) {
 
 export async function loadTenantBrandingFromHost(hostname: string): Promise<TenantBranding> {
   const slug = tenantSlugFromHost(hostname);
-  if (!slug) {
-    return { slug: null, ...DEFAULT_BRANDING };
-  }
+  return slug ? loadTenantBrandingBySlug(slug) : { slug: null, chromeName: DEFAULT_BRANDING.name, ...DEFAULT_BRANDING };
+}
 
+export async function loadTenantBrandingBySlug(slug: string): Promise<TenantBranding> {
   try {
     const supabase = createSupabaseServiceClient();
     const { data } = await supabase
       .from("mosques")
-      .select("name, slug, logo_url, pwa_name, pwa_short_name, app_icon_url")
+      .select("name, slug, short_name, logo_url, pwa_name, app_icon_url")
       .eq("slug", slug)
-      .maybeSingle();
+      .maybeSingle<MosqueBrandingRow>();
 
     if (!data) {
-      return { slug, ...DEFAULT_BRANDING };
+      return { slug, chromeName: titleFromSlug(slug) || DEFAULT_BRANDING.name, ...DEFAULT_BRANDING };
     }
 
-    const name = data.pwa_name?.trim() || data.name?.trim() || titleFromSlug(data.slug || slug) || DEFAULT_BRANDING.name;
-    const shortName = data.pwa_short_name?.trim() || name;
-    const iconUrl = data.app_icon_url?.trim() || data.logo_url?.trim() || DEFAULT_BRANDING.iconUrl;
-
-    return {
-      slug,
-      name,
-      shortName: shortName.slice(0, 24),
-      iconUrl,
-      appleIconUrl: iconUrl || DEFAULT_BRANDING.appleIconUrl,
-    };
+    return tenantBrandingFromMosque(data, slug);
   } catch {
-    return { slug, ...DEFAULT_BRANDING };
+    return { slug, chromeName: titleFromSlug(slug) || DEFAULT_BRANDING.name, ...DEFAULT_BRANDING };
   }
+}
+
+function tenantBrandingFromMosque(data: MosqueBrandingRow, fallbackSlug: string): TenantBranding {
+  const fallbackName = data.name?.trim() || titleFromSlug(data.slug || fallbackSlug) || DEFAULT_BRANDING.name;
+  const chromeName = data.short_name?.trim() || fallbackName;
+  const name = data.pwa_name?.trim() || fallbackName;
+  const shortName = chromeName.slice(0, 24);
+  const iconUrl = data.app_icon_url?.trim() || data.logo_url?.trim() || DEFAULT_BRANDING.iconUrl;
+
+  return {
+    slug: data.slug || fallbackSlug,
+    name,
+    shortName,
+    chromeName,
+    iconUrl,
+    appleIconUrl: iconUrl || DEFAULT_BRANDING.appleIconUrl,
+  };
 }
 
 function titleFromSlug(slug: string) {

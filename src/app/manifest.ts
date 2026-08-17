@@ -23,14 +23,16 @@ export default async function manifest(): Promise<MetadataRoute.Manifest> {
     categories: ["education", "productivity"],
     icons: [
       {
-        src: "/favicon-16x16.png",
+        src: `${iconSrc}?size=16`,
         sizes: "16x16",
         type: "image/png",
+        purpose: "any",
       },
       {
-        src: "/favicon-32x32.png",
+        src: `${iconSrc}?size=32`,
         sizes: "32x32",
         type: "image/png",
+        purpose: "any",
       },
       {
         src: `${iconSrc}?size=72`,
@@ -89,3 +91,4 @@ export default async function manifest(): Promise<MetadataRoute.Manifest> {
     ],
   };
 }
+

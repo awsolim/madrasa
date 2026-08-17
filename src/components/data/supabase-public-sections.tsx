@@ -4764,7 +4764,7 @@ export function AdminMasjidInformationData({ slug }: { slug: string }) {
   const [logoUrl, setLogoUrl] = useState("");
   const [pictureUrl, setPictureUrl] = useState("");
   const [pwaName, setPwaName] = useState("");
-  const [pwaShortName, setPwaShortName] = useState("");
+  const [shortName, setShortName] = useState("");
   const [appIconUrl, setAppIconUrl] = useState("");
   const [logoFile, setLogoFile] = useState<File | null>(null);
   const [pictureFile, setPictureFile] = useState<File | null>(null);
@@ -4783,6 +4783,18 @@ export function AdminMasjidInformationData({ slug }: { slug: string }) {
       void (async () => {
         setLoading(true);
         setError(null);
+        const session = await loadCachedSession();
+        if (!session?.user.id) {
+          setError("Log in required.");
+          setLoading(false);
+          return;
+        }
+        const access = await loadCachedUserAccess(slug, session.user.id);
+        if (!access.isMosqueAdmin) {
+          setError("Admin access required.");
+          setLoading(false);
+          return;
+        }
         const { data, error: mosqueError } = await createSupabaseBrowserClient().from("mosques").select("*").eq("slug", slug).maybeSingle();
         if (mosqueError) {
           setError(friendlyErrorMessage(mosqueError, "Could not load your masjid."));
@@ -4794,7 +4806,7 @@ export function AdminMasjidInformationData({ slug }: { slug: string }) {
         setLogoUrl(data?.logo_url ?? "");
         setPictureUrl(data?.picture_url ?? "");
         setPwaName(data?.pwa_name ?? "");
-        setPwaShortName(data?.pwa_short_name ?? "");
+        setShortName(data?.short_name ?? "");
         setAppIconUrl(data?.app_icon_url ?? "");
         setLogoFile(null);
         setPictureFile(null);
@@ -4882,7 +4894,7 @@ export function AdminMasjidInformationData({ slug }: { slug: string }) {
           logoUrl: nextLogoUrl || null,
           pictureUrl: nextPictureUrl || null,
           pwaName: pwaName.trim() || null,
-          pwaShortName: pwaShortName.trim() || null,
+          shortName: shortName.trim() || null,
           appIconUrl: nextAppIconUrl || null,
         }),
       });
@@ -4898,7 +4910,7 @@ export function AdminMasjidInformationData({ slug }: { slug: string }) {
       setLogoUrl(result.mosque.logo_url ?? "");
       setPictureUrl(result.mosque.picture_url ?? "");
       setPwaName(result.mosque.pwa_name ?? "");
-      setPwaShortName(result.mosque.pwa_short_name ?? "");
+      setShortName(result.mosque.short_name ?? "");
       setAppIconUrl(result.mosque.app_icon_url ?? "");
       setLogoFile(null);
       setPictureFile(null);
@@ -4996,7 +5008,7 @@ export function AdminMasjidInformationData({ slug }: { slug: string }) {
               </label>
               <label className="grid gap-1">
                 <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#7B858C]">Short name</span>
-                <input value={pwaShortName} onChange={(event) => setPwaShortName(event.target.value)} className="h-12 min-w-0 rounded-[10px] border border-[#B9C3C8] bg-white px-3 text-sm font-semibold text-[#26323A] outline-none focus:border-[#2F8FB3]" placeholder={(pwaName || name || "Madrasa").slice(0, 24)} maxLength={24} />
+                <input value={shortName} onChange={(event) => setShortName(event.target.value)} className="h-12 min-w-0 rounded-[10px] border border-[#B9C3C8] bg-white px-3 text-sm font-semibold text-[#26323A] outline-none focus:border-[#2F8FB3]" placeholder={(pwaName || name || "Madrasa").slice(0, 24)} maxLength={24} />
               </label>
               <div className="grid gap-3 rounded-[16px] border border-[#E1E8EC] bg-[#F8FAFA] p-3">
                 <span className="text-[11px] font-semibold uppercase tracking-[0.16em] text-[#7B858C]">App icon</span>
@@ -19856,6 +19868,7 @@ function mockProgramDescription(title: string) {
 function mockTeacherCredentials(title: string) {
   return `Certified instructor with experience teaching ${title.toLowerCase()} in a masjid classroom setting. Credentials and ijazah details can be updated from the teacher profile in Supabase.`;
 }
+
 
 
 

@@ -10,7 +10,7 @@ export type Database = {
           slug: string;
           logo_url: string | null;
           pwa_name: string | null;
-          pwa_short_name: string | null;
+          short_name: string | null;
           app_icon_url: string | null;
           picture_url: string | null;
           address: string | null;
