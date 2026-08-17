@@ -17,7 +17,6 @@ import {
   loadCachedSession,
   loadCachedUserAccess,
   loadMosqueChrome,
-  refreshCachedProfileName,
   subscribeCachedSession,
 } from "@/lib/client-cache";
 import { cn } from "@/lib/utils";
@@ -206,7 +205,8 @@ function useOverlayChromeHidden() {
 }
 
 function isNavItemActive(pathname: string, item: NavItem) {
-  return pathname === item.href || (item.label !== "Home" && pathname.startsWith(`${item.href}/`));
+  const hrefs = navItemPathCandidates(item.href);
+  return hrefs.some((href) => pathname === href || (item.label !== "Home" && pathname.startsWith(`${href}/`)));
 }
 
 function NavBadge({ count, actionRequired = false }: { count?: number; actionRequired?: boolean }) {
@@ -451,7 +451,7 @@ export function AppTopBar({
 
     Promise.all([
       loadCachedUserAccess(mosqueSlug, session.user.id),
-      refreshCachedProfileName(session.user.id),
+      loadCachedProfileName(session.user.id),
     ]).then(([nextAccess, nextProfileName]) => {
       if (!cancelled) {
         setAccess(nextAccess);
@@ -492,8 +492,7 @@ export function AppTopBar({
     return displayName.split(/\s+/)[0] || "Guest";
   }, [profileName, session]);
 
-  const accountLabel = useMemo(() => (session ? getAccountLabel(access) : "Not signed in"), [access, session]);
-  const accountReady = session !== undefined && (session === null || (accessResolved && profileResolved));
+  const accountLabel = useMemo(() => (session ? getAccountLabel(access) : session === null ? "Not signed in" : "Account"), [access, session]);
 
   if (!showTopBar) {
     return null;
@@ -512,10 +511,7 @@ export function AppTopBar({
           <span className="text-[9px] font-semibold leading-[10px]">Madrasa</span>
         </div>
         <div className="flex min-w-0 items-center justify-end gap-1.5">
-          {!accountReady ? (
-            <span className="h-7 w-20 animate-pulse rounded bg-[#E4E9EC]" />
-          ) : (
-            <span className="flex min-w-0 max-w-full flex-col items-end justify-center leading-none">
+          <span className="flex min-w-0 max-w-full flex-col items-end justify-center leading-none">
               <span className="max-w-full truncate text-right text-[12px] font-semibold leading-[13px] text-[var(--text-primary)]">
                 {userFirstName}
               </span>
@@ -523,7 +519,6 @@ export function AppTopBar({
                 {accountLabel}
               </span>
             </span>
-          )}
         </div>
       </div>
     </header>
@@ -532,7 +527,16 @@ export function AppTopBar({
 
 function isMainTabRoute(pathname: string, items: NavItem[]) {
   const mainLabels = new Set(["Home", "Classes", "Inbox", "Members", "Masjid", "Me"]);
-  return items.some((item) => mainLabels.has(item.label) && pathname === item.href);
+  return items.some((item) => mainLabels.has(item.label) && navItemPathCandidates(item.href).includes(pathname));
+}
+
+function navItemPathCandidates(href: string) {
+  const paths = new Set([href]);
+  const match = href.match(/^\/m\/[^/]+(\/.*)?$/);
+  if (match) {
+    paths.add(match[1] || "/");
+  }
+  return Array.from(paths);
 }
 
 function TopBarLogo({ src, name, compact = false }: { src: string | null; name: string; compact?: boolean }) {
@@ -570,3 +574,5 @@ function titleFromSlug(slug: string) {
     .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
     .join(" ");
 }
+
+

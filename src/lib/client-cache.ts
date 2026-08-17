@@ -15,6 +15,32 @@ type ProfileSummary = {
   avatarUrl: string | null;
 };
 
+const mosqueChromeStoragePrefix = "madrasa:mosque-chrome:";
+const profileSummaryStoragePrefix = "madrasa:profile-summary:";
+
+function readStoredJson<T>(key: string): T | null {
+  if (typeof window === "undefined") {
+    return null;
+  }
+  try {
+    const raw = window.localStorage.getItem(key);
+    return raw ? (JSON.parse(raw) as T) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeStoredJson(key: string, value: unknown) {
+  if (typeof window === "undefined") {
+    return;
+  }
+  try {
+    window.localStorage.setItem(key, JSON.stringify(value));
+  } catch {
+    // Storage can be unavailable in private modes; memory cache still works.
+  }
+}
+
 let sessionLoaded = false;
 let cachedSession: Session | null = null;
 let sessionPromise: Promise<Session | null> | null = null;
@@ -82,11 +108,22 @@ export function clearUserScopedCaches() {
 }
 
 export function getCachedMosqueChrome(slug: string) {
-  return mosqueChromeCache.get(slug) ?? null;
+  const cached = mosqueChromeCache.get(slug);
+  if (cached) {
+    return cached;
+  }
+
+  const stored = readStoredJson<MosqueChrome>(`${mosqueChromeStoragePrefix}${slug}`);
+  if (stored?.name) {
+    mosqueChromeCache.set(slug, stored);
+    return stored;
+  }
+
+  return null;
 }
 
 export async function loadMosqueChrome(slug: string) {
-  const cached = mosqueChromeCache.get(slug);
+  const cached = getCachedMosqueChrome(slug);
   if (cached) {
     return cached;
   }
@@ -105,6 +142,7 @@ export async function loadMosqueChrome(slug: string) {
 
       const chrome = { name: data.short_name?.trim() || titleFromSlug(data.slug || slug), logoUrl: data.logo_url ?? null };
       mosqueChromeCache.set(slug, chrome);
+      writeStoredJson(`${mosqueChromeStoragePrefix}${slug}`, chrome);
       return chrome;
   })().finally(() => {
       mosqueChromePromises.delete(slug);
@@ -153,16 +191,38 @@ export async function loadCachedUserAccess(slug: string, userId: string) {
 }
 
 export function getCachedProfileName(userId: string) {
-  return profileNameCache.has(userId) ? profileNameCache.get(userId) ?? null : undefined;
+  if (profileNameCache.has(userId)) {
+    return profileNameCache.get(userId) ?? null;
+  }
+
+  const stored = getCachedProfileSummary(userId);
+  if (stored) {
+    return stored.fullName;
+  }
+
+  return undefined;
 }
 
 export function getCachedProfileSummary(userId: string) {
-  return profileSummaryCache.get(userId) ?? undefined;
+  const cached = profileSummaryCache.get(userId);
+  if (cached) {
+    return cached;
+  }
+
+  const stored = readStoredJson<ProfileSummary>(`${profileSummaryStoragePrefix}${userId}`);
+  if (stored) {
+    profileSummaryCache.set(userId, stored);
+    profileNameCache.set(userId, stored.fullName);
+    return stored;
+  }
+
+  return undefined;
 }
 
 export async function loadCachedProfileName(userId: string) {
-  if (profileNameCache.has(userId)) {
-    return profileNameCache.get(userId) ?? null;
+  const cachedName = getCachedProfileName(userId);
+  if (cachedName !== undefined) {
+    return cachedName;
   }
 
   const existing = profileNamePromises.get(userId);
@@ -179,6 +239,12 @@ export async function loadCachedProfileName(userId: string) {
 
       const name = data?.full_name?.trim() || null;
       profileNameCache.set(userId, name);
+      const currentSummary = profileSummaryCache.get(userId);
+      if (currentSummary) {
+        const nextSummary = { ...currentSummary, fullName: name };
+        profileSummaryCache.set(userId, nextSummary);
+        writeStoredJson(`${profileSummaryStoragePrefix}${userId}`, nextSummary);
+      }
       return name;
   })()
     .catch(() => null)
@@ -246,6 +312,7 @@ export function setCachedProfileSummary(userId: string, summary: Partial<Profile
   profileSummaryCache.set(userId, next);
   profileSummaryPromises.delete(userId);
   profileNameCache.set(userId, next.fullName);
+  writeStoredJson(`${profileSummaryStoragePrefix}${userId}`, next);
 }
 
 export async function refreshCachedProfileSummary(userId: string) {
@@ -288,4 +355,6 @@ function startAuthListener() {
 function accessKey(slug: string, userId: string) {
   return `${slug}:${userId}`;
 }
+
+
 
