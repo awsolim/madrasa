@@ -230,7 +230,7 @@ async function exportApplications(supabase: ReturnType<typeof createSupabaseServ
     ...requests.map((row) => row.reviewed_by),
   ]);
   return buildCsv(
-    ["Student name", "Student email", "Parent name", "Parent email", "Status", "Track(s)", "Payment type", "Monthly price", "Pay in full price", "Payment waived", "Paid externally", "Requested at", "Reviewed at", "Reviewed by", "Review note"],
+    ["Student name", "Student email", "Parent name", "Parent email", "Status", "Track(s)", "Payment type", "Monthly price", program.is_ongoing ? "Annual subscription price" : "Pay in full price", "Payment waived", "Paid externally", "Requested at", "Reviewed at", "Reviewed by", "Review note"],
     requests.map((request) => {
       const trackIds = [
         ...(requestTrackIdsByRequestId.get(request.id) ?? []),
@@ -246,7 +246,7 @@ async function exportApplications(supabase: ReturnType<typeof createSupabaseServ
         parent?.email,
         normalizeStatus(request.status),
         trackNames(trackIds, tracksById),
-        request.payment_type === "annual" ? "pay in full" : request.payment_type,
+        request.payment_type === "annual" ? (program.is_ongoing ? "annual subscription" : "pay in full") : request.payment_type,
         money(request.approved_price_monthly_cents ?? program.price_monthly_cents),
         money(request.approved_price_annual_cents ?? program.price_annual_cents),
         request.payment_bypassed && !request.payment_bypass_external ? "yes" : "no",

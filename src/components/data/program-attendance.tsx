@@ -381,7 +381,7 @@ export function ProgramAttendanceMarkData({ slug, programId }: { slug: string; p
   }
 
   if (loading) {
-    return <DirectorySkeleton />;
+    return <DirectorySkeleton layout="management" />;
   }
 
   if (error && !context.program) {
@@ -786,7 +786,7 @@ export function ProgramAttendanceHistoryData({ slug, programId, mode = "teacher"
   }, [rows]);
 
   if (loading) {
-    return <DirectorySkeleton />;
+    return <DirectorySkeleton layout="management" />;
   }
   if (error && !program) {
     return <EmptyState title="Could not load attendance" text={error} onRetry={() => window.location.reload()} />;

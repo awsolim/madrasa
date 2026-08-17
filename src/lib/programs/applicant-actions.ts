@@ -21,13 +21,14 @@ export function getApplicantPrimaryAction(
   status: ApplicationStatus,
   paymentStatus: ApplicationPaymentStatus,
   request: { payment_type?: string | null } | null | undefined,
+  program?: { is_ongoing?: boolean | null } | null,
 ): ApplicantPrimaryAction {
   if (status === "approved_confirmation_required") {
     if (paymentStatus === "not_required" || paymentStatus === "waived") {
       return { label: "Confirm Registration", kind: "confirmation" };
     }
     if (request?.payment_type === "annual") {
-      return { label: "Pay in Full", kind: "confirmation" };
+      return { label: program?.is_ongoing ? "Start Annual Subscription" : "Pay in Full", kind: "confirmation" };
     }
     if (paymentStatus === "payment_required" || paymentStatus === "checkout_pending") {
       return { label: "Start Subscription", kind: "confirmation" };

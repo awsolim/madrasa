@@ -96,7 +96,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
       studentProfileId: enrollmentRequest.student_profile_id,
       actorProfileId: user.id,
       eventType: "approved_price_changed",
-      summary: `Approved price changed to $${(priceCents / 100).toFixed(2)} ${paymentType === "annual" ? "(Pay in Full)" : "/month"} for ${student?.full_name || student?.email || "this student"}.`,
+      summary: `Approved price changed to $${(priceCents / 100).toFixed(2)} ${paymentType === "annual" ? (programForTerms.is_ongoing ? "/year (annual subscription)" : "(Pay in Full)") : "/month"} for ${student?.full_name || student?.email || "this student"}.`,
       metadata: { paymentType, priceCents },
     });
 

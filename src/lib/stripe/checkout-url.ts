@@ -22,7 +22,7 @@ export function getCheckoutOrigin(request: Request) {
 function isMasjidSubdomain(origin: string, mosqueSlug: string) {
   try {
     const hostname = new URL(origin).hostname.toLowerCase();
-    const rootDomain = (process.env.NEXT_PUBLIC_ROOT_DOMAIN || "tareeqah.ca").toLowerCase();
+    const rootDomain = (process.env.NEXT_PUBLIC_ROOT_DOMAIN || "madrasa.ca").toLowerCase();
 
     return hostname === `${mosqueSlug}.${rootDomain}` || hostname === `${mosqueSlug}.localhost`;
   } catch {

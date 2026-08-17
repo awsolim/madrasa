@@ -48,7 +48,7 @@ function renderShell(title: string, body: string, action?: { label: string; href
   return `
     <div style="margin:0;background:#f7f2e8;padding:28px 16px;font-family:Arial,Helvetica,sans-serif;color:#26323a;">
       <div style="max-width:560px;margin:0 auto;background:#ffffff;border:1px solid #e3ded3;border-radius:18px;padding:28px;">
-        <p style="margin:0 0 10px;color:#2f6f58;font-size:13px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;">Tareeqah</p>
+        <p style="margin:0 0 10px;color:#2f6f58;font-size:13px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;">Madrasa</p>
         <h1 style="margin:0 0 18px;font-size:24px;line-height:1.25;color:#26323a;">${escapeHtml(title)}</h1>
         <div style="font-size:15px;line-height:1.7;color:#52616a;">${body}</div>
         ${actionHtml}

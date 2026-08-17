@@ -69,7 +69,7 @@ export function InboxSection({ title, count, children, action }: { title: string
 }
 
 export function InboxLoadingPanel({ label }: { label: string }) {
-  return <GenericLoadingState label={label} />;
+  return <GenericLoadingState label={label} layout="inbox" />;
 }
 
 export function MiniEmpty({ text }: { text: string }) {

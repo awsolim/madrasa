@@ -64,7 +64,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
     const approvalPrice = approvalPaymentType === "annual" ? body.priceAnnualCents : body.priceMonthlyCents;
     if (program.is_paid && !paymentBypassed && (approvalPrice ?? 0) < 50) {
       return Response.json(
-        { error: `Paid approvals need a ${approvalPaymentType === "annual" ? "Pay in Full" : "monthly"} price of at least $0.50, or choose waived.` },
+        { error: `Paid approvals need a ${approvalPaymentType === "annual" ? (program.is_ongoing ? "annual subscription" : "Pay in Full") : "monthly"} price of at least $0.50, or choose waived.` },
         { status: 400 },
       );
     }
@@ -113,7 +113,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
         ? `Application approved for ${label} — payment marked as paid externally.`
         : `Application approved for ${label} — payment waived.`
       : program.is_paid
-        ? `Application approved for ${label} at $${((approvalPrice ?? 0) / 100).toFixed(2)} ${approvalPaymentType === "annual" ? "(Pay in Full)" : "/month"}.`
+        ? `Application approved for ${label} at $${((approvalPrice ?? 0) / 100).toFixed(2)} ${approvalPaymentType === "annual" ? (program.is_ongoing ? "/year (annual subscription)" : "(Pay in Full)") : "/month"}.`
         : `Application approved for ${label}.`;
     await recordFinanceAuditEvent(supabase, {
       programId,

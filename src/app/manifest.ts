@@ -2,8 +2,8 @@ import type { MetadataRoute } from "next";
 
 export default function manifest(): MetadataRoute.Manifest {
   return {
-    name: "Tareeqah",
-    short_name: "Tareeqah",
+    name: "Madrasa",
+    short_name: "Madrasa",
     description: "Masjid class registration and management portal",
     // Single-tenant mode (see src/app/page.tsx): "/" is just a server redirect to this
     // same URL, so pointing start_url here directly saves a full network round-trip on

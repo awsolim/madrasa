@@ -4,9 +4,9 @@
 This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
 <!-- END:nextjs-agent-rules -->
 
-# Tareeqah Project Instructions
+# Madrasa Project Instructions
 
-Tareeqah is a white-label masjid education/class management platform.
+Madrasa is a white-label masjid education/class management platform.
 
 The app is mobile-first but desktop must also be polished. The UI should feel like operational class-management software, not generic SaaS dashboard cards.
 

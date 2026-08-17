@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useMemo, useState } from "react";
 import { EmptyState } from "@/components/data/empty-state";
+import { DirectorySkeleton } from "@/components/data/data-loading";
 import { ConfirmModal } from "@/components/ui/confirm-modal";
 import { friendlyErrorMessage } from "@/lib/errors";
 import { invalidateQuery } from "@/lib/query-cache";
@@ -240,14 +241,7 @@ export function ChildrenManager({ slug }: { slug: string }) {
   }
 
   if (loading) {
-    return (
-      <div className="flex min-h-64 items-center justify-center px-6 py-10" aria-label="Loading">
-        <div className="flex flex-col items-center gap-3 text-center">
-          <span className="h-11 w-11 animate-spin rounded-full border-4 border-[#DDEFF4] border-t-[#2F8FB3]" aria-hidden />
-          <span className="text-sm font-semibold text-[#52616A]">Loading</span>
-        </div>
-      </div>
-    );
+    return <DirectorySkeleton layout="family" />;
   }
 
   if (!parentId) {

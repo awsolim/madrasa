@@ -4,17 +4,17 @@ import { PwaRegistrar } from "@/components/pwa/pwa-registrar";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  applicationName: "Tareeqah",
+  applicationName: "Madrasa",
   title: {
-    default: "Tareeqah",
-    template: "%s | Tareeqah",
+    default: "Madrasa",
+    template: "%s | Madrasa",
   },
   description: "Masjid class registration and management portal",
   manifest: "/manifest.webmanifest",
   appleWebApp: {
     capable: true,
     statusBarStyle: "default",
-    title: "Tareeqah",
+    title: "Madrasa",
   },
   formatDetection: {
     telephone: false,

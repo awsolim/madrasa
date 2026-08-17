@@ -862,7 +862,7 @@ export function MosqueDirectoryRows() {
   }, []);
 
   if (loading) {
-    return <DirectorySkeleton />;
+    return <DirectorySkeleton layout="classes" />;
   }
 
   if (error) {
@@ -997,7 +997,7 @@ export function PublicProgramsData({ slug }: { slug: string }) {
   }, [router, slug]);
 
   if (checkingSignedInRedirect || loading) {
-    return <DirectorySkeleton />;
+    return <DirectorySkeleton layout="classes" />;
   }
 
   if (error) {
@@ -2418,7 +2418,7 @@ export function RegistrationConfirmationData({ slug, requestId }: { slug: string
               ) : state === "no_payment_required" ? (
                 <p className="text-sm leading-6 text-[#52616A]">Your registration has been approved. No payment is required.</p>
               ) : state === "payment_required_annual" ? (
-                <p className="text-sm leading-6 text-[#52616A]">Your registration has been approved. Pay in full to complete registration — {listedPrice} once, covering the full program.</p>
+                <p className="text-sm leading-6 text-[#52616A]">{program.is_ongoing ? `Your registration has been approved. Start the annual subscription to complete registration — ${listedPrice} per year.` : `Your registration has been approved. Pay in full to complete registration — ${listedPrice} once, covering the full program.`}</p>
               ) : state === "payment_required_annual_subscription" ? (
                 <p className="text-sm leading-6 text-[#52616A]">Your registration has been approved. Start your annual subscription to complete registration — {listedPrice}/year, renews automatically until cancelled.</p>
               ) : (
@@ -2452,7 +2452,7 @@ export function RegistrationConfirmationData({ slug, requestId }: { slug: string
                     : state === "no_payment_required"
                       ? "Confirm Registration"
                       : state === "payment_required_annual"
-                        ? "Pay in Full"
+                        ? program.is_ongoing ? "Start Annual Subscription" : "Pay in Full"
                         : "Start Subscription"}
                 </button>
                 <button
@@ -3459,33 +3459,45 @@ export function PortalAccountData({ slug }: { slug: string }) {
         setProfile(result.profile);
         setProfileForm((current) => ({ ...current, email: result.email ?? nextEmail }));
       } else {
-        const { error } = await supabase.auth.updateUser(authUpdates);
-        if (error) {
-          setProfileMessage(error.message);
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.access_token) {
+          setProfileMessage("Please sign in again before changing your password.");
+          setProfileSaving(false);
+          return;
+        }
+        const response = await fetch("/api/account/profile", {
+          method: "POST",
+          headers: { Authorization: `Bearer ${session.access_token}`, "Content-Type": "application/json" },
+          body: JSON.stringify({ field: "password", value: authUpdates.password }),
+        });
+        const result = (await response.json()) as { error?: string };
+        if (!response.ok) {
+          setProfileMessage(result.error ?? "Password could not be updated.");
           setProfileSaving(false);
           return;
         }
         setProfileForm((current) => ({ ...current, password: "" }));
       }
     } else {
-      const updates =
-        field === "fullName"
-          ? { full_name: profileForm.fullName.trim() || null, updated_at: new Date().toISOString() }
-          : field === "phone"
-            ? { phone_number: profileForm.phone.trim() || null, updated_at: new Date().toISOString() }
-            : { date_of_birth: profileForm.dateOfBirth || null, updated_at: new Date().toISOString() };
-
-      const { data: updatedProfile, error } = await supabase
-        .from("profiles")
-        .update(updates)
-        .eq("id", profile.id)
-        .select("*")
-        .maybeSingle();
-      if (error || !updatedProfile) {
-        setProfileMessage(friendlyErrorMessage(error, "Profile could not be saved. Please refresh and try again."));
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        setProfileMessage("Please sign in again before changing your account.");
         setProfileSaving(false);
         return;
       }
+      const value = field === "fullName" ? profileForm.fullName : field === "phone" ? profileForm.phone : profileForm.dateOfBirth;
+      const response = await fetch("/api/account/profile", {
+        method: "POST",
+        headers: { Authorization: `Bearer ${session.access_token}`, "Content-Type": "application/json" },
+        body: JSON.stringify({ field, value }),
+      });
+      const result = (await response.json()) as { profile?: Profile; error?: string };
+      if (!response.ok || !result.profile) {
+        setProfileMessage(result.error ?? "Profile could not be saved. Please refresh and try again.");
+        setProfileSaving(false);
+        return;
+      }
+      const updatedProfile = result.profile;
 
       setProfile(updatedProfile);
       setProfileForm((current) => ({
@@ -3516,7 +3528,7 @@ export function PortalAccountData({ slug }: { slug: string }) {
   const accountType = accountLabel === "Account" && rawAccountType ? `${titleCase(rawAccountType)} Account` : accountLabel;
 
   if (loading) {
-    return <GenericLoadingState label="Loading account" />;
+    return <GenericLoadingState label="Loading account" layout="account" />;
   }
 
   if (!isSignedIn) {
@@ -3686,7 +3698,7 @@ export function PortalAccountData({ slug }: { slug: string }) {
             <>
               {payments.some((payment) => taxReceiptStatusLabel(payment.taxReceiptStatus)) ? (
                 <p className="rounded-2xl bg-[#F0F8FB] px-4 py-3 text-xs leading-5 text-[#257B9C]">
-                  Payment receipts are available for payments completed through Tareeqah. Some programs may be eligible for official
+                  Payment receipts are available for payments completed through Madrasa. Some programs may be eligible for official
                   charitable tax receipts depending on the masjid&apos;s policy. Eligibility is determined by the masjid administration, and
                   any official receipts are issued by the masjid separately.
                 </p>
@@ -3750,8 +3762,8 @@ export function PortalAccountData({ slug }: { slug: string }) {
         <AccountSubpageHeader title="Add App to Homescreen" onBack={closePanel} />
         <div className="mt-8 space-y-5">
           <StaticAccountNote
-            title="Install Tareeqah"
-            text="Tareeqah works as a progressive web app. It opens like a normal app from your home screen, but it still updates through the website."
+            title="Install Madrasa"
+            text="Madrasa works as a progressive web app. It opens like a normal app from your home screen, but it still updates through the website."
           />
           <AccountDetailGroup>
             <AccountDetailRow label="iPhone or iPad" value="Open Safari, tap Share, then choose Add to Home Screen." />
@@ -4542,7 +4554,7 @@ export function TeacherScheduleData({ slug, programId }: { slug: string; program
   }
 
   if (loading) {
-    return <DirectorySkeleton />;
+    return <DirectorySkeleton layout="schedule" />;
   }
 
   if (error && !program) {
@@ -5210,7 +5222,7 @@ export function AdminMasjidFinancesData({ slug }: { slug: string }) {
   }, [slug]);
 
   if (loading) {
-    return <DirectorySkeleton />;
+    return <DirectorySkeleton layout="management" />;
   }
 
   if (error) {
@@ -6017,7 +6029,7 @@ export function TeacherProgramCreateData({ slug }: { slug: string }) {
               <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-[#6B747B]">{formatRequiredLabel("How payments are handled", true)}</span>
               <select value={builderStatus.paymentKind} onChange={(event) => { const value = event.target.value as ProgramBuilderStatus["paymentKind"]; setBuilderStatus((current) => ({ ...current, paymentKind: value })); setIsPaid(value === "tareeqah"); }} className="h-10 w-full rounded-[8px] border border-[#B9C3C8] bg-white px-3 text-sm font-medium text-[#26323A] outline-none focus:border-[#2F8FB3]">
                 <option value="free">Free</option>
-                <option value="tareeqah">Paid through Tareeqah</option>
+                <option value="tareeqah">Paid through Madrasa</option>
               </select>
             </label>
             {billingMonthsFieldVisible ? (
@@ -7096,7 +7108,7 @@ export function TeacherProgramSettingsData({ slug, programId, returnHref }: { sl
               <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-[#6B747B]">{formatRequiredLabel("How payments are handled", true)}</span>
               <select value={builderStatus.paymentKind} onChange={(event) => { const value = event.target.value as ProgramBuilderStatus["paymentKind"]; setBuilderStatus((current) => ({ ...current, paymentKind: value })); setIsPaid(value === "tareeqah"); }} className="h-10 w-full rounded-[8px] border border-[#B9C3C8] bg-white px-3 text-sm font-medium text-[#26323A] outline-none focus:border-[#2F8FB3]">
                 <option value="free">Free</option>
-                <option value="tareeqah">Paid through Tareeqah</option>
+                <option value="tareeqah">Paid through Madrasa</option>
               </select>
             </label>
             {billingMonthsFieldVisible ? (
@@ -9569,7 +9581,7 @@ export function AdminTeacherRequestsData({ slug }: { slug: string }) {
   }
 
   if (loading) {
-    return <DirectorySkeleton />;
+    return <DirectorySkeleton layout="management" />;
   }
 
   return (
@@ -9832,7 +9844,7 @@ export function AdminMembersData({ slug }: { slug: string }) {
   }
 
   if (loading) {
-    return <DirectorySkeleton />;
+    return <DirectorySkeleton layout="management" />;
   }
 
   const tabs: Array<{ id: typeof activeType; label: string }> = [
@@ -10539,7 +10551,7 @@ export function TeacherStudentsData({ slug, programId }: { slug: string; program
   const hasVisibleStudents = resultCount > 0;
 
   if (loading) {
-    return <DirectorySkeleton />;
+    return <DirectorySkeleton layout="management" />;
   }
 
   if (error && !program) {
@@ -11280,7 +11292,7 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
   const monthlySumCents = activeRows.reduce((sum, row) => sum + financeMonthlyAmountCents(row, program), 0);
 
   if (loading) {
-    return <DirectorySkeleton />;
+    return <DirectorySkeleton layout="management" />;
   }
 
   if (error && !program) {
@@ -11324,7 +11336,7 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
           <CompactFinanceSelect label="Enrollment" value={statusFilter} options={["active", "kicked", "withdrawn"]} onChange={setStatusFilter} />
           <CompactFinanceSelect label="Payment status" value={payStatusFilter} options={["paid", "awaiting payment", "no payment required", "waived", "paid externally", "past due", "payment failed", "checkout sent", "needs billing decision"]} onChange={setPayStatusFilter} />
           <CompactFinanceSelect label="Subscription" value={subStatusFilter} options={["n/a", "setup pending", "active", "paused", "ending", "past due", "payment failed", "ended"]} labels={{ "n/a": "N/A" }} onChange={setSubStatusFilter} />
-          <CompactFinanceSelect label="Payment type" value={paymentFilter} options={["waived", "paid externally", "monthly", "pay in full"]} labels={{ "pay in full": "Pay in Full" }} onChange={setPaymentFilter} />
+          <CompactFinanceSelect label="Payment type" value={paymentFilter} options={["waived", "paid externally", "monthly", program.is_ongoing ? "annual subscription" : "pay in full"]} labels={{ "pay in full": "Pay in Full", "annual subscription": "Annual Subscription" }} onChange={setPaymentFilter} />
           <CompactFinanceSelect label="Type" value={typeFilter} options={["adult", "child"]} labels={{ adult: "Adult student", child: "Child student" }} onChange={setTypeFilter} />
           <CompactFinanceSelect label="Gender" value={genderFilter} options={["male", "female"]} labels={{ male: "Brothers", female: "Sisters" }} onChange={setGenderFilter} />
         </div>
@@ -12180,7 +12192,7 @@ export function applicationPaymentPlanLabel(row: { request: EnrollmentRequest; t
   if (row.request.payment_bypassed) {
     return row.request.payment_bypass_external ? "Paid externally" : "Waived after approval";
   }
-  return row.request.payment_type === "annual" ? "Pay in Full" : "Monthly subscription";
+  return row.request.payment_type === "annual" ? (program.is_ongoing ? "Annual subscription" : "Pay in Full") : "Monthly subscription";
 }
 
 export function applicationListedPrice(row: { request: EnrollmentRequest; track: ProgramTrack | null }, program: Program | null) {
@@ -12209,6 +12221,7 @@ export function ProgramApplicationsData({ slug, programId, mode = "teacher" }: {
   const [trackFilter, setTrackFilter] = useState("all");
   const [planFilter, setPlanFilter] = useState("all");
   const [needsActionOnly, setNeedsActionOnly] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
   const [tracks, setTracks] = useState<ProgramTrack[]>([]);
   const [detailsTarget, setDetailsTarget] = useState<ApplicationRow | null>(null);
   const [trackSwitchRequests, setTrackSwitchRequests] = useState<ProgramTrackSwitchRequestWithContext[]>([]);
@@ -12389,7 +12402,7 @@ export function ProgramApplicationsData({ slug, programId, mode = "teacher" }: {
   }
 
   if (loading) {
-    return <DirectorySkeleton />;
+    return <DirectorySkeleton layout="management" />;
   }
 
   if (error && !program) {
@@ -12420,10 +12433,10 @@ export function ProgramApplicationsData({ slug, programId, mode = "teacher" }: {
       </div>
 
       <div className="space-y-3">
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
           <label className="flex h-11 min-w-0 flex-1 items-center gap-2 rounded-[14px] border border-[#D6DCE0] bg-[#F8FAFB] px-3 text-[#6B747B] sm:min-w-[220px]">
             <SearchIcon />
-            <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search students, parents" className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-[#26323A] outline-none placeholder:text-[#9AA4AA]" />
+            <input aria-label="Search applications" value={search} onChange={(event) => setSearch(event.target.value)} className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-[#26323A] outline-none" />
           </label>
           <button
             type="button"
@@ -12437,9 +12450,12 @@ export function ProgramApplicationsData({ slug, programId, mode = "teacher" }: {
             <span className="sm:hidden">Action</span>
             <span className="hidden sm:inline">Needs Action</span>
           </button>
+          <button type="button" onClick={() => setFiltersOpen((open) => !open)} className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[#52616A] transition-colors", filtersOpen && "bg-[#DDF2EB] text-[#17624F]")} aria-label={filtersOpen ? "Close application filters" : "Open application filters"} aria-expanded={filtersOpen}>
+            <FilterSlidersIcon />
+          </button>
         </div>
-        <div className="grid grid-cols-2 gap-3 sm:flex sm:flex-wrap">
-          <FinanceSelect
+        {filtersOpen ? <div className="divide-y divide-[#EEF2F4] rounded-[16px] border border-[#DDE5E9] bg-white px-3">
+          <CompactFinanceSelect
             label="Application status"
             value={statusFilter}
             options={["pending_review", "waitlisted", "rejected", "approved_confirmation_required", "completed_enrolled", "cancelled"]}
@@ -12453,7 +12469,7 @@ export function ProgramApplicationsData({ slug, programId, mode = "teacher" }: {
             }}
             onChange={setStatusFilter}
           />
-          <FinanceSelect
+          <CompactFinanceSelect
             label="Payment status"
             value={payStatusFilter}
             options={["not_required", "waived", "paid_externally", "payment_required", "checkout_pending", "paid", "active_subscription", "past_due", "failed", "ended"]}
@@ -12472,7 +12488,7 @@ export function ProgramApplicationsData({ slug, programId, mode = "teacher" }: {
             onChange={setPayStatusFilter}
           />
           {tracks.length ? (
-            <FinanceSelect
+            <CompactFinanceSelect
               label="Track"
               value={trackFilter}
               options={tracks.map((track) => track.id)}
@@ -12480,14 +12496,14 @@ export function ProgramApplicationsData({ slug, programId, mode = "teacher" }: {
               onChange={setTrackFilter}
             />
           ) : null}
-          <FinanceSelect
+          <CompactFinanceSelect
             label="Payment plan"
             value={planFilter}
-            options={["free", "monthly subscription", "pay in full", "waived", "paid externally"]}
-            labels={{ "pay in full": "Pay in Full" }}
+            options={["free", "monthly subscription", program.is_ongoing ? "annual subscription" : "pay in full", "waived", "paid externally"]}
+            labels={{ "pay in full": "Pay in Full", "annual subscription": "Annual subscription" }}
             onChange={setPlanFilter}
           />
-        </div>
+        </div> : null}
       </div>
 
       <div className="flex items-center justify-between px-1 text-sm font-semibold text-[#6B747B]">
@@ -12643,8 +12659,8 @@ function financePaymentType(row: FinanceEnrollmentRow, program: Program | null) 
     return "Waived";
   }
   if (row.paymentTerms) {
-    if (row.paymentTerms.payment_type === "pay_in_full") {
-      return "Pay in Full";
+    if (row.paymentTerms.payment_type === "pay_in_full" || row.paymentTerms.payment_type === "annual") {
+      return row.paymentTerms.payment_type === "annual" ? "Annual Subscription" : "Pay in Full";
     }
     if (row.paymentTerms.payment_type === "monthly") {
       return "Monthly";
@@ -12657,14 +12673,14 @@ function financePaymentType(row: FinanceEnrollmentRow, program: Program | null) 
   if (!program?.is_paid) {
     return "Free";
   }
-  return (row.subscription?.payment_type ?? row.request?.payment_type) === "annual" ? "Pay in Full" : "Monthly";
+  return (row.subscription?.payment_type ?? row.request?.payment_type) === "annual" ? (program?.is_ongoing ? "Annual Subscription" : "Pay in Full") : "Monthly";
 }
 
 function CompactFinanceSelect({ label, value, options, labels = {}, onChange }: { label: string; value: string; options: string[]; labels?: Record<string, string>; onChange: (value: string) => void }) {
   return (
     <label className="flex min-h-11 items-center justify-between gap-3 py-1 text-sm font-semibold text-[#52616A]">
       <span>{label}</span>
-      <select value={value} onChange={(event) => onChange(event.target.value)} className="h-8 max-w-[58%] rounded-[9px] border border-[#D6DCE0] bg-[#F8FAFB] px-2 text-xs font-semibold text-[#26323A] outline-none">
+      <select value={value} onChange={(event) => onChange(event.target.value)} className="h-8 w-44 max-w-[58%] rounded-[9px] border border-[#D6DCE0] bg-[#F8FAFB] px-2 text-xs font-semibold text-[#26323A] outline-none">
         <option value="all">All</option>
         {options.map((option) => <option key={option} value={option}>{labels[option] ?? titleCase(option)}</option>)}
       </select>
@@ -12732,7 +12748,7 @@ function financeSubscriptionStatus(row: FinanceEnrollmentRow) {
     return row.subscription.cancel_at_period_end ? "Ending" : "Active";
   }
   if (row.paymentTerms) {
-    if (row.paymentTerms.payment_type !== "monthly") {
+    if (!["monthly", "annual"].includes(row.paymentTerms.payment_type)) {
       return "N/A";
     }
   }
@@ -12826,8 +12842,8 @@ function financePaymentTermsStatusLabel(terms: ProgramPaymentTerms) {
 }
 
 function financePaymentTypeFromTerms(terms: ProgramPaymentTerms) {
-  if (terms.payment_type === "pay_in_full") {
-    return "Pay in Full";
+  if (terms.payment_type === "pay_in_full" || terms.payment_type === "annual") {
+    return terms.payment_type === "annual" ? "Annual Subscription" : "Pay in Full";
   }
   if (terms.payment_type === "monthly") {
     return "Monthly";
@@ -12839,7 +12855,7 @@ function financePaymentTypeFromTerms(terms: ProgramPaymentTerms) {
 }
 
 function financeBillingCycleLabel(terms: ProgramPaymentTerms) {
-  if (terms.payment_type !== "monthly") {
+  if (!["monthly", "annual"].includes(terms.payment_type)) {
     return "Not applicable";
   }
   if (terms.billing_end_behavior === "fixed_month_count" && terms.billing_months) {
@@ -12874,7 +12890,7 @@ function financeCurrentPeriodLabel(row: FinanceEnrollmentRow) {
 
 function financeNextBillingLabel(row: FinanceEnrollmentRow) {
   const subscription = row.subscription;
-  if (row.paymentTerms?.payment_type !== "monthly" && row.paymentTerms) {
+  if (row.paymentTerms && !["monthly", "annual"].includes(row.paymentTerms.payment_type)) {
     return row.paymentTerms.payment_type === "pay_in_full" ? "Paid once" : "—";
   }
   if (!subscription?.stripe_subscription_id || !hasActiveRecurringSubscription(subscription)) {
@@ -12949,6 +12965,9 @@ function financeAuditFallbackSummary(row: FinanceEnrollmentRow, program: Program
   if (row.paymentTerms?.payment_type === "pay_in_full" && row.paymentTerms.amount_cents != null) {
     return `${actor} approved ${student} for Pay in Full of ${formatPrice(row.paymentTerms.amount_cents)}.`;
   }
+  if (row.paymentTerms?.payment_type === "annual" && row.paymentTerms.amount_cents != null) {
+    return `${actor} approved ${student} for an annual subscription of ${formatPrice(row.paymentTerms.amount_cents)}/year.`;
+  }
   if (row.request?.payment_bypassed || row.subscription?.payment_waived) {
     return `${actor} waived payment indefinitely for ${student}.`;
   }
@@ -12956,7 +12975,9 @@ function financeAuditFallbackSummary(row: FinanceEnrollmentRow, program: Program
     return `Parent paid and subscription is active for ${student}.`;
   }
   if ((row.subscription?.payment_type ?? row.request?.payment_type) === "annual" && row.request?.approved_price_annual_cents) {
-    return `${actor} approved ${student} for Pay in Full of ${formatPrice(row.request.approved_price_annual_cents)}.`;
+    return program.is_ongoing
+      ? `${actor} approved ${student} for an annual subscription of ${formatPrice(row.request.approved_price_annual_cents)}/year.`
+      : `${actor} approved ${student} for Pay in Full of ${formatPrice(row.request.approved_price_annual_cents)}.`;
   }
   if (row.request?.approved_price_monthly_cents) {
     return `${actor} changed ${student}'s price to ${formatPrice(row.request.approved_price_monthly_cents)}/month.`;
@@ -14709,7 +14730,7 @@ function TeacherStudentRow({
           <ChevronIcon expanded={expanded} />
         </button>
         <button type="button" onClick={onNote} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[#52616A] hover:bg-[#EEF3F5]" aria-label={`Add note for ${studentName}`}>
-          <span className="relative text-lg leading-none" aria-hidden="true">▱<span className="absolute -right-1 -top-1 text-xs font-bold">+</span></span>
+          <NoteAddIcon />
         </button>
         <StudentActionMenu busy={busy} onKick={onKick} />
       </div>
@@ -14786,7 +14807,7 @@ function TeacherFamilyRow({
                     <p className="mt-0.5 truncate text-xs text-[#7B858C]">Child</p>
                   </div>
                   <button type="button" onClick={() => onNote(student)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[#52616A] hover:bg-[#EEF3F5]" aria-label={`Add note for ${student.profile?.full_name ?? "student"}`}>
-                    <span className="relative text-lg leading-none" aria-hidden="true">▱<span className="absolute -right-1 -top-1 text-xs font-bold">+</span></span>
+                    <NoteAddIcon />
                   </button>
                   <StudentActionMenu
                     busy={busyStudentId === student.enrollment.student_profile_id}
@@ -14930,7 +14951,7 @@ export function TeacherStudentNotesData({ slug, programId, studentId }: { slug: 
   }, [programId, slug, studentId]);
 
   if (loading) {
-    return <DirectorySkeleton />;
+    return <DirectorySkeleton layout="inbox" />;
   }
 
   if (error) {
@@ -16245,7 +16266,7 @@ function MyApplicationsList({
       {sorted.map((row) => {
         const status = getApplicationStatus(row.request);
         const paymentStatus = getApplicationPaymentStatus(row.request, row.program, row.subscription);
-        const action = getApplicantPrimaryAction(status, paymentStatus, row.request);
+        const action = getApplicantPrimaryAction(status, paymentStatus, row.request, row.program);
         const statusLabel = getApplicationRowStatusLabel(status, paymentStatus);
         const childName = row.student?.full_name?.trim();
         const trackName = row.track?.name?.trim();
@@ -16326,7 +16347,7 @@ export function ApplicantDetailsDrawer({
   const decisionNote = row.request.decision_note ?? row.request.review_note;
   const canRescind = status === "pending_review";
   const canCompleteRegistration = status === "approved_confirmation_required";
-  const confirmationAction = getApplicantPrimaryAction(status, paymentStatus, row.request);
+  const confirmationAction = getApplicantPrimaryAction(status, paymentStatus, row.request, row.program);
   const resolvedReturnTo = returnTo ?? `/m/${slug}/portal/classes?tab=applications`;
 
   const containerRef = useRef<HTMLDivElement>(null);
@@ -16885,6 +16906,17 @@ function HomeNotification({
   );
 }
 
+function NoteAddIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-[21px] w-[21px]" fill="none" aria-hidden>
+      <path d="M7.5 3.75h6.75L18.75 8v8.5A2.75 2.75 0 0 1 16 19.25H7.5a2.75 2.75 0 0 1-2.75-2.75v-10A2.75 2.75 0 0 1 7.5 3.75Z" stroke="currentColor" strokeWidth="1.75" strokeLinejoin="round" />
+      <path d="M14 3.9V8h4.15M8 11h4.5M8 14.25h3" stroke="currentColor" strokeWidth="1.75" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx="17.25" cy="17.25" r="3.5" fill="#17624F" stroke="white" strokeWidth="1.25" />
+      <path d="M17.25 15.65v3.2M15.65 17.25h3.2" stroke="white" strokeWidth="1.4" strokeLinecap="round" />
+    </svg>
+  );
+}
+
 function HomeSectionTitle({ title }: { title: string }) {
   return (
     <div className="px-1 pt-1">
@@ -16894,7 +16926,7 @@ function HomeSectionTitle({ title }: { title: string }) {
 }
 
 function HomeLoadingState() {
-  return <GenericLoadingState label="Loading home" />;
+  return <GenericLoadingState label="Loading home" layout="home" />;
 }
 
 type HomeLesson = {
@@ -17174,7 +17206,7 @@ function HomeUpcomingRows({
 }
 
 function HomeUpcomingLoadingRows() {
-  return <GenericLoadingState label="Loading upcoming classes" />;
+  return <GenericLoadingState label="Loading upcoming classes" layout="schedule" compact />;
 }
 
 function WeekCalendar({ days, lessonsByDay }: { days: Date[]; lessonsByDay: Map<string, HomeLesson[]> }) {
@@ -18759,11 +18791,11 @@ function ProgramStudentInviteTools({ program }: { program: Program }) {
                   onClick={() => setPaymentType("annual")}
                   className={cn("min-h-10 rounded-[9px] text-sm font-semibold transition-colors", paymentType === "annual" ? "bg-white text-[#17624F]" : "bg-white/12 text-white")}
                 >
-                  Pay in Full
+                  {program.is_ongoing ? "Annual Subscription" : "Pay in Full"}
                 </button>
               </div>
               <label className="block">
-                <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-white/70">{paymentType === "monthly" ? "Monthly price" : "Pay in Full price"}</span>
+                <span className="mb-1 block text-xs font-semibold uppercase tracking-wide text-white/70">{paymentType === "monthly" ? "Monthly price" : program.is_ongoing ? "Annual subscription price" : "Pay in Full price"}</span>
                 <input
                   value={paymentType === "monthly" ? customPriceMonthly : customPriceAnnual}
                   onChange={(event) => (paymentType === "monthly" ? setCustomPriceMonthly(event.target.value) : setCustomPriceAnnual(event.target.value))}
@@ -19596,12 +19628,12 @@ export function Avatar({ src, name }: { src: string | null; name: string }) {
 }
 
 function ProgramDetailLoadingState() {
-  return <GenericLoadingState label="Loading class" />;
+  return <GenericLoadingState label="Loading class" layout="detail" />;
 }
 
 function ClassesLoadingPlaceholders({ count = 2 }: { count?: number }) {
   void count;
-  return <GenericLoadingState label="Loading classes" />;
+  return <GenericLoadingState label="Loading classes" layout="classes" />;
 }
 
 function initials(name: string) {

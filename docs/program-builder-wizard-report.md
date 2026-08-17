@@ -53,8 +53,8 @@ No existing tables or columns were dropped.
 - Added estimated end-month helper text for fixed-month durations.
 - Changed the mobile builder stepper to fixed numbered steps instead of a horizontally scrolling label row.
 - Changed Save Draft to a filled blue action.
-- Removed the duplicate paid/free decision in the create pricing flow. Payment kind is now the source of truth: Free, Paid through Tareeqah, or Manual/outside payment.
-- Scoped the manual payment note to manual/outside payment only. It is intended for payment instructions handled outside Tareeqah, such as office payment or e-transfer notes.
+- Removed the duplicate paid/free decision in the create pricing flow. Payment kind is now the source of truth: Free, Paid through Madrasa, or Manual/outside payment.
+- Scoped the manual payment note to manual/outside payment only. It is intended for payment instructions handled outside Madrasa, such as office payment or e-transfer notes.
 - Added monthly cycle helper text and one-time annual savings comparison text.
 - Reworked tags into multiple independent tag entries instead of a single category text field in the create builder.
 - Reordered Basics so internal name and public name are consecutive.

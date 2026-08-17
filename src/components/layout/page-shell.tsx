@@ -3,7 +3,7 @@ import { DesktopSidebar } from "@/components/layout/desktop-sidebar";
 import { NavItem } from "@/components/layout/horizontal-nav";
 import { PageTransitionFrame } from "@/components/layout/page-transition-frame";
 
-const defaultAppName = "Tareeqah";
+const defaultAppName = "Madrasa";
 
 export function AppChrome({
   children,

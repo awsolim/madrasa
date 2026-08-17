@@ -503,7 +503,7 @@ export function AppTopBar({
         </Link>
         <div className="flex flex-col items-center justify-center whitespace-nowrap text-[var(--text-subtle)]">
           <span className="text-[8px] font-medium leading-[9px]">Powered by</span>
-          <span className="text-[9px] font-semibold leading-[10px]">Tareeqah</span>
+          <span className="text-[9px] font-semibold leading-[10px]">Madrasa</span>
         </div>
         <div className="flex min-w-0 items-center justify-end gap-1.5">
           {!accountReady ? (

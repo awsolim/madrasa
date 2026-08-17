@@ -745,7 +745,7 @@ function ApplicationChangePriceModal({
                     onClick={() => setPaymentType(type)}
                     className={cn("px-3 text-xs font-semibold disabled:opacity-60", paymentType === type ? "bg-[#17624F] text-white" : "bg-white text-[#52616A]")}
                   >
-                    {type === "monthly" ? "Monthly" : "Pay in Full"}
+                    {type === "monthly" ? "Monthly" : program.is_ongoing ? "Annual Subscription" : "Pay in Full"}
                   </button>
                 ))}
               </div>
@@ -965,10 +965,10 @@ export function ApplicationDecisionModal({
               <>
                 <div>
                   <span className="text-xs font-semibold uppercase tracking-wide text-[#6B747B]">Payment plan chosen by applicant</span>
-                  <p className="mt-1 text-sm font-semibold text-[#26323A]">{billingMode === "monthly" ? "Monthly" : "Pay in Full"}</p>
+                  <p className="mt-1 text-sm font-semibold text-[#26323A]">{billingMode === "monthly" ? "Monthly" : target.request.program?.is_ongoing ? "Annual Subscription" : "Pay in Full"}</p>
                 </div>
                 <label className="block">
-                  <span className="text-xs font-semibold uppercase tracking-wide text-[#6B747B]">{billingMode === "monthly" ? "Monthly price" : "Pay in Full price"}</span>
+                  <span className="text-xs font-semibold uppercase tracking-wide text-[#6B747B]">{billingMode === "monthly" ? "Monthly price" : target.request.program?.is_ongoing ? "Annual subscription price" : "Pay in Full price"}</span>
                   <input value={price} onChange={(event) => setPrice(event.target.value)} inputMode="decimal" className="mt-1 h-11 w-full rounded-[10px] border border-[#B9C3C8] px-3 text-sm font-semibold outline-none focus:border-[#2F8FB3]" />
                 </label>
                 {billingMode === "annual" && target.request.program ? <p className="text-xs leading-5 text-[#7B858C]">{annualDealText(target.request.program)}</p> : null}

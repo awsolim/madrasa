@@ -48,7 +48,7 @@ export function BootScreen() {
       }}
     >
       <Image src="/icon-192x192.png" alt="" width={112} height={112} priority className="rounded-[26px] shadow-[0_18px_44px_rgba(23,98,79,0.22)]" />
-      <span className="text-xl font-semibold tracking-tight text-[#17624F]">Tareeqah</span>
+      <span className="text-xl font-semibold tracking-tight text-[#17624F]">Madrasa</span>
     </div>
   );
 }

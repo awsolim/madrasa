@@ -35,8 +35,8 @@ export function PrivacyPolicyPage() {
     <LegalPageShell title="Privacy Policy">
       <p className="text-xs font-semibold uppercase tracking-wide text-[#8A9399]">Last updated: July 2026</p>
       <p>
-        Tareeqah is a class registration and management platform used by masjids (Islamic community centers) to run their educational programs. This
-        policy explains what information is collected through a Tareeqah-powered portal, how it is used, and how it is protected - for every family,
+        Madrasa is a class registration and management platform used by masjids (Islamic community centers) to run their educational programs. This
+        policy explains what information is collected through a Madrasa-powered portal, how it is used, and how it is protected - for every family,
         student, and teacher using the platform.
       </p>
 
@@ -45,7 +45,7 @@ export function PrivacyPolicyPage() {
           <li><strong>Account information:</strong> name, email address, phone number, date of birth, gender, and profile photo.</li>
           <li><strong>Family information:</strong> for parent/guardian accounts, the names, ages, and class-related details of enrolled children.</li>
           <li><strong>Class activity:</strong> applications, enrollments, attendance, withdrawal requests, teacher notes and feedback, class announcements, and attachments added to those messages.</li>
-          <li><strong>Payment information:</strong> for paid programs, payments are processed directly by Stripe. Tareeqah never stores card numbers or full payment details - only payment status and amount are kept for record-keeping.</li>
+          <li><strong>Payment information:</strong> for paid programs, payments are processed directly by Stripe. Madrasa never stores card numbers or full payment details - only payment status and amount are kept for record-keeping.</li>
           <li><strong>Device information:</strong> if you enable push notifications, a device-specific subscription token is stored so notifications can be delivered to that device; general browser/device information may also be used for security and troubleshooting.</li>
         </ul>
       </LegalSection>
@@ -59,22 +59,22 @@ export function PrivacyPolicyPage() {
 
       <LegalSection title="Who can see it">
         <p>
-          Masjid staff (teachers, program directors, and administrators) can see information relevant to the programs they manage. Tareeqah does not
+          Masjid staff (teachers, program directors, and administrators) can see information relevant to the programs they manage. Madrasa does not
           sell or share personal information with advertisers or unrelated third parties.
         </p>
       </LegalSection>
 
       <LegalSection title="Service providers">
         <p>
-          Tareeqah uses trusted service providers to operate the platform: Supabase (secure database hosting and authentication), Stripe (payment
+          Madrasa uses trusted service providers to operate the platform: Supabase (secure database hosting and authentication), Stripe (payment
           processing), Resend (transactional email delivery), and browser push notification services (operated by Google, Mozilla, Apple, and other
-          browser vendors, depending on your device). These providers process data solely on Tareeqah&apos;s behalf to deliver the service.
+          browser vendors, depending on your device). These providers process data solely on Madrasa&apos;s behalf to deliver the service.
         </p>
       </LegalSection>
 
       <LegalSection title="Children's information">
         <p>
-          Child profiles are created and managed by a parent or guardian account. Tareeqah does not knowingly collect information directly from
+          Child profiles are created and managed by a parent or guardian account. Madrasa does not knowingly collect information directly from
           children without a parent or guardian creating and managing the account on their behalf. Notes, announcements, attendance records, and
           related attachments may include information about a child&apos;s participation in a class.
         </p>
@@ -97,7 +97,7 @@ export function PrivacyPolicyPage() {
 
       <LegalSection title="Cookies and local storage">
         <p>
-          Tareeqah uses browser local storage for session authentication, remembering dismissed notifications, and device push-notification
+          Madrasa uses browser local storage for session authentication, remembering dismissed notifications, and device push-notification
           subscriptions - not for advertising or tracking across other websites.
         </p>
       </LegalSection>
@@ -108,7 +108,7 @@ export function PrivacyPolicyPage() {
 
       <LegalSection title="Contact">
         <p>
-          Since each masjid manages its own community&apos;s data on Tareeqah, questions about your specific information should be directed to your
+          Since each masjid manages its own community&apos;s data on Madrasa, questions about your specific information should be directed to your
           masjid&apos;s administrator.
         </p>
       </LegalSection>
@@ -121,13 +121,13 @@ export function TermsOfServicePage() {
     <LegalPageShell title="Terms of Service">
       <p className="text-xs font-semibold uppercase tracking-wide text-[#8A9399]">Last updated: July 2026</p>
       <p>
-        These terms govern your use of Tareeqah, a software platform that masjids use to manage class registration, communication, and, for paid
+        These terms govern your use of Madrasa, a software platform that masjids use to manage class registration, communication, and, for paid
         programs, tuition collection. By creating an account, you agree to these terms.
       </p>
 
       <LegalSection title="Description of service">
         <p>
-          Tareeqah provides the technology platform a masjid uses to run its educational programs - application review, enrollment, scheduling,
+          Madrasa provides the technology platform a masjid uses to run its educational programs - application review, enrollment, scheduling,
           announcements, teacher-family messaging, and payment processing where applicable.
         </p>
       </LegalSection>
@@ -150,7 +150,7 @@ export function TermsOfServicePage() {
       <LegalSection title="Payments">
         <p>
           Paid classes are billed through Stripe when online payment is enabled. Pricing, refund, withdrawal, cancellation, and receipt policies are
-          set by the individual masjid running the program, not by Tareeqah - Tareeqah is not responsible for a masjid&apos;s specific tuition, refund,
+          set by the individual masjid running the program, not by Madrasa - Madrasa is not responsible for a masjid&apos;s specific tuition, refund,
           or receipt policy.
         </p>
       </LegalSection>
@@ -175,15 +175,15 @@ export function TermsOfServicePage() {
 
       <LegalSection title="Disclaimer and limitation of liability">
         <p>
-          The service is provided &quot;as is&quot; without warranties of any kind. To the fullest extent permitted by law, Tareeqah is not liable
+          The service is provided &quot;as is&quot; without warranties of any kind. To the fullest extent permitted by law, Madrasa is not liable
           for indirect, incidental, or consequential damages arising from use of the platform.
         </p>
       </LegalSection>
 
       <LegalSection title="The masjid's role">
         <p>
-          Each masjid using Tareeqah is responsible for its own program content, policies, staff conduct, and communications with its community.
-          Tareeqah provides the underlying technology platform.
+          Each masjid using Madrasa is responsible for its own program content, policies, staff conduct, and communications with its community.
+          Madrasa provides the underlying technology platform.
         </p>
       </LegalSection>
 

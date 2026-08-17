@@ -1,4 +1,4 @@
-const CACHE_NAME = "tareeqah-shell-v3";
+const CACHE_NAME = "madrasa-shell-v4";
 const OFFLINE_URL = "/offline.html";
 const SHELL_ASSETS = [OFFLINE_URL, "/favicon.svg"];
 
@@ -84,7 +84,7 @@ self.addEventListener("push", (event) => {
 
   const data = event.data.json();
   event.waitUntil(
-    self.registration.showNotification(data.title || "Tareeqah", {
+    self.registration.showNotification(data.title || "Madrasa", {
       body: data.body,
       icon: "/icon-192x192.png",
       badge: "/icon-192x192.png",

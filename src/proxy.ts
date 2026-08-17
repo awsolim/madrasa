@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const DEFAULT_ROOT_DOMAIN = "tareeqah.ca";
+const DEFAULT_ROOT_DOMAIN = "madrasa.ca";
 const RESERVED_SUBDOMAINS = new Set(["www"]);
 
 function hostnameFromRequest(request: NextRequest) {

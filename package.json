@@ -1,12 +1,13 @@
 {
-  "name": "tareeqah",
+  "name": "madrasa",
   "version": "0.1.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "cleanup:fake-users": "node --env-file=.env.local scripts/cleanup-fake-users.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.106.2",

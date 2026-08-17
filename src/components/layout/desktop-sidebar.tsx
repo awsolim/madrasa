@@ -83,7 +83,7 @@ export function DesktopSidebar({
         <SidebarLogo src={logoUrl} name={displayName} />
         <span className="min-w-0">
           <span className="block truncate text-xl font-semibold leading-6">{displayName}</span>
-          <span className="block truncate text-xs leading-4 text-[var(--text-muted)]">Powered by Tareeqah</span>
+          <span className="block truncate text-xs leading-4 text-[var(--text-muted)]">Powered by Madrasa</span>
         </span>
       </Link>
 
