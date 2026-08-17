@@ -1976,7 +1976,7 @@ export function ProgramApplyData({ slug, programId }: { slug: string; programId:
                   ) : null}
                   <div className="flex items-center justify-between gap-3">
                     <span className="text-[#6B747B]">Start date</span>
-                    <span className="font-semibold text-[#26323A]">{program.start_date ? formatFinanceShortDate(program.start_date) : "To be announced"}</span>
+                    <span className="font-semibold text-[#26323A]">{formatApplicationSummaryStartDate(program)}</span>
                   </div>
                   <div className="flex items-center justify-between gap-3">
                     <span className="text-[#6B747B]">End date</span>
@@ -12685,6 +12685,29 @@ function financeNextBillingLabel(row: FinanceEnrollmentRow) {
   return subscription.cancel_at_period_end ? `Ends on ${formatFinanceShortDate(subscription.current_period_end)}` : `Next billing: ${formatFinanceShortDate(subscription.current_period_end)}`;
 }
 
+function formatApplicationSummaryStartDate(program: Program) {
+  const today = localDateKey(new Date());
+  if (program.start_date) {
+    return program.lifecycle_status === "active" || program.start_date <= today ? `Started ${formatFinanceShortDate(program.start_date)}` : formatFinanceShortDate(program.start_date);
+  }
+  if (program.start_now) {
+    return program.lifecycle_status === "active" ? "Started immediately" : "Starts immediately after publishing";
+  }
+  if (program.lifecycle_status === "active") {
+    return "Already ongoing";
+  }
+  if (program.is_ongoing) {
+    return "Starts immediately";
+  }
+  return "Start date pending";
+}
+
+function localDateKey(value: Date) {
+  const year = value.getFullYear();
+  const month = `${value.getMonth() + 1}`.padStart(2, "0");
+  const day = `${value.getDate()}`.padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
 function formatFinanceShortDate(value: string | null | undefined) {
   return formatShortDate(value);
 }
@@ -15320,7 +15343,23 @@ function mediaShortLabel(item: ProgramMedia) {
 }
 
 function mediaType(item: ProgramMedia) {
-  return item.media_type;
+  const inferred = inferMediaTypeFromUrl(item.url) ?? inferMediaTypeFromUrl(item.thumbnail_url ?? "");
+  return inferred ?? item.media_type;
+}
+
+function inferMediaTypeFromUrl(url: string | null | undefined): "photo" | "video" | null {
+  if (!url) {
+    return null;
+  }
+  const pathname = url.split("?")[0]?.split("#")[0]?.toLowerCase() ?? "";
+  const extension = pathname.split(".").pop() ?? "";
+  if (["mp4", "webm", "mov", "m4v", "ogv"].includes(extension)) {
+    return "video";
+  }
+  if (["jpg", "jpeg", "png", "webp", "gif", "avif", "heic", "heif"].includes(extension)) {
+    return "photo";
+  }
+  return null;
 }
 
 function SidebarFact({ label, value }: { label: string; value: string }) {

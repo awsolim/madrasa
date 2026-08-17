@@ -100,8 +100,9 @@ export function DesktopSidebar({
           const subItemActive = subItems.some((subItem) => isHrefActive(pathname, searchParams, subItem.href));
 
           if (label === "Me" || subItems.length) {
+            const firstSubItemHref = label === "Me" ? `${accountHref}?panel=settings` : subItems[0]?.href;
             return (
-              <DesktopNavGroup key={`${item.label}-${item.href}`} item={item} active={active || subItemActive} badgeCount={badgeCount} actionRequired={actionRequired}>
+              <DesktopNavGroup key={`${item.label}-${item.href}`} item={item} active={active || subItemActive} firstSubItemHref={firstSubItemHref} badgeCount={badgeCount} actionRequired={actionRequired}>
                 {label === "Me" ? (
                   <DesktopAccountSubnav mosqueSlug={mosqueSlug} accountHref={accountHref} />
                 ) : (
@@ -136,7 +137,22 @@ export function DesktopSidebar({
   );
 }
 
-function DesktopNavGroup({ item, active, badgeCount, actionRequired = false, children }: { item: NavItem; active: boolean; badgeCount: number; actionRequired?: boolean; children: ReactNode }) {
+function DesktopNavGroup({
+  item,
+  active,
+  firstSubItemHref,
+  badgeCount,
+  actionRequired = false,
+  children,
+}: {
+  item: NavItem;
+  active: boolean;
+  firstSubItemHref?: string;
+  badgeCount: number;
+  actionRequired?: boolean;
+  children: ReactNode;
+}) {
+  const router = useRouter();
   const [open, setOpen] = useState(active);
   const label = desktopLabel(item.label);
 
@@ -150,7 +166,12 @@ function DesktopNavGroup({ item, active, badgeCount, actionRequired = false, chi
     <div>
       <button
         type="button"
-        onClick={() => setOpen((current) => !current)}
+        onClick={() => {
+          setOpen(true);
+          if (firstSubItemHref) {
+            router.push(firstSubItemHref);
+          }
+        }}
         className={cn(
           "flex min-h-11 w-full items-center gap-3 rounded-2xl px-3 text-left text-sm font-semibold text-[#5B6770] transition-colors hover:bg-[#F1F5F6] hover:text-[var(--text-primary)]",
           active && "bg-[#E8F5F1] text-[var(--brand-green)]",
@@ -485,8 +506,8 @@ function buildDesktopSubItems(label: string, section: "public" | "portal" | "tea
     if (section === "portal") {
       return [
         { label: "My Classes", href: `${base}/portal/classes?tab=classes` },
-        { label: "My Applications", href: `${base}/portal/classes?tab=applications` },
         { label: "Browse", href: `${base}/portal/classes?tab=browse` },
+        { label: "Applications", href: `${base}/portal/classes?tab=applications` },
       ];
     }
     if (section === "admin") {
@@ -499,8 +520,7 @@ function buildDesktopSubItems(label: string, section: "public" | "portal" | "tea
     if (section === "teacher") {
       return [
         { label: "Applications", href: `${base}/teacher/inbox?tab=requests` },
-        { label: "Withdrawals", href: `${base}/teacher/inbox?tab=withdrawals` },
-        { label: "Instructors", href: `${base}/teacher/inbox?tab=instructors` },
+        { label: "Other", href: `${base}/teacher/inbox?tab=other` },
       ];
     }
     return [
