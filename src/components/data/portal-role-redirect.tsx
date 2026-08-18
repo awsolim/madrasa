@@ -24,9 +24,7 @@ export function PortalRoleRedirect({
     async function resolveRoute() {
       const session = await loadCachedSession();
       if (!session?.user.id) {
-        if (!cancelled) {
-          setShouldRender(true);
-        }
+        router.replace(`/m/${slug}/login`);
         return;
       }
 

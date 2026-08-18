@@ -1,3 +1,4 @@
+import { PortalRouteGuard } from "@/components/auth/portal-route-guard";
 import { AppChrome } from "@/components/layout/page-shell";
 
 export default async function Layout({
@@ -9,8 +10,10 @@ export default async function Layout({
 }) {
   const { slug } = await params;
   return (
-    <AppChrome section="portal" slug={slug}>
-      {children}
-    </AppChrome>
+    <PortalRouteGuard slug={slug}>
+      <AppChrome section="portal" slug={slug}>
+        {children}
+      </AppChrome>
+    </PortalRouteGuard>
   );
 }
