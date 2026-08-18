@@ -18,10 +18,11 @@ import { FlatLink } from "@/components/ui/flat-button";
 import { useHideMobileChromeWhileMounted, useModalFocusTrap } from "@/hooks/use-modal-behavior";
 import { useStudentNotificationCounts, useTeacherNotificationCounts } from "@/hooks/use-notification-counts";
 import { getAccountLabel, getDefaultLandingHref, loadUserAccessByMosqueSlug } from "@/lib/authz";
-import { getCachedProfileSummary, getCachedSessionSnapshot, getCachedUserAccess, loadCachedSession, loadCachedUserAccess, performClientLogout, setCachedProfileName, setCachedProfileSummary, subscribeCachedSession } from "@/lib/client-cache";
+import { getCachedMosqueChrome, getCachedProfileSummary, getCachedSessionSnapshot, getCachedUserAccess, loadCachedSession, loadCachedUserAccess, loadMosqueChrome, performClientLogout, setCachedProfileName, setCachedProfileSummary, subscribeCachedSession } from "@/lib/client-cache";
 import { friendlyErrorMessage } from "@/lib/errors";
 import { attachmentDisplayName, attachmentMetaLabel, formatAttachmentSize, normalizeMessageAttachments, type MessageAttachment } from "@/lib/messages/attachments";
 import { buildAnnouncementThreads, buildNoteThreads } from "@/lib/messages/threads";
+import { detectMobilePlatform, isStandalone, useDeferredInstallPrompt } from "@/lib/pwa/install";
 import { invalidateQuery, invalidateQueryPrefix, prefetchQuery, useCachedQuery } from "@/lib/query-cache";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { Database, Json } from "@/lib/supabase/types";
@@ -804,7 +805,7 @@ export function StudentHomeData({ slug }: { slug: string }) {
 
   return (
     <section className="space-y-5 bg-[var(--workspace)] p-4">
-      <PushNotificationNudge />
+      <AddToHomeScreenNudge slug={slug} settingsHref={`/m/${slug}/portal/account`} />
       {hasActionRequired ? (
         <HomeNotification
           tone="active"
@@ -4439,7 +4440,7 @@ export function TeacherHomeData({ slug }: { slug: string }) {
 
   return (
     <div className="space-y-4 bg-[var(--workspace)] p-4">
-      <PushNotificationNudge />
+      <AddToHomeScreenNudge slug={slug} settingsHref={`/m/${slug}/teacher/account`} />
       {inboxItemCount > 0 ? (
         <HomeNotification
           tone="active"
@@ -4467,7 +4468,7 @@ export function AdminHomeData({ slug }: { slug: string }) {
 
   return (
     <div className="space-y-4 bg-[var(--workspace)] p-4">
-      <PushNotificationNudge />
+      <AddToHomeScreenNudge slug={slug} settingsHref={`/m/${slug}/admin/settings`} />
       <HomeSectionTitle title="Upcoming" />
       {programs.length ? <HomeUpcomingRows programs={programs} /> : <EmptyState title="No classes yet" text="All masjid class sessions will appear here after classes are created." />}
     </div>
@@ -18974,80 +18975,119 @@ function PushNotificationToggle() {
   );
 }
 
-const pushNudgeDismissedStorageKey = "tareeqah:push-nudge-dismissed-until";
-const pushNudgeSnoozeDurationMs = 7 * 24 * 60 * 60 * 1000;
+const a2hsNudgeShownStorageKey = "madrasa:a2hs-nudge-shown";
 
-function isPushNudgeDismissed() {
+function wasA2hsNudgeShownThisSession() {
   if (typeof window === "undefined") {
     return true;
   }
   try {
-    const dismissedUntil = Number(window.localStorage.getItem(pushNudgeDismissedStorageKey));
-    return Number.isFinite(dismissedUntil) && Date.now() < dismissedUntil;
+    return window.sessionStorage.getItem(a2hsNudgeShownStorageKey) === "1";
   } catch {
     return true;
   }
 }
 
-function dismissPushNudge() {
+function markA2hsNudgeShown() {
   try {
-    window.localStorage.setItem(pushNudgeDismissedStorageKey, String(Date.now() + pushNudgeSnoozeDurationMs));
+    window.sessionStorage.setItem(a2hsNudgeShownStorageKey, "1");
   } catch {
-    // Best-effort only; worst case the nudge just reappears next visit.
+    // Best-effort only; worst case the nudge just reappears next navigation.
   }
 }
 
 /**
- * A one-time, dismissible nudge shown at the top of the home page encouraging a user to
- * enable push notifications — unlike PushNotificationToggle (buried in Account Settings),
- * this is meant to actually get seen. Hides itself permanently on this device once the user
- * enables notifications, is asked and answers (granted or denied), or dismisses it.
+ * A once-per-session nudge shown on the home dashboard encouraging browser users to add the
+ * app to their home screen. Hidden entirely once the app is already running standalone
+ * (installed), or on desktop browsers. Android gets a direct "Install App" button when the
+ * browser has fired beforeinstallprompt; both platforms always get "See How", which deep-links
+ * into the existing homescreen-instructions panel in Account Settings.
  */
-function PushNotificationNudge() {
-  const { supported, permission, subscribed, busy, enable } = usePushSubscription();
-  const [dismissed, setDismissed] = useState(true);
-  const [signedIn, setSignedIn] = useState(false);
+function AddToHomeScreenNudge({ slug, settingsHref }: { slug: string; settingsHref: string }) {
+  const { available: installAvailable, promptInstall } = useDeferredInstallPrompt();
+  const [visible, setVisible] = useState(false);
+  const [mosqueName, setMosqueName] = useState(() => getCachedMosqueChrome(slug)?.name ?? "");
+  const [installing, setInstalling] = useState(false);
+  const platform = useMemo(() => detectMobilePlatform(), []);
 
   useEffect(() => {
-    setDismissed(isPushNudgeDismissed());
-    void loadCachedSession().then((session) => setSignedIn(Boolean(session)));
-  }, []);
+    if (platform === "other" || isStandalone() || wasA2hsNudgeShownThisSession()) {
+      return;
+    }
 
-  if (!signedIn || !supported || dismissed || subscribed || permission !== "default") {
+    let cancelled = false;
+    void loadCachedSession().then((session) => {
+      if (cancelled || !session) {
+        return;
+      }
+      markA2hsNudgeShown();
+      setVisible(true);
+    });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [platform]);
+
+  useEffect(() => {
+    if (!visible || mosqueName) {
+      return;
+    }
+    void loadMosqueChrome(slug).then((chrome) => {
+      if (chrome?.name) {
+        setMosqueName(chrome.name);
+      }
+    });
+  }, [visible, mosqueName, slug]);
+
+  if (!visible) {
     return null;
   }
 
-  function handleDismiss() {
-    dismissPushNudge();
-    setDismissed(true);
+  async function handleInstall() {
+    setInstalling(true);
+    await promptInstall();
+    setInstalling(false);
+    setVisible(false);
   }
 
   return createPortal(
     <div className="fixed inset-0 z-[2147483647] flex items-center justify-center bg-[#26323A]/45 px-5 backdrop-blur-sm">
-      <div role="dialog" aria-modal="true" aria-labelledby="push-notification-title" className="w-full max-w-sm rounded-[28px] bg-[#E7F7F1] px-5 py-5 shadow-[0_24px_70px_rgba(38,50,58,0.24)]">
-        <div className="flex items-center gap-3">
-        <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/80 text-xl font-medium text-[#17624F]" aria-hidden>
-          🔔
-        </div>
-        <div className="min-w-0 flex-1">
-          <h2 id="push-notification-title" className="text-base font-semibold text-[#26323A]">Stay in the loop</h2>
-          <p className="mt-0.5 text-sm leading-5 text-[#52616A]">Turn on notifications so you never miss an update from your inbox.</p>
-        </div>
-        <div className="flex shrink-0 flex-col items-end gap-1.5">
-          <button
-            type="button"
-            onClick={() => void enable().then(() => setDismissed(true))}
-            disabled={busy}
-            className="inline-flex min-h-10 items-center rounded-full bg-white px-4 text-sm font-semibold text-[#26323A] shadow-[0_10px_22px_rgba(38,50,58,0.12)] ring-1 ring-white/70 disabled:opacity-60"
-          >
-            {busy ? "Enabling..." : "Enable"}
-          </button>
-          <button type="button" onClick={handleDismiss} className="text-xs font-semibold text-[#26323A]/60 hover:text-[#26323A]">
-            Not now
-          </button>
+      <div role="dialog" aria-modal="true" aria-labelledby="a2hs-nudge-title" className="w-full max-w-sm rounded-[28px] bg-[#E7F7F1] px-5 py-5 shadow-[0_24px_70px_rgba(38,50,58,0.24)]">
+        <div className="flex items-start gap-3">
+          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/80 text-xl font-medium text-[#17624F]" aria-hidden>
+            📲
+          </div>
+          <div className="min-w-0 flex-1">
+            <h2 id="a2hs-nudge-title" className="text-base font-semibold text-[#26323A]">
+              Add {mosqueName || "this app"} to your Home Screen
+            </h2>
+            <p className="mt-0.5 text-sm leading-5 text-[#52616A]">Get quick access and a full-screen experience, right from your home screen.</p>
+            <div className="mt-3 flex flex-wrap items-center gap-2">
+              {platform === "android" && installAvailable ? (
+                <button
+                  type="button"
+                  onClick={() => void handleInstall()}
+                  disabled={installing}
+                  className="inline-flex min-h-10 items-center rounded-full bg-[#17624F] px-4 text-sm font-semibold text-white shadow-[0_10px_22px_rgba(23,98,79,0.18)] disabled:opacity-60"
+                >
+                  {installing ? "Installing..." : "Install App"}
+                </button>
+              ) : null}
+              <Link
+                href={`${settingsHref}?panel=homescreen`}
+                onClick={() => setVisible(false)}
+                className="inline-flex min-h-10 items-center rounded-full bg-white px-4 text-sm font-semibold text-[#26323A] shadow-[0_10px_22px_rgba(38,50,58,0.12)] ring-1 ring-white/70"
+              >
+                See How
+              </Link>
+              <button type="button" onClick={() => setVisible(false)} className="text-xs font-semibold text-[#26323A]/60 hover:text-[#26323A]">
+                Not now
+              </button>
+            </div>
+          </div>
         </div>
       </div>
-    </div>
     </div>,
     document.body,
   );

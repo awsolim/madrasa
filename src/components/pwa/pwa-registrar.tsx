@@ -1,8 +1,13 @@
 "use client";
 
 import { useEffect } from "react";
+import { initInstallPromptCapture } from "@/lib/pwa/install";
 
 export function PwaRegistrar() {
+  useEffect(() => {
+    initInstallPromptCapture();
+  }, []);
+
   useEffect(() => {
     if (process.env.NODE_ENV !== "production") {
       if ("serviceWorker" in navigator) {
