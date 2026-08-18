@@ -7,20 +7,25 @@ type StepKey = "browse" | "tap-share" | "sheet" | "confirm" | "done";
 const STEPS: Array<{ key: StepKey; caption: string; durationMs: number }> = [
   { key: "browse", caption: "Open your masjid's site in Safari", durationMs: 1800 },
   { key: "tap-share", caption: "Tap the Share icon", durationMs: 700 },
-  { key: "sheet", caption: 'Scroll down and tap "Add to Home Screen"', durationMs: 2400 },
-  { key: "confirm", caption: 'Tap "Add" to confirm', durationMs: 1800 },
+  { key: "sheet", caption: 'Scroll down and tap "Add to Home Screen"', durationMs: 2800 },
+  { key: "confirm", caption: 'Tap "Add" in the top right', durationMs: 2600 },
   { key: "done", caption: "It's on your Home Screen", durationMs: 1800 },
 ];
 
-const iosBlue = "#007AFF";
+const iosBlue = "#0B84FF";
+const rowHeight = 36;
+const listScrollOffset = rowHeight * 6 - 132;
 
 /**
  * A fully synthetic, looping mockup of the iOS Safari "Add to Home Screen" flow --
  * deliberately not a real screen recording, so there's no risk of leaking a real
  * share-sheet contact list, and every tap target can carry an explicit indicator.
+ * Modeled on modern iOS Safari's bottom-anchored chrome: the address bar sits directly
+ * above the icon toolbar (both pinned to the bottom), not at the top of the screen.
  */
 export function IosInstallDemo({ siteLabel = "assiddiq.madrasa.ca", appName = "Assiddiq" }: { siteLabel?: string; appName?: string }) {
   const [stepIndex, setStepIndex] = useState(0);
+  const [listScrolled, setListScrolled] = useState(false);
   const step = STEPS[stepIndex].key;
 
   useEffect(() => {
@@ -30,41 +35,73 @@ export function IosInstallDemo({ siteLabel = "assiddiq.madrasa.ca", appName = "A
     return () => window.clearTimeout(timer);
   }, [stepIndex]);
 
-  const sheetUp = step === "tap-share" || step === "sheet" || step === "confirm";
-  const highlightAddRow = step === "sheet";
+  useEffect(() => {
+    if (step !== "sheet") {
+      return;
+    }
+    const resetTimer = window.setTimeout(() => setListScrolled(false), 0);
+    const scrollTimer = window.setTimeout(() => setListScrolled(true), 1000);
+    return () => {
+      window.clearTimeout(resetTimer);
+      window.clearTimeout(scrollTimer);
+    };
+  }, [step]);
+
+  const sheetUp = step === "tap-share" || step === "sheet";
+  const highlightAddRow = step === "sheet" && listScrolled;
   const confirmVisible = step === "confirm";
   const homeLanding = step === "done";
   const shareIconActive = step === "tap-share" || step === "sheet";
+  const chromeVisible = step !== "confirm" && step !== "done";
 
   return (
     <div className="flex flex-col items-center">
       <div className="relative h-[500px] w-[248px] shrink-0 rounded-[40px] bg-[#111214] p-[9px] shadow-[0_20px_50px_rgba(17,18,20,0.35)]">
         <div className="pointer-events-none absolute left-1/2 top-[9px] z-30 h-[20px] w-[86px] -translate-x-1/2 rounded-full bg-[#111214]" aria-hidden />
-        <div className="relative h-full w-full overflow-hidden rounded-[32px] bg-white">
+        <div className="relative flex h-full w-full flex-col overflow-hidden rounded-[32px] bg-white">
           {/* Status bar */}
           <div className="flex items-center justify-between px-5 pb-1 pt-2.5 text-[11px] font-semibold text-[#0B0B0C]">
             <span>9:41</span>
             <StatusGlyphs />
           </div>
 
-          {/* Safari compact URL bar */}
-          <div className="px-4 pt-1">
-            <div className="flex h-8 items-center justify-center gap-1.5 rounded-[10px] bg-[#EFEFF1] px-3">
-              <LockIcon className="h-3 w-3 text-[#6B6B70]" />
-              <span className="truncate text-[12px] font-medium text-[#3C3C43]">{siteLabel}</span>
+          {/* Page content -- styled like a real class card (image, title, status pill), not
+              abstract gradient blocks, so this reads as "our app" rather than a generic mockup. */}
+          <div className="flex-1 overflow-hidden px-4 py-3">
+            <div className="overflow-hidden rounded-[14px] border border-[#E3E3E6]">
+              <div className="aspect-[4/3] w-full bg-gradient-to-br from-[#CFE9DE] to-[#7FBBA6]" />
+              <div className="space-y-1.5 p-2.5">
+                <div className="h-2.5 w-3/4 rounded-full bg-[#DADBDD]" />
+                <div className="h-2 w-1/2 rounded-full bg-[#E7E8EA]" />
+                <span className="mt-1 inline-flex h-4 w-20 rounded-full bg-[#DCEFE7]" />
+              </div>
             </div>
           </div>
 
-          {/* Page content placeholder */}
-          <div className="space-y-3 px-4 py-4">
-            <div className="h-16 rounded-[14px] bg-gradient-to-br from-[#EAF6F1] to-[#CFE9DE]" />
-            <div className="h-3 w-2/3 rounded-full bg-[#E4E5E7]" />
-            <div className="h-3 w-1/2 rounded-full bg-[#EDEDEF]" />
-            <div className="mt-4 grid grid-cols-2 gap-2.5">
-              <div className="h-20 rounded-[12px] bg-[#F2F3F4]" />
-              <div className="h-20 rounded-[12px] bg-[#F2F3F4]" />
+          {/* Address bar + icon toolbar -- both anchored to the bottom together, matching
+              modern iOS Safari (not a top address bar with a separate bottom toolbar). */}
+          {chromeVisible ? (
+            <div className="shrink-0 border-t border-[#E3E3E6] bg-[#F8F8F9]/95 pb-1 pt-1.5 backdrop-blur">
+              <div className="flex items-center gap-2 px-3 pb-1.5">
+                <span className="shrink-0 text-[11px] font-semibold text-[#8A8A8E]">AA</span>
+                <div className="flex h-8 flex-1 items-center justify-center gap-1.5 rounded-[10px] bg-[#EFEFF1] px-3">
+                  <LockIcon className="h-3 w-3 text-[#6B6B70]" />
+                  <span className="truncate text-[12px] font-medium text-[#3C3C43]">{siteLabel}</span>
+                  <RefreshIcon className="h-3 w-3 shrink-0 text-[#6B6B70]" />
+                </div>
+              </div>
+              <div className="flex items-center justify-between px-5 pt-1">
+                <ChevronIcon direction="back" className="h-4 w-4" style={{ color: iosBlue }} />
+                <ChevronIcon direction="forward" className="h-4 w-4" style={{ color: `${iosBlue}55` }} />
+                <span className="relative flex h-9 w-9 items-center justify-center">
+                  {shareIconActive ? <span className="absolute inset-0 animate-ping rounded-full" style={{ backgroundColor: `${iosBlue}30` }} aria-hidden /> : null}
+                  <ShareIcon className="relative h-5 w-5" style={{ color: iosBlue }} />
+                </span>
+                <BookIcon className="h-[18px] w-[18px]" style={{ color: iosBlue }} />
+                <TabsIcon className="h-[18px] w-[18px]" style={{ color: iosBlue }} />
+              </div>
             </div>
-          </div>
+          ) : null}
 
           {/* Home-screen landing state, replaces the browser once "added" */}
           <div
@@ -93,22 +130,10 @@ export function IosInstallDemo({ siteLabel = "assiddiq.madrasa.ca", appName = "A
             </div>
           </div>
 
-          {/* Bottom Safari toolbar */}
-          <div className="absolute inset-x-0 bottom-0 z-20 flex items-center justify-between border-t border-[#E3E3E6] bg-[#F8F8F9]/95 px-5 py-3 backdrop-blur">
-            <ChevronIcon direction="back" className="h-4 w-4 text-[#0B0B0C]" />
-            <ChevronIcon direction="forward" className="h-4 w-4 text-[#C6C6C9]" />
-            <span className="relative flex h-9 w-9 items-center justify-center">
-              {shareIconActive ? <span className="absolute inset-0 animate-ping rounded-full bg-[#007AFF]/25" aria-hidden /> : null}
-              <ShareIcon className="relative h-5 w-5" style={{ color: iosBlue }} />
-            </span>
-            <BookIcon className="h-[18px] w-[18px] text-[#0B0B0C]" />
-            <TabsIcon className="h-[18px] w-[18px] text-[#0B0B0C]" />
-          </div>
-
-          {/* Dimmed backdrop while the share sheet or confirm dialog is up */}
+          {/* Dimmed backdrop while the share sheet or confirm sheet is up */}
           <div
             className="absolute inset-0 z-10 bg-black/25 transition-opacity duration-300"
-            style={{ opacity: sheetUp ? 1 : 0, pointerEvents: "none" }}
+            style={{ opacity: sheetUp || confirmVisible ? 1 : 0, pointerEvents: "none" }}
             aria-hidden
           />
 
@@ -118,48 +143,80 @@ export function IosInstallDemo({ siteLabel = "assiddiq.madrasa.ca", appName = "A
             style={{ transform: sheetUp ? "translateY(0%)" : "translateY(105%)" }}
           >
             <div className="mx-auto mt-2 h-1 w-9 rounded-full bg-[#D8D8DC]" aria-hidden />
-            <div className="flex items-center justify-around px-3 pb-3 pt-3">
+            <div className="flex items-center gap-2 border-b border-[#E3E3E6] px-4 py-2.5">
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-[6px] bg-[#17624F] text-[9px] font-bold text-white">{initialsFromName(appName)}</span>
+              <div className="min-w-0 flex-1">
+                <p className="truncate text-[12px] font-semibold text-[#0B0B0C]">{appName}</p>
+                <p className="truncate text-[10px] text-[#8A8A8E]">{siteLabel}</p>
+              </div>
+            </div>
+            <div className="flex items-center justify-around px-3 pb-2 pt-3">
+              <ShareTarget label="Contact" color="#E3E3E6" icon={null} />
+              <ShareTarget label="Contact" color="#E3E3E6" icon={null} />
+              <ShareTarget label="Contact" color="#E3E3E6" icon={null} />
+              <ShareTarget label="Contact" color="#E3E3E6" icon={null} />
+            </div>
+            <div className="flex items-center justify-around px-3 pb-3">
               <ShareTarget label="AirDrop" color="#1E90FF" icon={<AirDropIcon className="h-5 w-5 text-white" />} />
               <ShareTarget label="Messages" color="#3DD65A" icon={<MessageIcon className="h-5 w-5 text-white" />} />
               <ShareTarget label="Mail" color="#2E8FF2" icon={<MailIcon className="h-5 w-5 text-white" />} />
               <ShareTarget label="More" color="#C6C6C9" icon={<MoreIcon className="h-5 w-5 text-white" />} />
             </div>
             <div className="h-px bg-[#E3E3E6]" />
-            <div className="px-2 pb-3 pt-1">
-              <ActionRow icon={<CopyIcon className="h-[18px] w-[18px]" />} label="Copy" />
-              <ActionRow icon={<ReadingListIcon className="h-[18px] w-[18px]" />} label="Add to Reading List" />
-              <ActionRow icon={<BookmarkIcon className="h-[18px] w-[18px]" />} label="Add Bookmark" />
-              <ActionRow icon={<AddToHomeIcon className="h-[18px] w-[18px]" />} label="Add to Home Screen" highlighted={highlightAddRow} />
-              <ActionRow icon={<SearchIcon className="h-[18px] w-[18px]" />} label="Find on Page" />
+            {/* Fixed-height viewport onto a taller list -- "Add to Home Screen" starts below
+                the fold and the list scrolls up to reveal it, matching the real interaction
+                instead of just sitting statically visible. */}
+            <div className="relative h-[132px] overflow-hidden px-2 pb-1 pt-1">
+              <div className="transition-transform duration-500 ease-out" style={{ transform: `translateY(-${listScrolled ? listScrollOffset : 0}px)` }}>
+                <ActionRow icon={<CopyIcon className="h-[17px] w-[17px]" />} label="Copy" />
+                <ActionRow icon={<ReadingListIcon className="h-[17px] w-[17px]" />} label="Add to Reading List" />
+                <ActionRow icon={<BookmarkIcon className="h-[17px] w-[17px]" />} label="Add Bookmark" />
+                <ActionRow icon={<StarIcon className="h-[17px] w-[17px]" />} label="Add to Favorites" />
+                <ActionRow icon={<SearchIcon className="h-[17px] w-[17px]" />} label="Find on Page" />
+                <ActionRow icon={<AddToHomeIcon className="h-[17px] w-[17px]" />} label="Add to Home Screen" highlighted={highlightAddRow} />
+              </div>
+              {!listScrolled ? (
+                <div className="pointer-events-none absolute inset-x-0 bottom-0 flex h-7 items-end justify-center bg-gradient-to-t from-white to-transparent pb-0.5">
+                  <ChevronIcon direction="forward" className="h-3.5 w-3.5 -rotate-90 animate-bounce" style={{ color: "#B8B8BC" }} />
+                </div>
+              ) : null}
             </div>
           </div>
 
-          {/* Confirm dialog */}
+          {/* Confirm step -- a compact sheet (icon, editable name, url, helper text) with the
+              system keyboard docked below it, since the name field is focused -- not a
+              full-screen page and not a small centered alert. */}
           <div
-            className="absolute inset-0 z-30 flex items-center justify-center px-6 transition-opacity duration-300"
-            style={{ opacity: confirmVisible ? 1 : 0, pointerEvents: "none" }}
+            className="absolute inset-x-0 bottom-0 z-30 flex flex-col transition-transform duration-400 ease-out"
+            style={{ transform: confirmVisible ? "translateY(0%)" : "translateY(100%)" }}
           >
-            <div
-              className="w-full max-w-[220px] overflow-hidden rounded-[14px] bg-[#F2F2F2]/95 shadow-[0_20px_40px_rgba(0,0,0,0.3)] backdrop-blur transition-transform duration-300"
-              style={{ transform: confirmVisible ? "scale(1)" : "scale(0.9)" }}
-            >
-              <div className="flex flex-col items-center gap-2 px-4 pb-3 pt-4">
-                <div className="flex h-11 w-11 items-center justify-center rounded-[11px] bg-[#17624F] text-xs font-bold text-white">{initialsFromName(appName)}</div>
-                <p className="text-[13px] font-semibold text-[#0B0B0C]">Add to Home Screen</p>
-                <div className="mt-1 w-full rounded-[8px] bg-white px-2.5 py-1.5 text-center text-[12px] font-medium text-[#0B0B0C]">{appName}</div>
-              </div>
-              <div className="h-px bg-[#D2D2D4]" />
-              <div className="flex">
-                <button type="button" className="flex-1 py-2.5 text-center text-[13px] font-medium" style={{ color: iosBlue }}>
+            <div className="rounded-t-[14px] bg-[#F2F2F7]">
+              <div className="flex items-center justify-between border-b border-[#D1D1D6] px-4 py-3">
+                <span className="text-[13px] font-medium" style={{ color: iosBlue }}>
                   Cancel
-                </button>
-                <div className="w-px bg-[#D2D2D4]" />
-                <button type="button" className="relative flex-1 py-2.5 text-center text-[13px] font-bold" style={{ color: iosBlue }}>
-                  {confirmVisible ? <span className="absolute inset-1 animate-pulse rounded-[8px] bg-[#007AFF]/10" aria-hidden /> : null}
+                </span>
+                <span className="text-[13px] font-semibold text-[#0B0B0C]">Add to Home Screen</span>
+                <span className="relative text-[13px] font-bold" style={{ color: iosBlue }}>
+                  {confirmVisible ? <span className="absolute -inset-2 animate-pulse rounded-full" style={{ backgroundColor: `${iosBlue}1A` }} aria-hidden /> : null}
                   <span className="relative">Add</span>
-                </button>
+                </span>
               </div>
+              <div className="flex items-center gap-3 px-4 py-3">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[11px] bg-[#17624F] text-sm font-bold text-white">{initialsFromName(appName)}</div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-1 border-b border-[#8E8E93] pb-1">
+                    <span className="truncate text-[14px] font-medium text-[#0B0B0C]">{appName}</span>
+                    <span className="h-3.5 w-px shrink-0 animate-pulse" style={{ backgroundColor: iosBlue }} aria-hidden />
+                  </div>
+                  <p className="mt-1 truncate text-[11px] text-[#8A8A8E]">{siteLabel}</p>
+                </div>
+              </div>
+              <p className="px-4 pb-3 text-[10.5px] leading-[1.4] text-[#6B6B70]">
+                An icon will be added to your Home Screen so you can quickly access this website.
+              </p>
             </div>
+            <AutocompleteBar appName={appName} />
+            <MiniKeyboard />
           </div>
         </div>
       </div>
@@ -174,27 +231,68 @@ export function IosInstallDemo({ siteLabel = "assiddiq.madrasa.ca", appName = "A
   );
 }
 
-function initialsFromName(name: string) {
+export function initialsFromName(name: string) {
   return name.trim().slice(0, 1).toUpperCase() || "A";
 }
 
 function ShareTarget({ label, color, icon }: { label: string; color: string; icon: React.ReactNode }) {
   return (
-    <div className="flex w-14 flex-col items-center gap-1">
-      <div className="flex h-11 w-11 items-center justify-center rounded-full" style={{ backgroundColor: color }}>
+    <div className="flex w-11 shrink-0 flex-col items-center gap-1" role="img" aria-label={label}>
+      <div className="flex h-10 w-10 items-center justify-center rounded-full" style={{ backgroundColor: color }}>
         {icon}
       </div>
-      <span className="truncate text-[10px] font-medium text-[#3C3C43]">{label}</span>
     </div>
   );
 }
 
 function ActionRow({ icon, label, highlighted = false }: { icon: React.ReactNode; label: string; highlighted?: boolean }) {
   return (
-    <div className={`relative flex items-center gap-3 rounded-[10px] px-2.5 py-2.5 transition-colors ${highlighted ? "bg-[#007AFF]/10" : ""}`}>
-      {highlighted ? <span className="absolute -inset-0.5 animate-pulse rounded-[12px] ring-2 ring-[#007AFF]/50" aria-hidden /> : null}
-      <span style={{ color: iosBlue }}>{icon}</span>
+    <div className={`relative flex items-center gap-3 rounded-[10px] px-2.5 transition-colors ${highlighted ? "bg-[#0B84FF]/10" : ""}`} style={{ height: rowHeight }}>
+      {highlighted ? <span className="absolute -inset-0.5 animate-pulse rounded-[12px] ring-2 ring-[#0B84FF]/50" aria-hidden /> : null}
+      <span className="text-[#1C1C1E]">{icon}</span>
       <span className="text-[13px] font-medium text-[#0B0B0C]">{label}</span>
+    </div>
+  );
+}
+
+function AutocompleteBar({ appName }: { appName: string }) {
+  const words = [appName, "Nowhere", "Nowadays"];
+  return (
+    <div className="flex items-center justify-around border-t border-[#B7BAC2] bg-[#D2D5DB] py-1.5 text-[11px] text-[#1C1C1E]">
+      {words.map((word, index) => (
+        <span key={word} className="flex items-center gap-3">
+          {index === 0 ? <span className="font-semibold">&ldquo;{word}&rdquo;</span> : <span>{word}</span>}
+          {index < words.length - 1 ? <span className="h-3 w-px bg-[#B7BAC2]" aria-hidden /> : null}
+        </span>
+      ))}
+    </div>
+  );
+}
+
+function MiniKeyboard() {
+  const rows = [
+    ["Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P"],
+    ["A", "S", "D", "F", "G", "H", "J", "K", "L"],
+    ["Z", "X", "C", "V", "B", "N", "M"],
+  ];
+  return (
+    <div className="bg-[#D2D5DB] px-1 pb-2 pt-1.5">
+      {rows.map((row, index) => (
+        <div key={index} className="mb-[6px] flex justify-center gap-[3px]">
+          {row.map((key) => (
+            <span key={key} className="flex h-7 flex-1 max-w-[22px] items-center justify-center rounded-[4px] bg-white text-[10px] font-medium text-[#1C1C1E] shadow-[0_1px_0_rgba(0,0,0,0.25)]">
+              {key}
+            </span>
+          ))}
+        </div>
+      ))}
+      <div className="flex items-center gap-[4px]">
+        <span className="flex h-7 w-7 shrink-0 items-center justify-center rounded-[4px] bg-[#A9ADB6] text-[10px] text-white">⇧</span>
+        <span className="flex h-7 flex-1 items-center justify-center rounded-[4px] bg-white text-[9px] font-medium text-[#3C3C43]">space</span>
+        <span className="flex h-7 w-11 shrink-0 items-center justify-center rounded-[4px] text-[9px] font-semibold text-white" style={{ backgroundColor: iosBlue }}>
+          done
+        </span>
+      </div>
     </div>
   );
 }
@@ -217,7 +315,7 @@ function StatusGlyphs() {
   );
 }
 
-function LockIcon({ className }: { className?: string }) {
+export function LockIcon({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
       <rect x="5" y="11" width="14" height="9" rx="2" />
@@ -226,9 +324,18 @@ function LockIcon({ className }: { className?: string }) {
   );
 }
 
-function ChevronIcon({ direction, className }: { direction: "back" | "forward"; className?: string }) {
+function RefreshIcon({ className }: { className?: string }) {
   return (
-    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M20 11a8 8 0 1 0-2.3 5.7" />
+      <path d="M20 6v5h-5" />
+    </svg>
+  );
+}
+
+function ChevronIcon({ direction, className, style }: { direction: "back" | "forward"; className?: string; style?: React.CSSProperties }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} style={style} fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
       <path d={direction === "back" ? "M15 5 8 12l7 7" : "M9 5l7 7-7 7"} />
     </svg>
   );
@@ -244,22 +351,20 @@ function ShareIcon({ className, style }: { className?: string; style?: React.CSS
   );
 }
 
-function BookIcon({ className }: { className?: string }) {
+function BookIcon({ className, style }: { className?: string; style?: React.CSSProperties }) {
   return (
-    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+    <svg viewBox="0 0 24 24" className={className} style={style} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
       <path d="M4 5.5A2.5 2.5 0 0 1 6.5 3H12v18H6.5A2.5 2.5 0 0 1 4 18.5Z" />
       <path d="M20 5.5A2.5 2.5 0 0 0 17.5 3H12v18h5.5a2.5 2.5 0 0 0 2.5-2.5Z" />
     </svg>
   );
 }
 
-function TabsIcon({ className }: { className?: string }) {
+function TabsIcon({ className, style }: { className?: string; style?: React.CSSProperties }) {
   return (
-    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
-      <rect x="4" y="4" width="16" height="16" rx="4" />
-      <text x="12" y="16" textAnchor="middle" fontSize="9" fontWeight="700" fill="currentColor" stroke="none">
-        1
-      </text>
+    <svg viewBox="0 0 24 24" className={className} style={style} fill="none" stroke="currentColor" strokeWidth="2" aria-hidden>
+      <rect x="3" y="3" width="14" height="14" rx="4" />
+      <path d="M7 21h11a3 3 0 0 0 3-3V7" />
     </svg>
   );
 }
@@ -328,12 +433,20 @@ function BookmarkIcon({ className }: { className?: string }) {
   );
 }
 
-function AddToHomeIcon({ className }: { className?: string }) {
+export function AddToHomeIcon({ className }: { className?: string }) {
   return (
     <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
       <rect x="3" y="3" width="18" height="18" rx="5" />
       <path d="M12 8v8" />
       <path d="M8 12h8" />
+    </svg>
+  );
+}
+
+function StarIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="m12 3 2.6 5.9 6.4.6-4.8 4.3 1.4 6.2L12 16.9l-5.6 3.1 1.4-6.2-4.8-4.3 6.4-.6Z" />
     </svg>
   );
 }

@@ -13,7 +13,7 @@ import { EmptyState } from "@/components/data/empty-state";
 import { DirectorySkeleton, GenericLoadingState } from "@/components/data/data-loading";
 import { EditorToast, queueEditorToast, readQueuedEditorToast, type EditorToastState } from "@/components/data/editor-toast";
 import { FloatingInboxTabs, InboxLoadingPanel, InboxSection, MiniEmpty, NotificationBadge } from "@/components/data/inbox-shared";
-import { IosInstallDemo } from "@/components/pwa/ios-install-demo";
+import { InstallDemoTabs } from "@/components/pwa/install-demo-tabs";
 import { ConfirmModal } from "@/components/ui/confirm-modal";
 import { FlatLink } from "@/components/ui/flat-button";
 import { useHideMobileChromeWhileMounted, useModalFocusTrap } from "@/hooks/use-modal-behavior";
@@ -23,7 +23,7 @@ import { getCachedMosqueChrome, getCachedProfileSummary, getCachedSessionSnapsho
 import { friendlyErrorMessage } from "@/lib/errors";
 import { attachmentDisplayName, attachmentMetaLabel, formatAttachmentSize, normalizeMessageAttachments, type MessageAttachment } from "@/lib/messages/attachments";
 import { buildAnnouncementThreads, buildNoteThreads } from "@/lib/messages/threads";
-import { detectMobilePlatform, isStandalone, useDeferredInstallPrompt } from "@/lib/pwa/install";
+import { detectMobilePlatform, isStandalone } from "@/lib/pwa/install";
 import { invalidateQuery, invalidateQueryPrefix, prefetchQuery, useCachedQuery } from "@/lib/query-cache";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { Database, Json } from "@/lib/supabase/types";
@@ -1074,6 +1074,29 @@ async function fetchProgramDetailSnapshot(
   return snapshot;
 }
 
+// Prefers the OS share sheet (same one used for "Add to Home Screen") so a teacher on
+// their phone can send the link straight into WhatsApp/Messages/etc.; falls back to a
+// clipboard copy anywhere the Web Share API isn't available (most desktop browsers).
+async function shareProgramLink(slug: string, programId: string, title: string, setToast: Dispatch<SetStateAction<EditorToastState | null>>) {
+  const url = `${window.location.origin}/m/${slug}/programs/${programId}`;
+
+  if (navigator.share) {
+    try {
+      await navigator.share({ title, url });
+    } catch {
+      // User cancelled the share sheet or it failed silently -- no toast needed either way.
+    }
+    return;
+  }
+
+  try {
+    await navigator.clipboard.writeText(url);
+    setToast({ tone: "success", message: "Link copied to clipboard." });
+  } catch {
+    setToast({ tone: "error", message: "Could not copy the link." });
+  }
+}
+
 export function ProgramDetailData({ slug, programId, section = "public" }: { slug: string; programId: string; section?: "public" | "portal" | "teacher" }) {
   const [mosque, setMosque] = useState<Mosque | null>(null);
   const [program, setProgram] = useState<ProgramWithTeacher | null>(null);
@@ -1232,6 +1255,7 @@ export function ProgramDetailData({ slug, programId, section = "public" }: { slu
   const applyHref = `/m/${slug}/programs/${programId}/apply`;
   const viewEnrollmentHref = `/m/${slug}/portal/classes`;
   const completePaymentHref = `/m/${slug}/portal/announcements`;
+  const loginHref = `/m/${slug}/login?returnTo=${encodeURIComponent(`/m/${slug}/programs/${programId}`)}`;
   const primaryCta = getProgramPrimaryCta({
     fields: toProgramStatusFields(program),
     isSignedIn,
@@ -1243,6 +1267,7 @@ export function ProgramDetailData({ slug, programId, section = "public" }: { slu
     applyHref,
     viewEnrollmentHref,
     completePaymentHref,
+    loginHref,
   });
 
   return (
@@ -1358,8 +1383,18 @@ export function ProgramDetailData({ slug, programId, section = "public" }: { slu
 
               <div className="mt-4 border-t border-[#E6ECEF] pt-4">
                 {isTeacherContext || isStaffForProgram ? (
-                  <div className="mt-2 flex min-h-12 w-full items-center justify-center rounded-full bg-[#EEF6F8] px-4 text-sm font-semibold text-[#2F6F83] ring-1 ring-[#CFE2E8] md:w-auto md:px-10">
-                    {accountType === "admin" ? "Admin Control" : "Teaching"}
+                  <div className="mt-2 space-y-2">
+                    <div className="flex min-h-12 w-full items-center justify-center rounded-full bg-[#EEF6F8] px-4 text-sm font-semibold text-[#2F6F83] ring-1 ring-[#CFE2E8] md:w-auto md:px-10">
+                      {accountType === "admin" ? "Admin Control" : "Teaching"}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => void shareProgramLink(slug, programId, program.title, setToast)}
+                      className="flex min-h-12 w-full items-center justify-center gap-2 rounded-full bg-[#17624F] px-4 text-sm font-semibold text-white shadow-[0_10px_22px_rgba(23,98,79,0.2)] md:w-auto md:px-10"
+                    >
+                      <ShareLinkIcon className="h-4 w-4" />
+                      Share Class Link
+                    </button>
                   </div>
                 ) : accountType === "admin" ? (
                   <div className="mt-2 flex min-h-12 w-full items-center justify-center rounded-full bg-[#EEF6F8] px-4 text-sm font-semibold text-[#2F6F83] ring-1 ring-[#CFE2E8] md:w-auto md:px-10">
@@ -2930,10 +2965,7 @@ export function PortalAccountData({ slug }: { slug: string }) {
   const [isParent, setIsParent] = useState(initialAccess?.accountType?.toLowerCase() === "parent");
   const [isSignedIn, setIsSignedIn] = useState(initialSession !== null);
   const [activePanel, setActivePanel] = useState<AccountPanel>("menu");
-  const [installingApp, setInstallingApp] = useState(false);
   const [homescreenMosqueName, setHomescreenMosqueName] = useState(() => getCachedMosqueChrome(slug)?.name ?? "Madrasa");
-  const homescreenPlatform = useMemo(() => detectMobilePlatform(), []);
-  const { available: installAvailable, promptInstall } = useDeferredInstallPrompt();
 
   useEffect(() => {
     void loadMosqueChrome(slug).then((chrome) => {
@@ -3120,12 +3152,6 @@ export function PortalAccountData({ slug }: { slug: string }) {
     setActivePanel("menu");
     setEditingField(null);
     setProfileMessage(null);
-  }
-
-  async function handleInstallApp() {
-    setInstallingApp(true);
-    await promptInstall();
-    setInstallingApp(false);
   }
 
   function openPhotoPanel() {
@@ -3557,30 +3583,8 @@ export function PortalAccountData({ slug }: { slug: string }) {
     homescreen: (
       <>
         <AccountSubpageHeader title="Add App to Homescreen" onBack={closePanel} />
-        <div className="mt-8 space-y-5">
-          <StaticAccountNote
-            title="Install Madrasa"
-            text="Madrasa works as a progressive web app. It opens like a normal app from your home screen, but it still updates through the website."
-          />
-          <div>
-            <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#7B858C]">iPhone or iPad (Safari)</p>
-            <IosInstallDemo siteLabel={`${slug}.madrasa.ca`} appName={homescreenMosqueName} />
-          </div>
-          {homescreenPlatform === "android" && installAvailable ? (
-            <button
-              type="button"
-              onClick={() => void handleInstallApp()}
-              disabled={installingApp}
-              className="flex min-h-12 w-full items-center justify-center rounded-2xl bg-[#171717] px-5 text-sm font-semibold text-white disabled:opacity-60"
-            >
-              {installingApp ? "Installing..." : "Install App"}
-            </button>
-          ) : null}
-          <AccountDetailGroup>
-            <AccountDetailRow label="iPhone or iPad" value="Open Safari, tap Share, then choose Add to Home Screen." />
-            <AccountDetailRow label="Android" value="Open Chrome, tap the menu, then choose Install app or Add to Home screen." />
-            <AccountDetailRow label="Note" value="Use your browser install option. The app will not appear in the App Store or Play Store." />
-          </AccountDetailGroup>
+        <div className="mt-6">
+          <InstallDemoTabs siteLabel={`${slug}.madrasa.ca`} appName={homescreenMosqueName} />
         </div>
       </>
     ),
@@ -15231,6 +15235,18 @@ function SearchIcon() {
   );
 }
 
+function ShareLinkIcon({ className }: { className?: string }) {
+  return (
+    <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <circle cx="18" cy="5" r="2.5" />
+      <circle cx="6" cy="12" r="2.5" />
+      <circle cx="18" cy="19" r="2.5" />
+      <path d="m8.2 10.8 7.6-4.6" />
+      <path d="m8.2 13.2 7.6 4.6" />
+    </svg>
+  );
+}
+
 function RefreshIcon() {
   return (
     <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -17624,8 +17640,10 @@ function TeacherClassCard({
   const classBasePath = basePath ?? `/m/${mosqueSlug}/teacher/classes`;
   const teacherClassesReturnTo = encodeURIComponent(classBasePath);
   const publicHref = `/m/${mosqueSlug}/programs/${program.id}?returnTo=${teacherClassesReturnTo}`;
-  const primaryHref = isDirector ? `${classBasePath}/${program.id}` : publicHref;
-  const primaryLabel = isDirector ? "Edit Class" : "Public Page";
+  // The cover/title always opens the public view, for directors and instructors alike --
+  // "Edit Class" stays reachable as its own row below, not overloaded onto the cover tap.
+  const primaryHref = publicHref;
+  const primaryLabel = "Public Page";
 
   async function resignFromClass() {
     setResigning(true);
@@ -18964,9 +18982,6 @@ function AccountSubpageHeader({ title, onBack }: { title: string; onBack: () => 
   );
 }
 
-function AccountDetailGroup({ children }: { children: ReactNode }) {
-  return <dl className="divide-y divide-[#E3E8EC] rounded-[28px] bg-white px-5 shadow-[0_18px_45px_rgba(38,50,58,0.08)] ring-1 ring-[#E4EAEE]">{children}</dl>;
-}
 
 function urlBase64ToUint8Array(base64String: string) {
   const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
@@ -19656,15 +19671,6 @@ function ImageCropModal({
       </div>
     </div>,
     document.body,
-  );
-}
-
-function AccountDetailRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="py-4">
-      <dt className="text-[11px] font-semibold uppercase tracking-wide text-[#7B858C]">{label}</dt>
-      <dd className="mt-1 break-words text-[15px] font-semibold leading-6 text-[#26323A]">{value}</dd>
-    </div>
   );
 }
 

@@ -198,13 +198,16 @@ export function getProgramPrimaryCta(input: {
   applyHref: string;
   viewEnrollmentHref: string;
   completePaymentHref: string;
+  loginHref: string;
 }): ProgramPrimaryCta {
-  const { fields, isSignedIn, isEnrolled, requestStatus, paymentDue, capacityFull, waitlistAllowed, applyHref, viewEnrollmentHref, completePaymentHref } = input;
+  const { fields, isSignedIn, isEnrolled, requestStatus, paymentDue, capacityFull, waitlistAllowed, applyHref, viewEnrollmentHref, completePaymentHref, loginHref } = input;
 
-  // Guests are browse-only — no application/payment action is ever clickable
-  // until they sign in through the normal account flow.
+  // A signed-out visitor can only reach this page via a direct shared link (the program
+  // detail route is the one place still viewable without an account) -- applying itself
+  // always requires signing in first, so this is a real working link back to login/signup
+  // with a returnTo, not just a disabled label.
   if (!isSignedIn) {
-    return { kind: "disabled", label: "Log In to Apply" };
+    return { kind: "link", label: "Log In / Sign Up to Apply", href: loginHref };
   }
 
   if (isEnrolled) {

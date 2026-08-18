@@ -1,14 +1,5 @@
 import { PublicProgramDetailPage } from "@/components/pages/public-pages";
-
-function safeReturnTo(value: string | string[] | undefined, slug: string) {
-  const returnTo = Array.isArray(value) ? value[0] : value;
-  if (!returnTo) {
-    return undefined;
-  }
-
-  const allowedPrefixes = [`/m/${slug}/admin/`, `/m/${slug}/teacher/`, `/m/${slug}/portal/`, `/m/${slug}/programs`];
-  return allowedPrefixes.some((prefix) => returnTo === prefix.slice(0, -1) || returnTo.startsWith(prefix)) ? returnTo : undefined;
-}
+import { safeReturnTo } from "@/lib/authz";
 
 export default async function Page({
   params,
