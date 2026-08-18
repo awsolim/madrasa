@@ -2,13 +2,14 @@ import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
 import { BootScreen } from "@/components/pwa/boot-screen";
 import { PwaRegistrar } from "@/components/pwa/pwa-registrar";
-import { loadTenantBrandingFromHost } from "@/lib/tenant-branding";
+import { iconCacheVersion, loadTenantBrandingFromHost } from "@/lib/tenant-branding";
 import "./globals.css";
 
 export async function generateMetadata(): Promise<Metadata> {
   const headerStore = await headers();
   const host = headerStore.get("x-forwarded-host") || headerStore.get("host") || "";
   const branding = await loadTenantBrandingFromHost(host);
+  const v = iconCacheVersion(branding.iconUrl);
 
   return {
     applicationName: branding.name,
@@ -28,12 +29,12 @@ export async function generateMetadata(): Promise<Metadata> {
     },
     icons: {
       icon: [
-        { url: "/api/pwa/icon?size=32", sizes: "32x32", type: "image/png" },
-        { url: "/api/pwa/icon?size=192", sizes: "192x192", type: "image/png" },
-        { url: "/api/pwa/icon?size=512", sizes: "512x512", type: "image/png" },
+        { url: `/api/pwa/icon?size=32&v=${v}`, sizes: "32x32", type: "image/png" },
+        { url: `/api/pwa/icon?size=192&v=${v}`, sizes: "192x192", type: "image/png" },
+        { url: `/api/pwa/icon?size=512&v=${v}`, sizes: "512x512", type: "image/png" },
       ],
-      shortcut: [{ url: "/api/pwa/icon?size=32" }],
-      apple: [{ url: "/api/pwa/icon?size=180&purpose=apple", sizes: "180x180", type: "image/png" }],
+      shortcut: [{ url: `/api/pwa/icon?size=32&v=${v}` }],
+      apple: [{ url: `/api/pwa/icon?size=180&purpose=apple&v=${v}`, sizes: "180x180", type: "image/png" }],
     },
   };
 }

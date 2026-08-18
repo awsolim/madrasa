@@ -91,6 +91,14 @@ function tenantBrandingFromMosque(data: MosqueBrandingRow, fallbackSlug: string)
   };
 }
 
+export function iconCacheVersion(url: string) {
+  let hash = 0;
+  for (let i = 0; i < url.length; i++) {
+    hash = (hash * 31 + url.charCodeAt(i)) | 0;
+  }
+  return (hash >>> 0).toString(36);
+}
+
 function titleFromSlug(slug: string) {
   return slug
     .split("-")

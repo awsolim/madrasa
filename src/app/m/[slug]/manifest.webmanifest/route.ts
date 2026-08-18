@@ -1,11 +1,23 @@
 import { NextRequest, NextResponse } from "next/server";
-import { loadTenantBrandingBySlug, tenantSlugFromHost } from "@/lib/tenant-branding";
+import { iconCacheVersion, loadTenantBrandingBySlug, tenantSlugFromHost } from "@/lib/tenant-branding";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
-function manifestPayload({ name, shortName, startUrl, slug }: { name: string; shortName: string; startUrl: string; slug: string }) {
-  const iconSrc = `/api/pwa/icon?tenant=${encodeURIComponent(slug)}`;
+function manifestPayload({
+  name,
+  shortName,
+  startUrl,
+  slug,
+  iconVersion,
+}: {
+  name: string;
+  shortName: string;
+  startUrl: string;
+  slug: string;
+  iconVersion: string;
+}) {
+  const iconSrc = `/api/pwa/icon?tenant=${encodeURIComponent(slug)}&v=${iconVersion}`;
   return {
     name,
     short_name: shortName,
@@ -40,10 +52,13 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
   const branding = await loadTenantBrandingBySlug(slug);
   const startUrl = hostTenantSlug === slug ? "/" : `/m/${slug}`;
 
-  return NextResponse.json(manifestPayload({ name: branding.name, shortName: branding.shortName, startUrl, slug }), {
-    headers: {
-      "content-type": "application/manifest+json; charset=utf-8",
-      "cache-control": "no-store",
+  return NextResponse.json(
+    manifestPayload({ name: branding.name, shortName: branding.shortName, startUrl, slug, iconVersion: iconCacheVersion(branding.iconUrl) }),
+    {
+      headers: {
+        "content-type": "application/manifest+json; charset=utf-8",
+        "cache-control": "no-store",
+      },
     },
-  });
+  );
 }

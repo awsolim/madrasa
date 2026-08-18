@@ -1,6 +1,6 @@
 import type { MetadataRoute } from "next";
 import { headers } from "next/headers";
-import { loadTenantBrandingFromHost } from "@/lib/tenant-branding";
+import { iconCacheVersion, loadTenantBrandingFromHost } from "@/lib/tenant-branding";
 
 export const dynamic = "force-dynamic";
 
@@ -8,7 +8,8 @@ export default async function manifest(): Promise<MetadataRoute.Manifest> {
   const headerStore = await headers();
   const host = headerStore.get("x-forwarded-host") || headerStore.get("host") || "";
   const branding = await loadTenantBrandingFromHost(host);
-  const iconSrc = "/api/pwa/icon";
+  const v = iconCacheVersion(branding.iconUrl);
+  const iconSrc = `/api/pwa/icon?v=${v}`;
 
   return {
     name: branding.name,
