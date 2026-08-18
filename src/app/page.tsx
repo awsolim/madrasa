@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import Image from "next/image";
 import { Fraunces, Manrope } from "next/font/google";
+import { ContactModalButton } from "@/components/marketing/contact-modal-button";
 
 export const metadata: Metadata = {
   title: "Madrasa",
@@ -22,7 +23,6 @@ const green = "#17624F";
 const aqua = "#2F8FB3";
 const aquaSoft = "#6FB7B2";
 const dark = "#122420";
-const contactHref = "mailto:awsolim@gmail.com?subject=Madrasa";
 
 const grainStyle: React.CSSProperties = {
   backgroundImage:
@@ -101,9 +101,13 @@ function SiteHeader() {
         </nav>
 
         <div className="flex items-center gap-3">
-          <a href={contactHref} className="hidden rounded-full border px-5 py-2 text-[13px] font-semibold sm:inline-block" style={{ borderColor: green, color: green }}>
+          <ContactModalButton
+            className="hidden rounded-full border px-5 py-2 text-[13px] font-semibold sm:inline-block"
+            style={{ borderColor: green, color: green }}
+            headingClassName={display.className}
+          >
             Contact
-          </a>
+          </ContactModalButton>
           <details className="relative md:hidden">
             <summary className="flex h-9 w-9 list-none items-center justify-center rounded-full border" style={{ borderColor: line }} aria-label="Menu">
               <MenuGlyph />
@@ -114,12 +118,18 @@ function SiteHeader() {
                 ["Features", "#features"],
                 ["For organizations", "#organizations"],
                 ["Pricing", "#pricing"],
-                ["Contact", contactHref],
               ].map(([label, href]) => (
                 <a key={href} href={href} className="block rounded-xl px-3 py-2.5" style={{ color: ink }}>
                   {label}
                 </a>
               ))}
+              <ContactModalButton
+                className="block w-full rounded-xl px-3 py-2.5 text-left"
+                style={{ color: ink }}
+                headingClassName={display.className}
+              >
+                Contact
+              </ContactModalButton>
             </div>
           </details>
         </div>
@@ -144,9 +154,13 @@ function Hero() {
           </p>
 
           <div className="mt-9 flex flex-wrap items-center gap-5">
-            <a href={contactHref} className="rounded-full px-7 py-3.5 text-[14px] font-bold shadow-[0_16px_32px_rgba(15,69,55,0.28)] transition-transform hover:-translate-y-0.5" style={{ backgroundColor: green, color: white }}>
+            <ContactModalButton
+              className="rounded-full px-7 py-3.5 text-[14px] font-bold shadow-[0_16px_32px_rgba(15,69,55,0.28)] transition-transform hover:-translate-y-0.5"
+              style={{ backgroundColor: green, color: white }}
+              headingClassName={display.className}
+            >
               Contact
-            </a>
+            </ContactModalButton>
             <a href="#workflow" className="group inline-flex items-center gap-2 text-[14px] font-bold" style={{ color: ink }}>
               See how it works
               <span className="transition-transform group-hover:translate-y-0.5">↓</span>
@@ -418,13 +432,13 @@ function ClosingSection() {
         Bring your registration, payments, and class communication into one branded portal.
       </h2>
       <div className="mt-9">
-        <a
-          href={contactHref}
+        <ContactModalButton
           className="inline-flex rounded-full px-8 py-4 text-[14px] font-bold shadow-[0_16px_32px_rgba(15,69,55,0.28)] transition-transform hover:-translate-y-0.5"
           style={{ backgroundColor: green, color: white }}
+          headingClassName={display.className}
         >
           Contact
-        </a>
+        </ContactModalButton>
       </div>
     </section>
   );
