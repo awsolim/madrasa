@@ -13,6 +13,7 @@ import { EmptyState } from "@/components/data/empty-state";
 import { DirectorySkeleton, GenericLoadingState } from "@/components/data/data-loading";
 import { EditorToast, queueEditorToast, readQueuedEditorToast, type EditorToastState } from "@/components/data/editor-toast";
 import { FloatingInboxTabs, InboxLoadingPanel, InboxSection, MiniEmpty, NotificationBadge } from "@/components/data/inbox-shared";
+import { IosInstallDemo } from "@/components/pwa/ios-install-demo";
 import { ConfirmModal } from "@/components/ui/confirm-modal";
 import { FlatLink } from "@/components/ui/flat-button";
 import { useHideMobileChromeWhileMounted, useModalFocusTrap } from "@/hooks/use-modal-behavior";
@@ -2930,8 +2931,17 @@ export function PortalAccountData({ slug }: { slug: string }) {
   const [isSignedIn, setIsSignedIn] = useState(initialSession !== null);
   const [activePanel, setActivePanel] = useState<AccountPanel>("menu");
   const [installingApp, setInstallingApp] = useState(false);
+  const [homescreenMosqueName, setHomescreenMosqueName] = useState(() => getCachedMosqueChrome(slug)?.name ?? "Madrasa");
   const homescreenPlatform = useMemo(() => detectMobilePlatform(), []);
   const { available: installAvailable, promptInstall } = useDeferredInstallPrompt();
+
+  useEffect(() => {
+    void loadMosqueChrome(slug).then((chrome) => {
+      if (chrome?.name) {
+        setHomescreenMosqueName(chrome.name);
+      }
+    });
+  }, [slug]);
   const [panelMotion, setPanelMotion] = useState<"forward" | "back">("forward");
   const [hasPanelNavigated, setHasPanelNavigated] = useState(false);
   const [profileForm, setProfileForm] = useState({
@@ -3552,6 +3562,10 @@ export function PortalAccountData({ slug }: { slug: string }) {
             title="Install Madrasa"
             text="Madrasa works as a progressive web app. It opens like a normal app from your home screen, but it still updates through the website."
           />
+          <div>
+            <p className="mb-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-[#7B858C]">iPhone or iPad (Safari)</p>
+            <IosInstallDemo siteLabel={`${slug}.madrasa.ca`} appName={homescreenMosqueName} />
+          </div>
           {homescreenPlatform === "android" && installAvailable ? (
             <button
               type="button"
