@@ -42,21 +42,13 @@ export function PublicAreaGate({ children, slug, mosqueName }: { children: React
       <main className="flex min-h-screen items-center justify-center bg-[var(--workspace)] px-6 text-center">
         <div className="max-w-sm space-y-4">
           <h1 className="text-2xl font-semibold text-[#26323A]">{mosqueName}</h1>
-          <p className="text-sm leading-6 text-[#68747C]">Log in or create an account to view classes and manage your family.</p>
-          <div className="grid grid-cols-2 gap-3">
-            <Link
-              href={`/m/${slug}/login?returnTo=${returnTo}`}
-              className="inline-flex min-h-11 items-center justify-center rounded-full border border-[#2F6F5B] px-5 text-sm font-semibold text-[#2F6F5B]"
-            >
-              Log In
-            </Link>
-            <Link
-              href={`/m/${slug}/signup?returnTo=${returnTo}`}
-              className="inline-flex min-h-11 items-center justify-center rounded-full bg-[#2F6F5B] px-5 text-sm font-semibold text-white"
-            >
-              Create Account
-            </Link>
-          </div>
+          <p className="text-sm leading-6 text-[#68747C]">Log in to view classes and manage your family.</p>
+          <Link
+            href={`/m/${slug}/login?returnTo=${returnTo}`}
+            className="inline-flex min-h-11 w-full items-center justify-center rounded-full bg-[#171717] px-5 text-sm font-semibold text-white"
+          >
+            Log In
+          </Link>
         </div>
       </main>
     );

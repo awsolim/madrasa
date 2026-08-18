@@ -2929,6 +2929,9 @@ export function PortalAccountData({ slug }: { slug: string }) {
   const [isParent, setIsParent] = useState(initialAccess?.accountType?.toLowerCase() === "parent");
   const [isSignedIn, setIsSignedIn] = useState(initialSession !== null);
   const [activePanel, setActivePanel] = useState<AccountPanel>("menu");
+  const [installingApp, setInstallingApp] = useState(false);
+  const homescreenPlatform = useMemo(() => detectMobilePlatform(), []);
+  const { available: installAvailable, promptInstall } = useDeferredInstallPrompt();
   const [panelMotion, setPanelMotion] = useState<"forward" | "back">("forward");
   const [hasPanelNavigated, setHasPanelNavigated] = useState(false);
   const [profileForm, setProfileForm] = useState({
@@ -3107,6 +3110,12 @@ export function PortalAccountData({ slug }: { slug: string }) {
     setActivePanel("menu");
     setEditingField(null);
     setProfileMessage(null);
+  }
+
+  async function handleInstallApp() {
+    setInstallingApp(true);
+    await promptInstall();
+    setInstallingApp(false);
   }
 
   function openPhotoPanel() {
@@ -3543,6 +3552,16 @@ export function PortalAccountData({ slug }: { slug: string }) {
             title="Install Madrasa"
             text="Madrasa works as a progressive web app. It opens like a normal app from your home screen, but it still updates through the website."
           />
+          {homescreenPlatform === "android" && installAvailable ? (
+            <button
+              type="button"
+              onClick={() => void handleInstallApp()}
+              disabled={installingApp}
+              className="flex min-h-12 w-full items-center justify-center rounded-2xl bg-[#171717] px-5 text-sm font-semibold text-white disabled:opacity-60"
+            >
+              {installingApp ? "Installing..." : "Install App"}
+            </button>
+          ) : null}
           <AccountDetailGroup>
             <AccountDetailRow label="iPhone or iPad" value="Open Safari, tap Share, then choose Add to Home Screen." />
             <AccountDetailRow label="Android" value="Open Chrome, tap the menu, then choose Install app or Add to Home screen." />
@@ -19115,10 +19134,8 @@ function markA2hsNudgeShown() {
  * into the existing homescreen-instructions panel in Account Settings.
  */
 function AddToHomeScreenNudge({ slug, settingsHref }: { slug: string; settingsHref: string }) {
-  const { available: installAvailable, promptInstall } = useDeferredInstallPrompt();
   const [visible, setVisible] = useState(false);
   const [mosqueName, setMosqueName] = useState(() => getCachedMosqueChrome(slug)?.name ?? "");
-  const [installing, setInstalling] = useState(false);
   const platform = useMemo(() => detectMobilePlatform(), []);
 
   useEffect(() => {
@@ -19155,13 +19172,6 @@ function AddToHomeScreenNudge({ slug, settingsHref }: { slug: string; settingsHr
     return null;
   }
 
-  async function handleInstall() {
-    setInstalling(true);
-    await promptInstall();
-    setInstalling(false);
-    setVisible(false);
-  }
-
   return createPortal(
     <div className="fixed inset-0 z-[2147483647] flex items-center justify-center bg-[#26323A]/45 px-5 backdrop-blur-sm">
       <div role="dialog" aria-modal="true" aria-labelledby="a2hs-nudge-title" className="w-full max-w-sm rounded-[28px] bg-[#E7F7F1] px-5 py-5 shadow-[0_24px_70px_rgba(38,50,58,0.24)]">
@@ -19175,16 +19185,6 @@ function AddToHomeScreenNudge({ slug, settingsHref }: { slug: string; settingsHr
             </h2>
             <p className="mt-0.5 text-sm leading-5 text-[#52616A]">Get quick access and a full-screen experience, right from your home screen.</p>
             <div className="mt-3 flex flex-wrap items-center gap-2">
-              {platform === "android" && installAvailable ? (
-                <button
-                  type="button"
-                  onClick={() => void handleInstall()}
-                  disabled={installing}
-                  className="inline-flex min-h-10 items-center rounded-full bg-[#17624F] px-4 text-sm font-semibold text-white shadow-[0_10px_22px_rgba(23,98,79,0.18)] disabled:opacity-60"
-                >
-                  {installing ? "Installing..." : "Install App"}
-                </button>
-              ) : null}
               <Link
                 href={`${settingsHref}?panel=homescreen`}
                 onClick={() => setVisible(false)}

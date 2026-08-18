@@ -1,4 +1,4 @@
-const CACHE_NAME = "madrasa-shell-v4";
+const CACHE_NAME = "madrasa-shell-v5";
 const OFFLINE_URL = "/offline.html";
 const SHELL_ASSETS = [OFFLINE_URL, "/favicon.svg"];
 
@@ -33,29 +33,24 @@ self.addEventListener("fetch", (event) => {
   }
 
   if (request.mode === "navigate") {
-    // Stale-while-revalidate: paint the last-cached shell instantly (if we have one),
-    // then refresh the cache in the background for next launch. Page data itself is
-    // always fetched fresh client-side after hydration, so a cached shell is never
-    // stale *data* -- at worst it's last launch's app-shell HTML/JS for one launch.
+    // Network-first: pages are gated behind login and render per-session content, so a
+    // stale cached shell (e.g. from before a user was signed out, or from an older
+    // deploy) must never be painted first. Only fall back to the last-cached shell (or
+    // the offline page) when the network is actually unavailable.
     event.respondWith(
-      caches.open(CACHE_NAME).then(async (cache) => {
-        const cached = await cache.match(request);
-        const networkFetch = fetch(request)
-          .then((response) => {
-            if (response.ok) {
-              cache.put(request, response.clone());
-            }
-            return response;
-          })
-          .catch(() => null);
-
-        if (cached) {
-          event.waitUntil(networkFetch);
-          return cached;
-        }
-
-        return (await networkFetch) || caches.match(OFFLINE_URL);
-      }),
+      fetch(request)
+        .then((response) => {
+          if (response.ok) {
+            const copy = response.clone();
+            caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+          }
+          return response;
+        })
+        .catch(async () => {
+          const cache = await caches.open(CACHE_NAME);
+          const cached = await cache.match(request);
+          return cached || cache.match(OFFLINE_URL);
+        }),
     );
     return;
   }
