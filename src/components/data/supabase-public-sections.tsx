@@ -4775,6 +4775,7 @@ export function AdminMasjidInformationData({ slug }: { slug: string }) {
   const [appIconPreview, setAppIconPreview] = useState("");
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState<EditorToastState | null>(null);
+  const [cropTarget, setCropTarget] = useState<{ file: File; kind: "logo" | "picture" | "appIcon" } | null>(null);
   const logoInputRef = useRef<HTMLInputElement | null>(null);
   const pictureInputRef = useRef<HTMLInputElement | null>(null);
   const appIconInputRef = useRef<HTMLInputElement | null>(null);
@@ -4963,7 +4964,19 @@ export function AdminMasjidInformationData({ slug }: { slug: string }) {
           >
             <PhotoIcon />
           </button>
-          <input ref={pictureInputRef} type="file" accept="image/*" className="hidden" onChange={(event) => setPictureFile(event.target.files?.[0] ?? null)} />
+          <input
+            ref={pictureInputRef}
+            type="file"
+            accept="image/*"
+            className="hidden"
+            onChange={(event) => {
+              const file = event.target.files?.[0] ?? null;
+              event.target.value = "";
+              if (file) {
+                setCropTarget({ file, kind: "picture" });
+              }
+            }}
+          />
         </div>
         <div className="space-y-5 p-3 sm:p-4">
           <div>
@@ -4993,7 +5006,19 @@ export function AdminMasjidInformationData({ slug }: { slug: string }) {
                   <button type="button" onClick={() => logoInputRef.current?.click()} className="min-h-10 rounded-full bg-[#26323A] px-4 text-sm font-semibold text-white">
                     Change logo
                   </button>
-                  <input ref={logoInputRef} type="file" accept="image/*" className="hidden" onChange={(event) => setLogoFile(event.target.files?.[0] ?? null)} />
+                  <input
+                    ref={logoInputRef}
+                    type="file"
+                    accept="image/*"
+                    className="hidden"
+                    onChange={(event) => {
+                      const file = event.target.files?.[0] ?? null;
+                      event.target.value = "";
+                      if (file) {
+                        setCropTarget({ file, kind: "logo" });
+                      }
+                    }}
+                  />
                   {logoFile ? <p className="mt-2 truncate text-xs text-[#7B858C]">{logoFile.name}</p> : null}
                 </div>
               </div>
@@ -5021,7 +5046,19 @@ export function AdminMasjidInformationData({ slug }: { slug: string }) {
                     <button type="button" onClick={() => appIconInputRef.current?.click()} className="min-h-10 rounded-full bg-[#26323A] px-4 text-sm font-semibold text-white">
                       Change app icon
                     </button>
-                    <input ref={appIconInputRef} type="file" accept="image/*" className="hidden" onChange={(event) => setAppIconFile(event.target.files?.[0] ?? null)} />
+                    <input
+                      ref={appIconInputRef}
+                      type="file"
+                      accept="image/*"
+                      className="hidden"
+                      onChange={(event) => {
+                        const file = event.target.files?.[0] ?? null;
+                        event.target.value = "";
+                        if (file) {
+                          setCropTarget({ file, kind: "appIcon" });
+                        }
+                      }}
+                    />
                     <input value={appIconUrl} onChange={(event) => setAppIconUrl(event.target.value)} className="h-10 min-w-0 rounded-[10px] border border-[#D9E1E5] bg-white px-3 text-xs font-medium text-[#26323A] outline-none focus:border-[#2F8FB3]" placeholder="Icon URL, or upload an icon" />
                   </div>
                 </div>
@@ -5033,6 +5070,26 @@ export function AdminMasjidInformationData({ slug }: { slug: string }) {
           </div>
         </div>
       </article>
+      {cropTarget ? (
+        <ImageCropModal
+          file={cropTarget.file}
+          title={cropTarget.kind === "picture" ? "Crop cover picture" : cropTarget.kind === "logo" ? "Crop logo" : "Crop app icon"}
+          aspectRatio={cropTarget.kind === "picture" ? 16 / 9 : 1}
+          outputWidth={cropTarget.kind === "picture" ? 1280 : 512}
+          outputHeight={cropTarget.kind === "picture" ? 720 : 512}
+          onCancel={() => setCropTarget(null)}
+          onConfirm={(croppedFile) => {
+            if (cropTarget.kind === "picture") {
+              setPictureFile(croppedFile);
+            } else if (cropTarget.kind === "logo") {
+              setLogoFile(croppedFile);
+            } else {
+              setAppIconFile(croppedFile);
+            }
+            setCropTarget(null);
+          }}
+        />
+      ) : null}
     </section>
   );
 }
@@ -5227,6 +5284,7 @@ export function TeacherProgramCreateData({ slug }: { slug: string }) {
   const [previewOpen, setPreviewOpen] = useState(false);
   const [busy, setBusy] = useState(false);
   const thumbnailInputRef = useRef<HTMLInputElement | null>(null);
+  const [thumbnailCropFile, setThumbnailCropFile] = useState<File | null>(null);
   // Annual pricing is compared against one year of monthly payments: 12 months for an
   // ongoing program (which bills annually, not for a known total length), or the program's
   // actual fixed duration for a fixed-length program (its annual price is a one-time lump
@@ -5918,11 +5976,37 @@ export function TeacherProgramCreateData({ slug }: { slug: string }) {
         <section className="overflow-hidden rounded-2xl border border-[#E1E8EC] bg-white">
           <div className="relative">
             <ProgramHero program={{ id: "new", mosque_id: "", teacher_profile_id: null, director_profile_id: null, ...defaultProgramBuilderColumns(), title: title || "New Class", description: description || null, is_active: true, is_paid: builderStatus.paymentKind === "tareeqah", offers_monthly_payment: offersMonthlyPayment, offers_annual_payment: offersAnnualPayment, thumbnail_url: thumbnailUrl || null, price_monthly_cents: null, price_annual_cents: null, stripe_product_id: null, stripe_price_id: null, stripe_annual_price_id: null, audience_gender: audienceGender, age_range_text: allAges ? null : formatAgeRangeForSave(ageStart, ageEnd), schedule: null, schedule_timezone: null, schedule_notes: null, track_selection_mode: trackSelectionMode, track_selection_count: trackSelectionCount, tags: tagRows, created_at: "", updated_at: "" }} />
-            <input ref={thumbnailInputRef} type="file" accept="image/*" className="hidden" onChange={(event) => handleThumbnailFile(event.target.files?.[0] ?? null)} />
+            <input
+              ref={thumbnailInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(event) => {
+                const file = event.target.files?.[0] ?? null;
+                event.target.value = "";
+                if (file) {
+                  setThumbnailCropFile(file);
+                }
+              }}
+            />
             <button type="button" onClick={() => thumbnailInputRef.current?.click()} className="absolute right-3 top-3 flex h-10 w-10 items-center justify-center rounded-full bg-white text-[#26323A] shadow-lg" aria-label="Replace thumbnail">
               <PhotoIcon />
             </button>
           </div>
+          {thumbnailCropFile ? (
+            <ImageCropModal
+              file={thumbnailCropFile}
+              title="Crop thumbnail"
+              aspectRatio={4 / 3}
+              outputWidth={1200}
+              outputHeight={900}
+              onCancel={() => setThumbnailCropFile(null)}
+              onConfirm={(croppedFile) => {
+                handleThumbnailFile(croppedFile);
+                setThumbnailCropFile(null);
+              }}
+            />
+          ) : null}
           <div className="space-y-3 p-4">
             <EditBox label="Public name" required value={title} onChange={setTitle} />
             <label className="block">
@@ -6165,6 +6249,7 @@ export function TeacherProgramSettingsData({ slug, programId, returnHref }: { sl
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const thumbnailInputRef = useRef<HTMLInputElement | null>(null);
+  const [thumbnailCropFile, setThumbnailCropFile] = useState<File | null>(null);
   const loadedDirectorRef = useRef<string | null>(null);
   const startDateChangeModalRef = useRef<HTMLDivElement>(null);
   useModalFocusTrap(startDateChangeModalRef, startDateChangeConfirmOpen, () => setStartDateChangeConfirmOpen(false));
@@ -7050,11 +7135,37 @@ export function TeacherProgramSettingsData({ slug, programId, returnHref }: { sl
         <section className="overflow-hidden rounded-2xl border border-[#E1E8EC] bg-white">
           <div className="relative">
             <ProgramHero program={{ ...program, title, thumbnail_url: thumbnailUrl || null }} />
-            <input ref={thumbnailInputRef} type="file" accept="image/*" className="hidden" onChange={(event) => handleThumbnailFile(event.target.files?.[0] ?? null)} />
+            <input
+              ref={thumbnailInputRef}
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(event) => {
+                const file = event.target.files?.[0] ?? null;
+                event.target.value = "";
+                if (file) {
+                  setThumbnailCropFile(file);
+                }
+              }}
+            />
             <button type="button" onClick={() => thumbnailInputRef.current?.click()} className="absolute right-3 top-3 flex h-10 w-10 items-center justify-center rounded-full bg-white text-[#26323A] shadow-lg" aria-label="Replace thumbnail">
               <PhotoIcon />
             </button>
           </div>
+          {thumbnailCropFile ? (
+            <ImageCropModal
+              file={thumbnailCropFile}
+              title="Crop thumbnail"
+              aspectRatio={4 / 3}
+              outputWidth={1200}
+              outputHeight={900}
+              onCancel={() => setThumbnailCropFile(null)}
+              onConfirm={(croppedFile) => {
+                handleThumbnailFile(croppedFile);
+                setThumbnailCropFile(null);
+              }}
+            />
+          ) : null}
           <div className="space-y-3 p-4">
             <EditBox label="Public name" required value={title} onChange={setTitle} />
             <label className="block">
@@ -16706,14 +16817,14 @@ function ProgramCard({
 function ProgramHero({ program }: { program: Program }) {
   if (program.thumbnail_url) {
     return (
-      <div className="relative h-36 bg-[#DDE8EE]">
+      <div className="relative aspect-[4/3] bg-[#DDE8EE]">
         <Image src={program.thumbnail_url} alt="" fill className="object-cover" />
       </div>
     );
   }
 
   return (
-    <div className="relative flex h-36 items-center justify-center bg-[radial-gradient(circle_at_top_left,#E5FFF0_0,#7ECFC2_52%,#2E9B82_100%)] p-4 text-white/80">
+    <div className="relative flex aspect-[4/3] items-center justify-center bg-[radial-gradient(circle_at_top_left,#E5FFF0_0,#7ECFC2_52%,#2E9B82_100%)] p-4 text-white/80">
       <PhotoIcon className="h-12 w-12" />
     </div>
   );
@@ -19338,6 +19449,199 @@ function EditProfilePhotoPanel({
         </button>
       </div>
     </section>
+  );
+}
+
+const imageCropWorkspaceSize = 340;
+
+function cropImageToFile(
+  source: string,
+  scale: number,
+  offset: { x: number; y: number },
+  options: { frameWidth: number; frameHeight: number; outputWidth: number; outputHeight: number; fileName: string },
+) {
+  return new Promise<File>((resolve, reject) => {
+    const image = new window.Image();
+    image.crossOrigin = "anonymous";
+    image.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = options.outputWidth;
+      canvas.height = options.outputHeight;
+      const context = canvas.getContext("2d");
+      if (!context) {
+        reject(new Error("Canvas not available"));
+        return;
+      }
+
+      const fitScale = Math.min(imageCropWorkspaceSize / image.naturalWidth, imageCropWorkspaceSize / image.naturalHeight);
+      const totalScale = fitScale * scale;
+      const displayWidth = image.naturalWidth * totalScale;
+      const displayHeight = image.naturalHeight * totalScale;
+      const imageLeft = imageCropWorkspaceSize / 2 - displayWidth / 2 + offset.x;
+      const imageTop = imageCropWorkspaceSize / 2 - displayHeight / 2 + offset.y;
+      const cropLeft = (imageCropWorkspaceSize - options.frameWidth) / 2;
+      const cropTop = (imageCropWorkspaceSize - options.frameHeight) / 2;
+      const sourceX = (cropLeft - imageLeft) / totalScale;
+      const sourceY = (cropTop - imageTop) / totalScale;
+      const sourceWidth = options.frameWidth / totalScale;
+      const sourceHeight = options.frameHeight / totalScale;
+
+      context.fillStyle = "#F2F4F5";
+      context.fillRect(0, 0, options.outputWidth, options.outputHeight);
+      context.drawImage(image, sourceX, sourceY, sourceWidth, sourceHeight, 0, 0, options.outputWidth, options.outputHeight);
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) {
+            reject(new Error("Could not export image"));
+            return;
+          }
+          resolve(new File([blob], options.fileName, { type: "image/jpeg" }));
+        },
+        "image/jpeg",
+        0.9,
+      );
+    };
+    image.onerror = () => reject(new Error("Could not load image"));
+    image.src = source;
+  });
+}
+
+/**
+ * A generic drag/zoom cropper for any fixed aspect ratio, generalizing the avatar cropper's
+ * exact interaction (CSS bg-contain workspace, pointer drag, wheel/± zoom) and canvas math to a
+ * centered rectangular frame instead of a fixed circle.
+ */
+function ImageCropModal({
+  file,
+  aspectRatio,
+  outputWidth,
+  outputHeight,
+  title,
+  onCancel,
+  onConfirm,
+}: {
+  file: File;
+  aspectRatio: number;
+  outputWidth: number;
+  outputHeight: number;
+  title: string;
+  onCancel: () => void;
+  onConfirm: (file: File) => void;
+}) {
+  const [objectUrl] = useState(() => URL.createObjectURL(file));
+  const [scale, setScale] = useState(1);
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const [dragState, setDragState] = useState<{ pointerId: number; startX: number; startY: number; originX: number; originY: number } | null>(null);
+  const [saving, setSaving] = useState(false);
+
+  useEffect(() => () => URL.revokeObjectURL(objectUrl), [objectUrl]);
+
+  const maxFrameSize = imageCropWorkspaceSize - 40;
+  const frameWidth = aspectRatio >= 1 ? maxFrameSize : maxFrameSize * aspectRatio;
+  const frameHeight = aspectRatio >= 1 ? maxFrameSize / aspectRatio : maxFrameSize;
+
+  function beginDrag(event: ReactPointerEvent<HTMLDivElement>) {
+    event.preventDefault();
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setDragState({ pointerId: event.pointerId, startX: event.clientX, startY: event.clientY, originX: offset.x, originY: offset.y });
+  }
+
+  function dragImage(event: ReactPointerEvent<HTMLDivElement>) {
+    if (!dragState || dragState.pointerId !== event.pointerId) {
+      return;
+    }
+    event.preventDefault();
+    setOffset({ x: dragState.originX + event.clientX - dragState.startX, y: dragState.originY + event.clientY - dragState.startY });
+  }
+
+  function endDrag(event: ReactPointerEvent<HTMLDivElement>) {
+    if (dragState?.pointerId === event.pointerId) {
+      setDragState(null);
+    }
+  }
+
+  function zoomImage(event: ReactWheelEvent<HTMLDivElement>) {
+    event.preventDefault();
+    const delta = event.deltaY > 0 ? -0.08 : 0.08;
+    setScale((current) => Math.min(2.5, Math.max(0.6, Number((current + delta).toFixed(2)))));
+  }
+
+  function reset() {
+    setScale(1);
+    setOffset({ x: 0, y: 0 });
+  }
+
+  async function handleConfirm() {
+    setSaving(true);
+    try {
+      const cropped = await cropImageToFile(objectUrl, scale, offset, {
+        frameWidth,
+        frameHeight,
+        outputWidth,
+        outputHeight,
+        fileName: `${file.name.replace(/\.[^./\\]+$/, "")}.jpg`,
+      });
+      onConfirm(cropped);
+    } catch {
+      setSaving(false);
+    }
+  }
+
+  return createPortal(
+    <div className="fixed inset-0 z-[2147483647] flex items-center justify-center bg-[#26323A]/60 px-5 backdrop-blur-sm">
+      <div role="dialog" aria-modal="true" aria-labelledby="image-crop-title" className="w-full max-w-sm rounded-[28px] bg-white px-5 py-5 shadow-[0_24px_70px_rgba(38,50,58,0.28)]">
+        <h2 id="image-crop-title" className="text-base font-semibold text-[#26323A]">
+          {title}
+        </h2>
+        <div className="mt-4 flex justify-center">
+          <div
+            className="relative cursor-grab touch-none select-none overflow-hidden rounded-2xl bg-[#EEF0F0] active:cursor-grabbing"
+            style={{ width: imageCropWorkspaceSize, height: imageCropWorkspaceSize }}
+            onPointerDown={beginDrag}
+            onPointerMove={dragImage}
+            onPointerUp={endDrag}
+            onPointerCancel={endDrag}
+            onWheel={zoomImage}
+          >
+            <div
+              className="pointer-events-none absolute left-1/2 top-1/2 bg-contain bg-center bg-no-repeat will-change-transform"
+              style={{
+                width: imageCropWorkspaceSize,
+                height: imageCropWorkspaceSize,
+                backgroundImage: `url("${objectUrl}")`,
+                transform: `translate(-50%, -50%) translate3d(${offset.x}px, ${offset.y}px, 0) scale(${scale})`,
+              }}
+              aria-hidden
+            />
+            <div
+              className="pointer-events-none absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-lg border-2 border-white"
+              style={{ width: frameWidth, height: frameHeight, boxShadow: "0 0 0 9999px rgba(38,50,58,0.55)" }}
+              aria-hidden
+            />
+          </div>
+        </div>
+        <div className="mx-auto mt-4 flex w-fit items-center overflow-hidden rounded-full bg-[#F2F4F5]">
+          <button type="button" onClick={() => setScale((current) => Math.max(0.6, Number((current - 0.1).toFixed(1))))} className="flex h-10 w-12 items-center justify-center text-xl text-[#26323A]" aria-label="Zoom out">
+            -
+          </button>
+          <button type="button" onClick={() => setScale((current) => Math.min(2.5, Number((current + 0.1).toFixed(1))))} className="flex h-10 w-12 items-center justify-center border-l border-white text-xl text-[#26323A]" aria-label="Zoom in">
+            +
+          </button>
+          <button type="button" onClick={reset} className="h-10 border-l border-white px-4 text-sm font-semibold text-[#26323A]">
+            Reset
+          </button>
+        </div>
+        <div className="mt-5 grid grid-cols-2 gap-3">
+          <button type="button" onClick={onCancel} className="min-h-11 rounded-full bg-[#F2F4F5] px-4 text-sm font-semibold text-[#26323A]">
+            Cancel
+          </button>
+          <button type="button" onClick={() => void handleConfirm()} disabled={saving} className="min-h-11 rounded-full bg-[#171717] px-4 text-sm font-semibold text-white disabled:opacity-60">
+            {saving ? "Saving..." : "Confirm"}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }
 
