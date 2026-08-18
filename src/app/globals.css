@@ -159,11 +159,32 @@ textarea {
   }
 }
 
+.nav-progress-sweep {
+  animation: nav-progress-sweep 900ms ease-in-out infinite;
+}
+
+@keyframes nav-progress-sweep {
+  0% {
+    transform: translateX(-100%);
+  }
+  50% {
+    transform: translateX(100%);
+  }
+  100% {
+    transform: translateX(300%);
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
   .account-panel-slide-forward,
   .account-panel-slide-back,
   .page-slide-in-from-right,
   .page-slide-in-from-left {
     animation: none;
+  }
+
+  .nav-progress-sweep {
+    animation: none;
+    width: 100%;
   }
 }
