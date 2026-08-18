@@ -97,11 +97,16 @@ export function AuthPanel({ mode, slug, returnTo }: { mode: AuthMode; slug: stri
         return;
       }
 
+      const emailConfirmTarget =
+        accountType === "parent"
+          ? `${window.location.origin}/m/${activeSlug}/onboarding/family?returnTo=${encodeURIComponent(returnTo ?? `/m/${activeSlug}/portal`)}`
+          : `${window.location.origin}/m/${activeSlug}/portal`;
+
       const { data, error: signUpError } = await supabase.auth.signUp({
         email: trimmedEmail,
         password,
         options: {
-          emailRedirectTo: `${window.location.origin}/m/${activeSlug}/portal`,
+          emailRedirectTo: emailConfirmTarget,
           data: {
             account_type: accountType,
             full_name: trimmedFullName,
@@ -128,7 +133,12 @@ export function AuthPanel({ mode, slug, returnTo }: { mode: AuthMode; slug: stri
 
       if (data.session) {
         const access = await loadUserAccessByMosqueSlug(activeSlug);
-        router.push(returnTo ?? getDefaultLandingHref(activeSlug, access));
+        const landingHref = returnTo ?? getDefaultLandingHref(activeSlug, access);
+        if (accountType === "parent") {
+          router.push(`/m/${activeSlug}/onboarding/family?returnTo=${encodeURIComponent(landingHref)}`);
+        } else {
+          router.push(landingHref);
+        }
         router.refresh();
         return;
       }

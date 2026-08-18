@@ -86,6 +86,20 @@ export function getDefaultLandingHref(slug: string, access: UserAccess) {
   return `/m/${slug}/portal`;
 }
 
+export function safeReturnTo(value: string | string[] | undefined, slug: string) {
+  const returnTo = Array.isArray(value) ? value[0] : value;
+  if (!returnTo) {
+    return undefined;
+  }
+
+  const exactPaths = [`/m/${slug}`, `/m/${slug}/account`];
+  const allowedPrefixes = [`/m/${slug}/admin/`, `/m/${slug}/teacher/`, `/m/${slug}/portal/`, `/m/${slug}/programs`];
+  if (exactPaths.includes(returnTo)) {
+    return returnTo;
+  }
+  return allowedPrefixes.some((prefix) => returnTo === prefix.slice(0, -1) || returnTo.startsWith(prefix)) ? returnTo : undefined;
+}
+
 export function getAccountLabel(access: UserAccess) {
   if (!access.profileId) {
     return "Not signed in";

@@ -1,4 +1,4 @@
-import { LoginPage } from "@/components/pages/auth-pages";
+import { FamilyOnboardingPage } from "@/components/pages/onboarding-pages";
 import { safeReturnTo } from "@/lib/authz";
 
 export default async function Page({
@@ -10,5 +10,5 @@ export default async function Page({
 }) {
   const { slug } = await params;
   const query = await searchParams;
-  return <LoginPage slug={slug} returnTo={safeReturnTo(query.returnTo, slug)} />;
+  return <FamilyOnboardingPage slug={slug} returnTo={safeReturnTo(query.returnTo, slug)} />;
 }

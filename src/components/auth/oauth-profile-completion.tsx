@@ -105,7 +105,11 @@ export function OAuthProfileCompletion({ slug }: { slug: string }) {
     }
 
     const access = await loadUserAccessByMosqueSlug(slug);
-    router.replace(getDefaultLandingHref(slug, access));
+    if (accountType === "parent") {
+      router.replace(`/m/${slug}/onboarding/family?returnTo=${encodeURIComponent(getDefaultLandingHref(slug, access))}`);
+    } else {
+      router.replace(getDefaultLandingHref(slug, access));
+    }
     router.refresh();
   }
 
