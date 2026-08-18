@@ -45,7 +45,7 @@ export function PublicAreaGate({ children, slug, mosqueName }: { children: React
           <p className="text-sm leading-6 text-[#68747C]">Log in to view classes and manage your family.</p>
           <Link
             href={`/m/${slug}/login?returnTo=${returnTo}`}
-            className="inline-flex min-h-11 w-full items-center justify-center rounded-full bg-[#171717] px-5 text-sm font-semibold text-white"
+            className="inline-flex min-h-11 w-full items-center justify-center rounded-full bg-[#171717] px-5 text-sm font-semibold !text-white"
           >
             Log In
           </Link>
