@@ -109,6 +109,11 @@ on public.program_student_invites for all
 using (public.can_send_program_direct_invitations(program_id))
 with check (public.can_send_program_direct_invitations(program_id));
 
+-- The pre-existing version of this function returned a narrower column set (program_id,
+-- title, director_name); create or replace can't widen a function's return columns, so the
+-- old signature has to be dropped before it can be redefined below.
+drop function if exists public.lookup_program_student_invite_code(text);
+
 create or replace function public.lookup_program_student_invite_code(invite text)
 returns table (
   invite_id uuid,
