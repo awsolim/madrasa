@@ -2473,6 +2473,26 @@ export function StudentClassesData({ slug }: { slug: string }) {
   }, [searchParams]);
 
   useEffect(() => {
+    if (loading || error || !programs.length) {
+      return;
+    }
+    let cancelled = false;
+    // Warm the public-page cache for each visible class so opening one from the portal is instant.
+    loadCachedSession().then((session) => {
+      if (cancelled) {
+        return;
+      }
+      const userId = session?.user.id ?? null;
+      for (const program of programs) {
+        prefetchQuery(`program-detail:${slug}:${program.id}:public:${userId ?? "guest"}`, () => fetchProgramDetailSnapshot(slug, program.id, "public", userId));
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [loading, error, programs, slug]);
+
+  useEffect(() => {
     if (applicationsLoading) {
       return;
     }
@@ -4540,6 +4560,27 @@ export function TeacherClassesData({ slug }: { slug: string }) {
     }
   }, []);
 
+  useEffect(() => {
+    if (loading || error || !programs.length) {
+      return;
+    }
+    let cancelled = false;
+    // Warm the public-page cache for each assigned class -- the cover/title now always opens
+    // that page, so by the time a teacher taps in it should already be cached, not a cold fetch.
+    loadCachedSession().then((session) => {
+      if (cancelled) {
+        return;
+      }
+      const userId = session?.user.id ?? null;
+      for (const program of programs) {
+        prefetchQuery(`program-detail:${slug}:${program.id}:public:${userId ?? "guest"}`, () => fetchProgramDetailSnapshot(slug, program.id, "public", userId));
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [loading, error, programs, slug]);
+
   if (loading) {
     return <ClassesLoadingPlaceholders count={2} />;
   }
@@ -4633,6 +4674,27 @@ export function AdminClassesData({ slug }: { slug: string }) {
       setToast(queuedToast);
     }
   }, []);
+
+  useEffect(() => {
+    if (loading || error || !programs.length) {
+      return;
+    }
+    let cancelled = false;
+    // Warm the public-page cache for each class -- the cover/title now always opens
+    // that page, so by the time an admin taps in it should already be cached, not a cold fetch.
+    loadCachedSession().then((session) => {
+      if (cancelled) {
+        return;
+      }
+      const userId = session?.user.id ?? null;
+      for (const program of programs) {
+        prefetchQuery(`program-detail:${slug}:${program.id}:public:${userId ?? "guest"}`, () => fetchProgramDetailSnapshot(slug, program.id, "public", userId));
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [loading, error, programs, slug]);
 
   if (loading) {
     return <ClassesLoadingPlaceholders count={3} />;
