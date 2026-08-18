@@ -936,142 +936,55 @@ const emptyProgramDetailSnapshot: ProgramDetailSnapshot = {
   error: null,
 };
 
+// A single RPC round-trip instead of the sequential mosque -> program -> teacher -> [7-way
+// batch] -> [5-way user batch] -> parent batch chain this used to run client-side -- each of
+// those steps depended on the previous one's result, so under real network latency (not the
+// ~0ms of local dev) they added up to multiple seconds. The RPC (get_program_detail_snapshot,
+// security invoker) runs the same lookups server-side under the same RLS the client queries
+// were already subject to, and returns everything in one response. userId is unused here --
+// the RPC derives the caller's identity from auth.uid() itself rather than trusting a
+// client-supplied id -- but stays in the signature since it's also used to key the query cache.
 async function fetchProgramDetailSnapshot(
   slug: string,
   programId: string,
   section: "public" | "portal" | "teacher",
   userId: string | null,
 ): Promise<ProgramDetailSnapshot> {
+  void userId;
   const supabase = createSupabaseBrowserClient();
-  const { data: mosqueData, error: mosqueError } = await supabase.from("mosques").select("*").eq("slug", slug).maybeSingle();
-  if (mosqueError) {
-    return { ...emptyProgramDetailSnapshot, error: mosqueError.message };
-  }
-  if (!mosqueData) {
-    return { ...emptyProgramDetailSnapshot, mosque: null };
-  }
+  const { data, error } = await supabase.rpc("get_program_detail_snapshot", {
+    p_slug: slug,
+    p_program_id: programId,
+    p_section: section,
+  });
 
-  const { data: programData, error: programError } = await supabase
-    .from("programs")
-    .select("*")
-    .eq("id", programId)
-    .eq("mosque_id", mosqueData.id)
-    .maybeSingle();
-
-  if (programError) {
-    return { ...emptyProgramDetailSnapshot, mosque: mosqueData, error: programError.message };
+  if (error) {
+    return { ...emptyProgramDetailSnapshot, error: error.message };
   }
 
-  if (section === "public" && programData && !["published", "hidden"].includes(programData.publication_status ?? "published")) {
-    return { ...emptyProgramDetailSnapshot, mosque: mosqueData, error: "This class is not published yet." };
+  const snapshot = data as unknown as Partial<ProgramDetailSnapshot> | null;
+  if (!snapshot) {
+    return emptyProgramDetailSnapshot;
   }
 
-  let teacher: TeacherDisplay | null = null;
-  const directorProfileId = programData?.director_profile_id ?? programData?.teacher_profile_id ?? null;
-  if (directorProfileId) {
-    const { data: teacherData } = await supabase
-      .from("profiles")
-      .select("id, full_name, avatar_url, teacher_credentials, teacher_whatsapp_number")
-      .eq("id", directorProfileId)
-      .maybeSingle();
-    teacher = teacherData ?? null;
-  }
-
-  if (!programData) {
-    return { ...emptyProgramDetailSnapshot, mosque: mosqueData };
-  }
-
-  const [detailsResult, outcomesResult, contentResult, faqResult, mediaResult, tracksResult, enrolledCountResult] = await Promise.all([
-    supabase.from("program_details").select("*").eq("program_id", programData.id).maybeSingle(),
-    supabase.from("program_outcomes").select("*").eq("program_id", programData.id).order("sort_order", { ascending: true }),
-    supabase.from("program_content_sections").select("*").eq("program_id", programData.id).order("sort_order", { ascending: true }),
-    supabase.from("program_faqs").select("*").eq("program_id", programData.id).order("sort_order", { ascending: true }),
-    supabase.from("program_media").select("*").eq("program_id", programData.id).order("sort_order", { ascending: true }),
-    supabase.from("program_tracks").select("*").eq("program_id", programData.id).eq("is_active", true).order("sort_order", { ascending: true }),
-    supabase.from("enrollments").select("id").eq("program_id", programData.id).eq("status", "active"),
-  ]);
-
-  const activeEnrollmentIds = (enrolledCountResult.data ?? []).map((row) => row.id);
-  const { data: enrollmentTrackRows } = activeEnrollmentIds.length
-    ? await supabase.from("enrollment_tracks").select("enrollment_id, program_track_id").in("enrollment_id", activeEnrollmentIds)
-    : { data: [] as Array<{ enrollment_id: string; program_track_id: string }> };
-  const nextCountByTrackId: Record<string, number> = {};
-  for (const row of enrollmentTrackRows ?? []) {
-    nextCountByTrackId[row.program_track_id] = (nextCountByTrackId[row.program_track_id] ?? 0) + 1;
-  }
-
-  const snapshot: ProgramDetailSnapshot = {
-    mosque: mosqueData,
-    program: { ...programData, teacher },
-    details: detailsResult.data ?? null,
-    outcomes: outcomesResult.data ?? [],
-    contentSections: contentResult.data ?? [],
-    faqs: faqResult.data ?? [],
-    mediaItems: mediaResult.data ?? [],
-    tracks: tracksResult.data ?? [],
-    enrolledCount: activeEnrollmentIds.length,
-    enrolledCountByTrackId: nextCountByTrackId,
-    accountType: null,
-    childStatuses: {},
-    requestStatus: null,
-    isEnrolled: false,
-    isStaffForProgram: false,
-    error: null,
+  return {
+    mosque: snapshot.mosque ?? null,
+    program: snapshot.program ?? null,
+    details: snapshot.details ?? null,
+    outcomes: snapshot.outcomes ?? [],
+    contentSections: snapshot.contentSections ?? [],
+    faqs: snapshot.faqs ?? [],
+    mediaItems: snapshot.mediaItems ?? [],
+    tracks: snapshot.tracks ?? [],
+    accountType: snapshot.accountType ?? null,
+    childStatuses: snapshot.childStatuses ?? {},
+    requestStatus: snapshot.requestStatus ?? null,
+    isEnrolled: Boolean(snapshot.isEnrolled),
+    isStaffForProgram: Boolean(snapshot.isStaffForProgram),
+    enrolledCount: snapshot.enrolledCount ?? null,
+    enrolledCountByTrackId: snapshot.enrolledCountByTrackId ?? {},
+    error: snapshot.error ?? null,
   };
-
-  if (!userId) {
-    return snapshot;
-  }
-
-  const [profileResult, enrollmentResult, requestResult, teacherAssignmentResult, access] = await Promise.all([
-    supabase.from("profiles").select("account_type").eq("id", userId).maybeSingle(),
-    supabase.from("enrollments").select("*").eq("program_id", programData.id).eq("student_profile_id", userId).maybeSingle(),
-    supabase
-      .from("enrollment_requests")
-      .select("*")
-      .eq("program_id", programData.id)
-      .eq("student_profile_id", userId)
-      .is("student_dismissed_at", null)
-      .order("requested_at", { ascending: false })
-      .limit(1)
-      .maybeSingle(),
-    supabase.from("program_teachers").select("program_id").eq("program_id", programData.id).eq("teacher_profile_id", userId).maybeSingle(),
-    loadCachedUserAccess(slug, userId),
-  ]);
-  const nextAccountType = profileResult.data?.account_type ?? access.accountType ?? null;
-  snapshot.accountType = nextAccountType;
-  snapshot.isEnrolled = Boolean(enrollmentResult.data && isCurrentEnrollmentStatus(enrollmentResult.data.status));
-  snapshot.requestStatus = requestResult.data?.status ?? null;
-  snapshot.isStaffForProgram = Boolean(teacherAssignmentResult.data) || directorProfileId === userId || access.isMosqueAdmin;
-
-  if (nextAccountType === "parent") {
-    const { children } = await fetchParentChildren(supabase, slug, userId, mosqueData.id);
-    const childIds = children.map((child) => child.id);
-    if (childIds.length) {
-      const [childEnrollments, childRequests] = await Promise.all([
-        supabase.from("enrollments").select("student_profile_id, status").eq("program_id", programData.id).in("student_profile_id", childIds),
-        supabase
-          .from("enrollment_requests")
-          .select("student_profile_id, status")
-          .eq("program_id", programData.id)
-          .eq("parent_profile_id", userId)
-          .in("student_profile_id", childIds)
-          .is("student_dismissed_at", null)
-          .order("requested_at", { ascending: false }),
-      ]);
-      const enrolledChildIds = new Set((childEnrollments.data ?? []).filter((row) => isCurrentEnrollmentStatus(row.status)).map((row) => row.student_profile_id));
-      const statuses: Record<string, { enrolled: boolean; requestStatus: string | null }> = {};
-      for (const child of children) {
-        statuses[child.id] = {
-          enrolled: enrolledChildIds.has(child.id),
-          requestStatus: childRequests.data?.find((row) => row.student_profile_id === child.id)?.status ?? null,
-        };
-      }
-      snapshot.childStatuses = statuses;
-    }
-  }
-
-  return snapshot;
 }
 
 // Prefers the OS share sheet (same one used for "Add to Home Screen") so a teacher on
@@ -2477,14 +2390,16 @@ export function StudentClassesData({ slug }: { slug: string }) {
       return;
     }
     let cancelled = false;
-    // Warm the public-page cache for each visible class so opening one from the portal is instant.
+    // Warm the cache for each visible class so opening one from the portal is instant --
+    // keyed "portal" to match the section PortalProgramDetailPage actually renders with,
+    // not "public" (a mismatched key here would prefetch data nothing ever reads).
     loadCachedSession().then((session) => {
       if (cancelled) {
         return;
       }
       const userId = session?.user.id ?? null;
       for (const program of programs) {
-        prefetchQuery(`program-detail:${slug}:${program.id}:public:${userId ?? "guest"}`, () => fetchProgramDetailSnapshot(slug, program.id, "public", userId));
+        prefetchQuery(`program-detail:${slug}:${program.id}:portal:${userId ?? "guest"}`, () => fetchProgramDetailSnapshot(slug, program.id, "portal", userId));
       }
     });
     return () => {

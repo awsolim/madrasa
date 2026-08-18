@@ -859,6 +859,10 @@ export type Database = {
         Args: { note_ids: string[] };
         Returns: void;
       };
+      get_program_detail_snapshot: {
+        Args: { p_slug: string; p_program_id: string; p_section: string };
+        Returns: Json;
+      };
     };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;
