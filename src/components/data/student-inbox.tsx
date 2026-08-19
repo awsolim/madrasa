@@ -35,7 +35,6 @@ import {
   getApplicationStatus,
 } from "@/lib/programs/applications";
 import { isCurrentEnrollmentStatus } from "@/lib/programs/enrollment-status";
-import { fetchParentChildren } from "@/lib/programs/family";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { Database } from "@/lib/supabase/types";
 import { cn } from "@/lib/utils";
@@ -623,7 +622,9 @@ function PaymentConfirmingModal() {
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#26323A]/35 px-5 backdrop-blur-sm">
       <div ref={containerRef} role="dialog" aria-modal="true" tabIndex={-1} className="w-full max-w-sm rounded-[28px] bg-white p-6 text-center shadow-[0_24px_60px_rgba(38,50,58,0.22)] outline-none">
-        <div className="mx-auto h-10 w-10 animate-spin rounded-full border-4 border-[#E7F3F8] border-t-[#2F8FB3]" />
+        <div className="mx-auto h-1.5 w-24 overflow-hidden rounded-full bg-[#E7F3F8]" aria-hidden>
+          <div className="nav-progress-sweep h-full w-1/3 bg-[#2F8FB3]" />
+        </div>
         <h2 className="mt-4 text-xl font-semibold text-[#26323A]">Finishing registration</h2>
         <p className="mt-2 text-sm leading-6 text-[#6B747B]">Payment succeeded. We are adding the class to your account.</p>
       </div>
@@ -849,6 +850,14 @@ export function InboxAnnouncementsData({ slug }: { slug: string }) {
     await loadInbox();
   }
 
+  // One RPC call instead of mosque -> profile -> children -> [enrollments+requests+
+  // withdrawals] -> enrollment_tracks -> notes -> [8-way hydration batch] -> [note author/
+  // recipient batch] -> announcements -> [author/receipt batch] as nine sequential/parallel
+  // round-trip stages. This also fixes two genuine N+1 bugs: notes used to fire one query PER
+  // enrolled (program, student) pair, and announcements one query PER enrolled program. Both
+  // are now a single query each server-side; the "keep the newest N per thread" trimming that
+  // used to be a per-thread SQL LIMIT happens here instead, on the RPC's full result set --
+  // same output, just computed client-side rather than N round-trips.
   async function loadInbox() {
     const supabase = createSupabaseBrowserClient();
     const { data: sessionData } = await supabase.auth.getSession();
@@ -876,66 +885,51 @@ export function InboxAnnouncementsData({ slug }: { slug: string }) {
     const { seen: initialSeenRequestIds } = await fetchNotificationState(userId);
     setSeenRequestIds(initialSeenRequestIds);
 
-    const { data: mosque } = await supabase.from("mosques").select("id").eq("slug", slug).maybeSingle();
-    if (!mosque) {
+    const { data, error } = await supabase.rpc("get_student_inbox_snapshot", { p_slug: slug });
+    if (error) {
+      setLoading(false);
+      setError(friendlyErrorMessage(error, "Could not load inbox."));
+      return;
+    }
+
+    type AnnouncementRow = Database["public"]["Tables"]["program_announcements"]["Row"];
+    const snapshot = data as unknown as {
+      profile: StudentDisplay | null;
+      accountType: string | null;
+      children: StudentDisplay[];
+      enrollments: EnrollmentTrackSelection[];
+      enrollmentTracks: Array<{ enrollment_id: string; program_track_id: string }>;
+      requests: EnrollmentRequest[];
+      withdrawals: WithdrawalRequest[];
+      notes: ProgramStudentNote[];
+      programs: Program[];
+      requestStudents: StudentDisplay[];
+      noteStudents: StudentDisplay[];
+      requestParents: ParentDisplay[];
+      requestReviewers: Profile[];
+      requestTrackLinks: Array<{ enrollment_request_id: string; program_track_id: string }>;
+      programTracks: ProgramTrack[];
+      requestSubscriptions: ProgramSubscription[];
+      noteAuthors: Profile[];
+      noteRecipients: Profile[];
+      announcements: AnnouncementRow[];
+      announcementAuthors: Profile[];
+      announcementReceipts: AnnouncementReceipt[];
+    } | null;
+
+    if (!snapshot) {
       setLoading(false);
       return;
     }
 
-    const { data: profile } = await supabase.from("profiles").select("id, full_name, email, phone_number, avatar_url, age, gender, date_of_birth, account_type").eq("id", userId).maybeSingle();
-    setInboxAccountType(profile?.account_type ?? null);
-    const isParent = profile?.account_type === "parent";
-    const { children } = isParent ? await fetchParentChildren(supabase, slug, userId, mosque.id) : { children: [] as StudentDisplay[] };
-    const targetStudentIds = isParent ? children.map((child) => child.id) : [userId];
+    const profile = snapshot.profile;
+    setInboxAccountType(snapshot.accountType ?? null);
+    const isParent = snapshot.accountType === "parent";
+    const children = snapshot.children ?? [];
 
-    const [{ data: enrollments }, { data: requestRows, error: requestError }, { data: withdrawalRows, error: withdrawalError }] = await Promise.all([
-      targetStudentIds.length
-        ? supabase.from("enrollments").select("id, program_id, student_profile_id, program_track_id, created_at, status").in("student_profile_id", targetStudentIds)
-        : Promise.resolve({ data: [] as EnrollmentTrackSelection[] }),
-      isParent
-        ? supabase
-            .from("enrollment_requests")
-            .select("*")
-            .eq("mosque_id", mosque.id)
-            .eq("parent_profile_id", userId)
-            .is("student_dismissed_at", null)
-            .order("requested_at", { ascending: false })
-        : supabase
-            .from("enrollment_requests")
-            .select("*")
-            .eq("mosque_id", mosque.id)
-            .eq("student_profile_id", userId)
-            .is("student_dismissed_at", null)
-            .order("requested_at", { ascending: false }),
-      isParent
-        ? supabase
-            .from("withdrawal_requests")
-            .select("*")
-            .eq("mosque_id", mosque.id)
-            .or(`parent_profile_id.eq.${userId},requested_by.eq.${userId}`)
-            .is("student_dismissed_at", null)
-            .order("requested_at", { ascending: false })
-        : supabase
-            .from("withdrawal_requests")
-            .select("*")
-            .eq("mosque_id", mosque.id)
-            .eq("student_profile_id", userId)
-            .is("student_dismissed_at", null)
-            .order("requested_at", { ascending: false }),
-    ]);
-
-    if (requestError || withdrawalError) {
-      setLoading(false);
-      setError(friendlyErrorMessage(requestError ?? withdrawalError, "Could not load inbox."));
-      return;
-    }
-
-    const enrollmentRows = ((enrollments ?? []) as EnrollmentTrackSelection[]).filter((enrollment) => isCurrentEnrollmentStatus(enrollment.status));
-    const enrollmentIds = enrollmentRows.map((enrollment) => enrollment.id);
-    const { data: enrollmentTrackRows } = enrollmentIds.length
-      ? await supabase.from("enrollment_tracks").select("enrollment_id, program_track_id").in("enrollment_id", enrollmentIds)
-      : { data: [] as Array<{ enrollment_id: string; program_track_id: string }> };
-    const enrolledTrackIdsByProgramId = getEnrollmentTrackIdsByProgram(enrollmentRows, enrollmentTrackRows ?? []);
+    const enrollmentRows = (snapshot.enrollments ?? []).filter((enrollment) => isCurrentEnrollmentStatus(enrollment.status));
+    const enrollmentTrackRows = snapshot.enrollmentTracks ?? [];
+    const enrolledTrackIdsByProgramId = getEnrollmentTrackIdsByProgram(enrollmentRows, enrollmentTrackRows);
     setAnnouncementTrackIdsByProgramId(
       Object.fromEntries(Array.from(enrolledTrackIdsByProgramId.entries()).map(([programId, trackIds]) => [programId, Array.from(trackIds)])),
     );
@@ -943,61 +937,40 @@ export function InboxAnnouncementsData({ slug }: { slug: string }) {
     setAnnouncementJoinDateByProgramId(Object.fromEntries(enrolledJoinDatesByProgramId.entries()));
 
     const enrolledProgramIds = enrollmentRows.map((enrollment) => enrollment.program_id);
-    const noteThreadKeys = Array.from(new Set(enrollmentRows.map((enrollment) => `${enrollment.program_id}:${enrollment.student_profile_id}`)));
-    const noteQueries = await Promise.all(
-      noteThreadKeys.map(async (key) => {
-        const [programId, studentId] = key.split(":");
-        const { data: rows, error: noteError } = await supabase
-          .from("program_student_notes")
-          .select("*")
-          .eq("program_id", programId)
-          .eq("student_profile_id", studentId)
-          .order("created_at", { ascending: false })
-          .limit(NOTE_THREAD_PAGE_SIZE);
-        return { key, rows: rows ?? [], error: noteError };
-      }),
-    );
-    const noteError = noteQueries.find((result) => result.error)?.error;
-    if (noteError) {
-      setLoading(false);
-      setError(friendlyErrorMessage(noteError, "Could not load your notes."));
-      return;
+    const requestRows = snapshot.requests ?? [];
+    const withdrawalRows = snapshot.withdrawals ?? [];
+    const programs = snapshot.programs ?? [];
+    const requestStudents = snapshot.requestStudents ?? [];
+    const noteStudents = snapshot.noteStudents ?? [];
+    const requestParents = snapshot.requestParents ?? [];
+    const requestReviewers = snapshot.requestReviewers ?? [];
+    const requestTrackLinkRows = snapshot.requestTrackLinks ?? [];
+    const programTrackRows = snapshot.programTracks ?? [];
+    const requestSubscriptions = snapshot.requestSubscriptions ?? [];
+
+    const notesByThreadKey = new Map<string, ProgramStudentNote[]>();
+    for (const note of snapshot.notes ?? []) {
+      const key = `${note.program_id}:${note.student_profile_id}`;
+      notesByThreadKey.set(key, [...(notesByThreadKey.get(key) ?? []), note]);
     }
-    setNoteThreadExhausted(Object.fromEntries(noteQueries.map((result) => [result.key, result.rows.length < NOTE_THREAD_PAGE_SIZE])));
+    const nextNoteThreadExhausted: Record<string, boolean> = {};
+    const noteRows: ProgramStudentNote[] = [];
+    for (const [key, threadNotes] of notesByThreadKey) {
+      const sorted = [...threadNotes].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
+      nextNoteThreadExhausted[key] = sorted.length <= NOTE_THREAD_PAGE_SIZE;
+      noteRows.push(...sorted.slice(0, NOTE_THREAD_PAGE_SIZE));
+    }
+    setNoteThreadExhausted(nextNoteThreadExhausted);
     setNoteThreadLoadingOlder({});
-    const noteRows = noteQueries.flatMap((result) => result.rows);
-    const requestProgramIds = (requestRows ?? []).map((request) => request.program_id);
-    const withdrawalProgramIds = (withdrawalRows ?? []).map((request) => request.program_id);
-    const noteProgramIds = noteRows.map((note) => note.program_id);
-    const knownProgramIds = Array.from(new Set([...enrolledProgramIds, ...requestProgramIds, ...withdrawalProgramIds, ...noteProgramIds]));
-    const requestStudentIds = Array.from(new Set((requestRows ?? []).map((request) => request.student_profile_id)));
-    const withdrawalStudentIds = Array.from(new Set((withdrawalRows ?? []).map((request) => request.student_profile_id)));
-    const noteStudentIds = Array.from(new Set(noteRows.map((note) => note.student_profile_id)));
-    const requestIds = (requestRows ?? []).map((request) => request.id);
-    const requestParentIds = Array.from(new Set((requestRows ?? []).map((request) => request.parent_profile_id).filter(Boolean))) as string[];
-    const requestReviewerIds = Array.from(new Set((requestRows ?? []).map((request) => request.reviewed_by).filter(Boolean))) as string[];
-    const [{ data: programs }, { data: requestStudents }, { data: noteStudents }, { data: requestParents }, { data: requestReviewers }, { data: requestTrackLinkRows }, { data: programTrackRows }, { data: requestSubscriptions }] = await Promise.all([
-      knownProgramIds.length ? supabase.from("programs").select("*").in("id", knownProgramIds) : Promise.resolve({ data: [] as Program[] }),
-      [...requestStudentIds, ...withdrawalStudentIds].length
-        ? supabase.from("profiles").select("id, full_name, email, phone_number, avatar_url, age, gender, date_of_birth, account_type").in("id", Array.from(new Set([...requestStudentIds, ...withdrawalStudentIds])))
-        : Promise.resolve({ data: [] as StudentDisplay[] }),
-      noteStudentIds.length
-        ? supabase.from("profiles").select("id, full_name, email, phone_number, avatar_url, age, gender, date_of_birth, account_type").in("id", noteStudentIds)
-        : Promise.resolve({ data: [] as StudentDisplay[] }),
-      requestParentIds.length ? supabase.from("profiles").select("id, full_name, email, phone_number, avatar_url").in("id", requestParentIds) : Promise.resolve({ data: [] as ParentDisplay[] }),
-      requestReviewerIds.length ? supabase.from("profiles").select("*").in("id", requestReviewerIds) : Promise.resolve({ data: [] as Profile[] }),
-      requestIds.length ? supabase.from("enrollment_request_tracks").select("enrollment_request_id, program_track_id").in("enrollment_request_id", requestIds) : Promise.resolve({ data: [] as Array<{ enrollment_request_id: string; program_track_id: string }> }),
-      knownProgramIds.length ? supabase.from("program_tracks").select("*").in("program_id", knownProgramIds).eq("is_active", true).order("sort_order", { ascending: true }) : Promise.resolve({ data: [] as ProgramTrack[] }),
-      requestStudentIds.length ? supabase.from("program_subscriptions").select("*").in("program_id", knownProgramIds).in("student_profile_id", requestStudentIds) : Promise.resolve({ data: [] as ProgramSubscription[] }),
-    ]);
+
     const requestTrackIdsByRequestId = new Map<string, string[]>();
-    for (const linkRow of requestTrackLinkRows ?? []) {
+    for (const linkRow of requestTrackLinkRows) {
       requestTrackIdsByRequestId.set(linkRow.enrollment_request_id, [...(requestTrackIdsByRequestId.get(linkRow.enrollment_request_id) ?? []), linkRow.program_track_id]);
     }
-    const childProfiles = isParent ? [...children, ...((requestStudents ?? []) as StudentDisplay[])] : ((requestStudents ?? []) as StudentDisplay[]);
+    const childProfiles = isParent ? [...children, ...requestStudents] : requestStudents;
     const enrolledProgramSet = new Set(enrolledProgramIds);
-    setEnrolledProgramsForInbox((programs ?? []).filter((program) => enrolledProgramSet.has(program.id)));
-    const studentProfilesForNotes = isParent ? childProfiles : ([...(profile ? [{ id: userId, account_type: profile.account_type } as StudentDisplay] : []), ...((noteStudents ?? []) as StudentDisplay[])] as StudentDisplay[]);
+    setEnrolledProgramsForInbox(programs.filter((program) => enrolledProgramSet.has(program.id)));
+    const studentProfilesForNotes = isParent ? childProfiles : ([...(profile ? [{ id: userId, account_type: profile.account_type } as StudentDisplay] : []), ...noteStudents] as StudentDisplay[]);
     const nextNoteStudentsByProgramId: Record<string, StudentDisplay[]> = {};
     for (const enrollment of enrollmentRows) {
       const student = studentProfilesForNotes.find((item) => item.id === enrollment.student_profile_id);
@@ -1012,38 +985,34 @@ export function InboxAnnouncementsData({ slug }: { slug: string }) {
     setNoteStudentsByProgramId(nextNoteStudentsByProgramId);
 
     setRequests(
-      (requestRows ?? []).map((request) => ({
+      requestRows.map((request) => ({
         ...request,
-        program: (programs ?? []).find((program) => program.id === request.program_id) ?? null,
+        program: programs.find((program) => program.id === request.program_id) ?? null,
         student: childProfiles.find((student) => student.id === request.student_profile_id) ?? null,
-        parent: request.parent_profile_id ? ((requestParents ?? []).find((parent) => parent.id === request.parent_profile_id) as ParentDisplay | undefined) ?? null : null,
-        approver: request.reviewed_by ? ((requestReviewers ?? []).find((reviewer) => reviewer.id === request.reviewed_by) as Profile | undefined) ?? null : null,
-        track: resolveRequestTrack(request, requestTrackIdsByRequestId, programTrackRows ?? []),
-        subscription: (requestSubscriptions ?? []).find((subscription) => subscription.program_id === request.program_id && subscription.student_profile_id === request.student_profile_id) ?? null,
+        parent: request.parent_profile_id ? (requestParents.find((parent) => parent.id === request.parent_profile_id) as ParentDisplay | undefined) ?? null : null,
+        approver: request.reviewed_by ? (requestReviewers.find((reviewer) => reviewer.id === request.reviewed_by) as Profile | undefined) ?? null : null,
+        track: resolveRequestTrack(request, requestTrackIdsByRequestId, programTrackRows),
+        subscription: requestSubscriptions.find((subscription) => subscription.program_id === request.program_id && subscription.student_profile_id === request.student_profile_id) ?? null,
       })),
     );
     setStudentWithdrawals(
-      (withdrawalRows ?? []).map((request) => ({
+      withdrawalRows.map((request) => ({
         ...request,
-        program: (programs ?? []).find((program) => program.id === request.program_id) ?? null,
+        program: programs.find((program) => program.id === request.program_id) ?? null,
         student: childProfiles.find((student) => student.id === request.student_profile_id) ?? null,
       })),
     );
 
-    const noteAuthorIds = Array.from(new Set(noteRows.map((note) => note.author_profile_id)));
-    const noteRecipientIds = Array.from(new Set(noteRows.map((note) => note.recipient_profile_id)));
-    const [{ data: noteAuthors }, { data: noteRecipients }] = await Promise.all([
-      noteAuthorIds.length ? supabase.from("profiles").select("*").in("id", noteAuthorIds) : Promise.resolve({ data: [] as Profile[] }),
-      noteRecipientIds.length ? supabase.from("profiles").select("*").in("id", noteRecipientIds) : Promise.resolve({ data: [] as Profile[] }),
-    ]);
-    const studentProfiles = [...childProfiles, ...((noteStudents ?? []) as StudentDisplay[])];
+    const noteAuthors = snapshot.noteAuthors ?? [];
+    const noteRecipients = snapshot.noteRecipients ?? [];
+    const studentProfiles = [...childProfiles, ...noteStudents];
     setNotes(
       noteRows.map((note) => ({
         ...note,
-        program: (programs ?? []).find((program) => program.id === note.program_id) ?? null,
+        program: programs.find((program) => program.id === note.program_id) ?? null,
         student: studentProfiles.find((student) => student.id === note.student_profile_id) ?? null,
-        recipient: (noteRecipients ?? []).find((recipient) => recipient.id === note.recipient_profile_id) ?? null,
-        author: (noteAuthors ?? []).find((author) => author.id === note.author_profile_id) ?? null,
+        recipient: noteRecipients.find((recipient) => recipient.id === note.recipient_profile_id) ?? null,
+        author: noteAuthors.find((author) => author.id === note.author_profile_id) ?? null,
       })),
     );
 
@@ -1059,44 +1028,29 @@ export function InboxAnnouncementsData({ slug }: { slug: string }) {
       return;
     }
 
-    const announcementQueries = await Promise.all(
-      Array.from(new Set(enrolledProgramIds)).map(async (programId) => {
-        const { data: rows, error: queryError } = await supabase
-          .from("program_announcements")
-          .select("*")
-          .eq("program_id", programId)
-          .order("created_at", { ascending: false })
-          .limit(ANNOUNCEMENT_THREAD_PAGE_SIZE);
-        return { programId, rows: rows ?? [], error: queryError };
-      }),
-    );
-    const queryError = announcementQueries.find((result) => result.error)?.error;
-    if (queryError) {
-      setLoading(false);
-      setError(friendlyErrorMessage(queryError, "Could not load your announcements."));
-      return;
+    const announcementsByProgramId = new Map<string, AnnouncementRow[]>();
+    for (const announcement of snapshot.announcements ?? []) {
+      announcementsByProgramId.set(announcement.program_id, [...(announcementsByProgramId.get(announcement.program_id) ?? []), announcement]);
     }
-    setAnnouncementThreadExhausted(
-      Object.fromEntries(announcementQueries.map((result) => [result.programId, result.rows.length < ANNOUNCEMENT_THREAD_PAGE_SIZE])),
-    );
+    const nextAnnouncementThreadExhausted: Record<string, boolean> = {};
+    const announcementRows: AnnouncementRow[] = [];
+    for (const [programId, programAnnouncements] of announcementsByProgramId) {
+      const sorted = [...programAnnouncements].sort((a, b) => Date.parse(b.created_at) - Date.parse(a.created_at));
+      nextAnnouncementThreadExhausted[programId] = sorted.length <= ANNOUNCEMENT_THREAD_PAGE_SIZE;
+      announcementRows.push(...sorted.slice(0, ANNOUNCEMENT_THREAD_PAGE_SIZE));
+    }
+    setAnnouncementThreadExhausted(nextAnnouncementThreadExhausted);
     setAnnouncementThreadLoadingOlder({});
 
-    const announcementRows = announcementQueries.flatMap((result) => result.rows);
-    const announcementIds = announcementRows.map((announcement) => announcement.id);
-    const authorIds = Array.from(new Set(announcementRows.map((announcement) => announcement.author_profile_id).filter(Boolean)));
-    const [{ data: authors }, { data: receipts }] = await Promise.all([
-      authorIds.length ? supabase.from("profiles").select("*").in("id", authorIds) : Promise.resolve({ data: [] as Profile[] }),
-      announcementIds.length
-        ? supabase.from("program_announcement_receipts").select("*").eq("profile_id", userId).in("announcement_id", announcementIds)
-        : Promise.resolve({ data: [] as AnnouncementReceipt[] }),
-    ]);
+    const authors = snapshot.announcementAuthors ?? [];
+    const receipts = snapshot.announcementReceipts ?? [];
 
     const visibleAnnouncements = announcementRows
       .map((announcement) => ({
         ...announcement,
-        program: (programs ?? []).find((program) => program.id === announcement.program_id) ?? null,
-        author: (authors ?? []).find((author) => author.id === announcement.author_profile_id) ?? null,
-        receipt: (receipts ?? []).find((receipt) => receipt.announcement_id === announcement.id) ?? null,
+        program: programs.find((program) => program.id === announcement.program_id) ?? null,
+        author: authors.find((author) => author.id === announcement.author_profile_id) ?? null,
+        receipt: receipts.find((receipt) => receipt.announcement_id === announcement.id) ?? null,
       }))
       .filter((announcement) => isAnnouncementVisibleForEnrollment(announcement, enrolledTrackIdsByProgramId.get(announcement.program_id), enrolledJoinDatesByProgramId.get(announcement.program_id)))
       .filter((announcement) => !announcement.receipt?.dismissed_at);

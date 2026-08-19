@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
+import { GenericLoadingState } from "@/components/data/data-loading";
 import { AppChrome } from "@/components/layout/page-shell";
 import { loadCachedSession } from "@/lib/client-cache";
 
@@ -54,9 +55,5 @@ export function PublicAreaGate({ children, slug, mosqueName }: { children: React
     );
   }
 
-  return (
-    <main className="flex min-h-screen items-center justify-center bg-[var(--workspace)] px-6 text-center">
-      <div className="h-10 w-10 animate-spin rounded-full border-2 border-[#DDE7E2] border-t-[#2F6F5B]" aria-label="Checking access" />
-    </main>
-  );
+  return <GenericLoadingState label="Checking access" layout="management" />;
 }

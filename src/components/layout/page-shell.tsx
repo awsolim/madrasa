@@ -4,6 +4,7 @@ import { NavItem } from "@/components/layout/horizontal-nav";
 import { NavigationPendingProvider } from "@/components/layout/navigation-pending-context";
 import { NavigationProgressBar } from "@/components/layout/navigation-progress-bar";
 import { PageTransitionFrame } from "@/components/layout/page-transition-frame";
+import { PrimaryNavPrefetch } from "@/components/layout/primary-nav-prefetch";
 
 const defaultAppName = "Madrasa";
 
@@ -75,6 +76,7 @@ export function AppChrome({
     (section === "portal" ? scopedPortalMobileNav : section === "teacher" ? scopedTeacherMobileNav : section === "admin" ? scopedAdminMobileNav : scopedPublicMobileNav);
   return (
     <NavigationPendingProvider>
+      <PrimaryNavPrefetch slug={slug} section={section} />
       <NavigationProgressBar />
       <AppTopBar appName={defaultAppName} mosqueSlug={slug} homeHref={`/m/${slug}`} navItems={resolvedNav} mobileNavItems={resolvedMobileNav} />
       <MobileBottomNav mosqueSlug={slug} navItems={resolvedNav} mobileNavItems={resolvedMobileNav} />

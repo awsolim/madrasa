@@ -442,6 +442,10 @@ export function TeacherInboxData({ slug }: { slug: string }) {
     }
   }, [searchParams]);
 
+  // One RPC call instead of notification-state -> mosque -> [programs+assignments] -> [7-way
+  // request/withdrawal/instructor/track batch] -> [6-way profile/subscription hydration batch]
+  // as five sequential/parallel round-trip stages. Raw rows only -- every bit of hydration
+  // below (matching program/student/parent/author/track context onto each row) is unchanged.
   async function fetchTeacherInboxSnapshot(): Promise<TeacherInboxSnapshot> {
     const supabase = createSupabaseBrowserClient();
     const { data: sessionData } = await supabase.auth.getSession();
@@ -451,25 +455,44 @@ export function TeacherInboxData({ slug }: { slug: string }) {
     }
 
     const { seen: initialSeenIds, dismissed: initialDismissedIds } = await fetchNotificationState(userId);
-    const { data: mosque } = await supabase.from("mosques").select("id").eq("slug", slug).maybeSingle();
-    if (!mosque) {
+    const { data, error } = await supabase.rpc("get_teacher_inbox_snapshot", {
+      p_slug: slug,
+      p_selected_program_id: selectedProgramId || null,
+    });
+
+    if (error) {
+      return { ...emptyTeacherInboxSnapshot, currentUserId: userId, seenRequestIds: initialSeenIds, dismissedNotificationIds: initialDismissedIds, error: friendlyErrorMessage(error, "Could not load teacher inbox.") };
+    }
+
+    const snapshot = data as unknown as {
+      currentUserId: string | null;
+      programs: Program[];
+      activeProgramId: string | null;
+      directorProgramIds: string[];
+      announcements: AnnouncementWithContext[];
+      requests: RequestWithContext[];
+      withdrawals: WithdrawalRequestWithContext[];
+      instructorEventRows: ProgramInstructorEvent[];
+      instructorRows: ProgramTeacher[];
+      trackRows: ProgramTrack[];
+      trackSwitchRows: ProgramTrackSwitchRequestRow[];
+      students: StudentDisplay[];
+      parents: ParentDisplay[];
+      authors: Profile[];
+      instructorProfiles: Profile[];
+      subscriptions: ProgramSubscription[];
+      requestTrackLinks: Array<{ enrollment_request_id: string; program_track_id: string }>;
+    } | null;
+
+    if (!snapshot) {
       return { ...emptyTeacherInboxSnapshot, currentUserId: userId, seenRequestIds: initialSeenIds, dismissedNotificationIds: initialDismissedIds };
     }
 
-    const [{ data: mosquePrograms }, { data: assignments }] = await Promise.all([
-      supabase.from("programs").select("*").eq("mosque_id", mosque.id).eq("is_active", true),
-      supabase.from("program_teachers").select("program_id, role").eq("teacher_profile_id", userId),
-    ]);
-    const assignedIds = new Set((assignments ?? []).map((assignment) => assignment.program_id));
-    const directorAssignmentIds = new Set((assignments ?? []).filter((assignment) => assignment.role === "director").map((assignment) => assignment.program_id));
-    const teacherPrograms = (mosquePrograms ?? []).filter((program) => (program.director_profile_id ?? program.teacher_profile_id) === userId || assignedIds.has(program.id));
-    const directorProgramIds = teacherPrograms
-      .filter((program) => (program.director_profile_id ?? program.teacher_profile_id) === userId || directorAssignmentIds.has(program.id))
-      .map((program) => program.id);
-    const activeProgramId = selectedProgramId || teacherPrograms[0]?.id || "";
+    const teacherPrograms = snapshot.programs ?? [];
+    const activeProgramId = snapshot.activeProgramId ?? "";
+    const directorProgramIds = snapshot.directorProgramIds ?? [];
 
-    const programIds = teacherPrograms.map((program) => program.id);
-    if (programIds.length === 0) {
+    if (teacherPrograms.length === 0) {
       return {
         ...emptyTeacherInboxSnapshot,
         currentUserId: userId,
@@ -481,101 +504,31 @@ export function TeacherInboxData({ slug }: { slug: string }) {
       };
     }
 
-    const [
-      { data: announcementRows, error: announcementError },
-      { data: requestRows, error: requestError },
-      { data: withdrawalRows, error: withdrawalError },
-      { data: instructorRows, error: instructorError },
-      { data: instructorEventRows, error: instructorEventError },
-      { data: trackRows },
-      { data: trackSwitchRows },
-    ] = await Promise.all([
-      activeProgramId
-        ? supabase.from("program_announcements").select("*").eq("program_id", activeProgramId).order("created_at", { ascending: false })
-        : Promise.resolve({ data: [] as AnnouncementWithContext[], error: null }),
-      directorProgramIds.length
-        ? supabase.from("enrollment_requests").select("*").in("program_id", directorProgramIds).is("teacher_dismissed_at", null).order("requested_at", { ascending: false })
-        : Promise.resolve({ data: [] as EnrollmentRequest[], error: null }),
-      directorProgramIds.length
-        ? supabase.from("withdrawal_requests").select("*").in("program_id", directorProgramIds).is("teacher_dismissed_at", null).order("requested_at", { ascending: false })
-        : Promise.resolve({ data: [] as WithdrawalRequest[], error: null }),
-      directorProgramIds.length
-        ? supabase
-            .from("program_teachers")
-            .select("*")
-            .in("program_id", directorProgramIds)
-            .eq("role", "instructor")
-            .not("teacher_profile_id", "is", null)
-            .order("created_at", { ascending: false })
-        : Promise.resolve({ data: [] as ProgramTeacher[], error: null }),
-      directorProgramIds.length
-        ? supabase.from("program_instructor_events").select("*").in("program_id", directorProgramIds).order("created_at", { ascending: false })
-        : Promise.resolve({ data: [] as ProgramInstructorEvent[], error: null }),
-      programIds.length
-        ? supabase.from("program_tracks").select("*").in("program_id", programIds).eq("is_active", true).order("sort_order", { ascending: true })
-        : Promise.resolve({ data: [] as ProgramTrack[] }),
-      directorProgramIds.length
-        ? supabase.from("program_track_switch_requests").select("*").in("program_id", directorProgramIds).order("requested_at", { ascending: false })
-        : Promise.resolve({ data: [] as ProgramTrackSwitchRequestRow[] }),
-    ]);
+    const announcementRows = snapshot.announcements ?? [];
+    const requestRows = snapshot.requests ?? [];
+    const withdrawalRows = snapshot.withdrawals ?? [];
+    const instructorRows = snapshot.instructorRows ?? [];
+    const instructorEventRows = snapshot.instructorEventRows ?? [];
+    const trackRows = snapshot.trackRows ?? [];
+    const trackSwitchRows = snapshot.trackSwitchRows ?? [];
+    const students = snapshot.students ?? [];
+    const parents = snapshot.parents ?? [];
+    const authors = snapshot.authors ?? [];
+    const instructorProfiles = snapshot.instructorProfiles ?? [];
+    const subscriptions = snapshot.subscriptions ?? [];
+    const requestTrackLinkRows = snapshot.requestTrackLinks ?? [];
 
-    if (announcementError || requestError || withdrawalError || instructorError || instructorEventError) {
-      return {
-        ...emptyTeacherInboxSnapshot,
-        currentUserId: userId,
-        seenRequestIds: initialSeenIds,
-        dismissedNotificationIds: initialDismissedIds,
-        programs: teacherPrograms,
-        selectedProgramId: activeProgramId,
-        canReviewRequests: directorProgramIds.length > 0,
-        error: friendlyErrorMessage(announcementError ?? requestError ?? withdrawalError ?? instructorError ?? instructorEventError, "Could not load teacher inbox."),
-      };
-    }
-
-    const studentIds = Array.from(
-      new Set([
-        ...(requestRows ?? []).map((request) => request.student_profile_id),
-        ...(withdrawalRows ?? []).map((request) => request.student_profile_id),
-        ...(trackSwitchRows ?? []).map((request) => request.student_profile_id),
-      ]),
-    );
-    const parentIds = Array.from(new Set([...(requestRows ?? []).map((request) => request.parent_profile_id).filter(Boolean), ...(withdrawalRows ?? []).map((request) => request.parent_profile_id).filter(Boolean)])) as string[];
-    const authorIds = Array.from(new Set((announcementRows ?? []).map((announcement) => announcement.author_profile_id).filter(Boolean))) as string[];
-    const instructorIds = Array.from(
-      new Set([
-        ...(instructorRows ?? []).map((instructor) => instructor.teacher_profile_id).filter(Boolean),
-        ...(instructorEventRows ?? []).map((event) => event.teacher_profile_id).filter(Boolean),
-      ]),
-    ) as string[];
-    const subscriptionStudentIds = Array.from(new Set((withdrawalRows ?? []).map((request) => request.student_profile_id)));
-    const requestIds = (requestRows ?? []).map((request) => request.id);
-    const [{ data: students }, { data: parents }, { data: authors }, { data: instructorProfiles }, { data: subscriptions }, { data: requestTrackLinkRows }] = await Promise.all([
-      studentIds.length
-        ? supabase.from("profiles").select("id, full_name, email, phone_number, avatar_url, age, gender, date_of_birth, account_type").in("id", studentIds)
-        : Promise.resolve({ data: [] as StudentDisplay[] }),
-      parentIds.length
-        ? supabase.from("profiles").select("id, full_name, email, phone_number, avatar_url").in("id", parentIds)
-        : Promise.resolve({ data: [] as ParentDisplay[] }),
-      authorIds.length ? supabase.from("profiles").select("*").in("id", authorIds) : Promise.resolve({ data: [] as Profile[] }),
-      instructorIds.length ? supabase.from("profiles").select("*").in("id", instructorIds) : Promise.resolve({ data: [] as Profile[] }),
-      subscriptionStudentIds.length
-        ? supabase.from("program_subscriptions").select("*").in("program_id", directorProgramIds).in("student_profile_id", subscriptionStudentIds)
-        : Promise.resolve({ data: [] as ProgramSubscription[] }),
-      requestIds.length
-        ? supabase.from("enrollment_request_tracks").select("enrollment_request_id, program_track_id").in("enrollment_request_id", requestIds)
-        : Promise.resolve({ data: [] as Array<{ enrollment_request_id: string; program_track_id: string }> }),
-    ]);
     const requestTrackIdsByRequestId = new Map<string, string[]>();
-    for (const linkRow of requestTrackLinkRows ?? []) {
+    for (const linkRow of requestTrackLinkRows) {
       requestTrackIdsByRequestId.set(linkRow.enrollment_request_id, [...(requestTrackIdsByRequestId.get(linkRow.enrollment_request_id) ?? []), linkRow.program_track_id]);
     }
 
-    const tracksByProgramId = (trackRows ?? []).reduce<Record<string, ProgramTrack[]>>((next, track) => {
+    const tracksByProgramId = trackRows.reduce<Record<string, ProgramTrack[]>>((next, track) => {
       next[track.program_id] = [...(next[track.program_id] ?? []), track];
       return next;
     }, {});
-    const joinedAssignmentIdsWithEvents = new Set((instructorEventRows ?? []).filter((event) => event.event_type === "joined" && event.assignment_id).map((event) => event.assignment_id as string));
-    const instructorEventNotifications: InstructorLifecycleNotification[] = (instructorEventRows ?? []).map((event) => ({
+    const joinedAssignmentIdsWithEvents = new Set(instructorEventRows.filter((event) => event.event_type === "joined" && event.assignment_id).map((event) => event.assignment_id as string));
+    const instructorEventNotifications: InstructorLifecycleNotification[] = instructorEventRows.map((event) => ({
       id: event.id,
       program_id: event.program_id,
       assignment_id: event.assignment_id,
@@ -583,9 +536,9 @@ export function TeacherInboxData({ slug }: { slug: string }) {
       event_type: event.event_type === "resigned" ? "resigned" : "joined",
       created_at: event.created_at,
       program: teacherPrograms.find((program) => program.id === event.program_id) ?? null,
-      instructor: event.teacher_profile_id ? ((instructorProfiles ?? []).find((profile) => profile.id === event.teacher_profile_id) as Profile | undefined) ?? null : null,
+      instructor: event.teacher_profile_id ? (instructorProfiles.find((profile) => profile.id === event.teacher_profile_id) as Profile | undefined) ?? null : null,
     }));
-    const fallbackJoinNotifications: InstructorLifecycleNotification[] = (instructorRows ?? [])
+    const fallbackJoinNotifications: InstructorLifecycleNotification[] = instructorRows
       .filter((notification) => !joinedAssignmentIdsWithEvents.has(notification.id))
       .map((notification) => ({
         id: notification.id,
@@ -595,7 +548,7 @@ export function TeacherInboxData({ slug }: { slug: string }) {
         event_type: "joined",
         created_at: notification.created_at,
         program: teacherPrograms.find((program) => program.id === notification.program_id) ?? null,
-        instructor: notification.teacher_profile_id ? ((instructorProfiles ?? []).find((profile) => profile.id === notification.teacher_profile_id) as Profile | undefined) ?? null : null,
+        instructor: notification.teacher_profile_id ? (instructorProfiles.find((profile) => profile.id === notification.teacher_profile_id) as Profile | undefined) ?? null : null,
       }));
 
     return {
@@ -607,30 +560,30 @@ export function TeacherInboxData({ slug }: { slug: string }) {
       canReviewRequests: directorProgramIds.length > 0,
       announcementTracksByProgramId: tracksByProgramId,
       selectedAnnouncementTargetValue: selectedAnnouncementTargetValue || (activeProgramId ? announcementTargetValue(activeProgramId, null) : ""),
-      announcements: (announcementRows ?? []).map((announcement) => ({
+      announcements: announcementRows.map((announcement) => ({
         ...announcement,
         program: teacherPrograms.find((program) => program.id === announcement.program_id) ?? null,
-        author: (authors ?? []).find((author) => author.id === announcement.author_profile_id) ?? null,
+        author: authors.find((author) => author.id === announcement.author_profile_id) ?? null,
       })),
-      trackSwitchRequests: (trackSwitchRows ?? []).map((request) => ({
+      trackSwitchRequests: trackSwitchRows.map((request) => ({
         ...request,
         program: teacherPrograms.find((program) => program.id === request.program_id) ?? null,
-        student: (students ?? []).find((student) => student.id === request.student_profile_id) ?? null,
+        student: students.find((student) => student.id === request.student_profile_id) ?? null,
       })),
-      requests: (requestRows ?? []).map((request) => ({
+      requests: requestRows.map((request) => ({
         ...request,
         program: teacherPrograms.find((program) => program.id === request.program_id) ?? null,
-        student: (students ?? []).find((student) => student.id === request.student_profile_id) ?? null,
-        parent: request.parent_profile_id ? ((parents ?? []).find((parent) => parent.id === request.parent_profile_id) as ParentDisplay | undefined) ?? null : null,
-        track: resolveRequestTrack(request, requestTrackIdsByRequestId, trackRows ?? []),
+        student: students.find((student) => student.id === request.student_profile_id) ?? null,
+        parent: request.parent_profile_id ? (parents.find((parent) => parent.id === request.parent_profile_id) as ParentDisplay | undefined) ?? null : null,
+        track: resolveRequestTrack(request, requestTrackIdsByRequestId, trackRows),
       })),
-      withdrawals: (withdrawalRows ?? []).map((request) => ({
+      withdrawals: withdrawalRows.map((request) => ({
         ...request,
         program: teacherPrograms.find((program) => program.id === request.program_id) ?? null,
-        student: (students ?? []).find((student) => student.id === request.student_profile_id) ?? null,
-        parent: request.parent_profile_id ? ((parents ?? []).find((parent) => parent.id === request.parent_profile_id) as ParentDisplay | undefined) ?? null : null,
+        student: students.find((student) => student.id === request.student_profile_id) ?? null,
+        parent: request.parent_profile_id ? (parents.find((parent) => parent.id === request.parent_profile_id) as ParentDisplay | undefined) ?? null : null,
         subscription:
-          (subscriptions ?? []).find((subscription) => subscription.program_id === request.program_id && subscription.student_profile_id === request.student_profile_id) ?? null,
+          subscriptions.find((subscription) => subscription.program_id === request.program_id && subscription.student_profile_id === request.student_profile_id) ?? null,
       })),
       instructorNotifications: [...instructorEventNotifications, ...fallbackJoinNotifications].sort((a, b) => Date.parse(b.created_at ?? "0") - Date.parse(a.created_at ?? "0")),
       error: null,

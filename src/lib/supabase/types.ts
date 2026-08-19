@@ -863,6 +863,86 @@ export type Database = {
         Args: { p_slug: string; p_program_id: string; p_section: string };
         Returns: Json;
       };
+      get_teacher_programs_snapshot: {
+        Args: { p_slug: string };
+        Returns: Json;
+      };
+      get_admin_programs_snapshot: {
+        Args: { p_slug: string };
+        Returns: Json;
+      };
+      get_mosque_programs_snapshot: {
+        Args: { p_slug: string };
+        Returns: Json;
+      };
+      get_student_enrollments_snapshot: {
+        Args: { p_slug: string };
+        Returns: Json;
+      };
+      get_applicant_applications_snapshot: {
+        Args: { p_slug: string };
+        Returns: Json;
+      };
+      get_teacher_inbox_snapshot: {
+        Args: { p_slug: string; p_selected_program_id?: string | null };
+        Returns: Json;
+      };
+      get_student_inbox_snapshot: {
+        Args: { p_slug: string };
+        Returns: Json;
+      };
+      get_teacher_roster_snapshot: {
+        Args: { p_slug: string; p_program_id: string };
+        Returns: Json;
+      };
+      get_program_applications_snapshot: {
+        Args: { p_slug: string; p_program_id: string };
+        Returns: Json;
+      };
+      get_program_finances_snapshot: {
+        Args: { p_slug: string; p_program_id: string };
+        Returns: Json;
+      };
+      get_teacher_announcements_snapshot: {
+        Args: { p_slug: string; p_program_id: string };
+        Returns: Json;
+      };
+      get_program_staff_snapshot: {
+        Args: { p_program_id: string };
+        Returns: Json;
+      };
+      get_admin_members_snapshot: {
+        Args: { p_slug: string };
+        Returns: Json;
+      };
+      get_admin_teacher_requests_snapshot: {
+        Args: { p_slug: string };
+        Returns: Json;
+      };
+      get_program_apply_snapshot: {
+        Args: { p_slug: string; p_program_id: string };
+        Returns: Json;
+      };
+      get_registration_confirmation_snapshot: {
+        Args: { p_slug: string; p_request_id: string };
+        Returns: Json;
+      };
+      get_student_schedule_options_snapshot: {
+        Args: { p_slug: string; p_program_id: string };
+        Returns: Json;
+      };
+      get_student_withdrawal_options_snapshot: {
+        Args: { p_slug: string; p_program_id: string };
+        Returns: Json;
+      };
+      get_teacher_student_notes_snapshot: {
+        Args: { p_slug: string; p_program_id: string; p_student_id: string };
+        Returns: Json;
+      };
+      get_program_create_defaults_snapshot: {
+        Args: { p_slug: string };
+        Returns: Json;
+      };
     };
     Enums: Record<string, never>;
     CompositeTypes: Record<string, never>;

@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { AuthFormSkeleton } from "@/components/data/data-loading";
 import { getDefaultLandingHref, loadUserAccessByMosqueSlug } from "@/lib/authz";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
@@ -67,9 +68,5 @@ export function GoogleAuthCallback({ slug }: { slug: string }) {
     );
   }
 
-  return (
-    <div className="flex min-h-[240px] items-center justify-center p-6">
-      <div className="h-10 w-10 animate-spin rounded-full border-4 border-[#DDEFF4] border-t-[#2F8FB3]" />
-    </div>
-  );
+  return <AuthFormSkeleton />;
 }

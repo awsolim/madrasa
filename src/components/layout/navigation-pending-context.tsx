@@ -64,22 +64,3 @@ export function NavigationPendingProvider({ children }: { children: React.ReactN
 export function useNavigationPending() {
   return useContext(NavigationPendingContext);
 }
-
-// Most navigations resolve from cache well under this delay, so nothing ever appears --
-// the spinner only reveals itself for a navigation that's genuinely slow, instead of flashing
-// on every single tap the way the raw pending flag does.
-export function useDelayedNavigationPending(delayMs: number) {
-  const isPending = useNavigationPending();
-  const [revealed, setRevealed] = useState(false);
-
-  useEffect(() => {
-    if (!isPending) {
-      const timer = window.setTimeout(() => setRevealed(false), 0);
-      return () => window.clearTimeout(timer);
-    }
-    const timer = window.setTimeout(() => setRevealed(true), delayMs);
-    return () => window.clearTimeout(timer);
-  }, [isPending, delayMs]);
-
-  return isPending && revealed;
-}

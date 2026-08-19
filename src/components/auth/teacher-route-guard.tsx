@@ -2,6 +2,7 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { GenericLoadingState } from "@/components/data/data-loading";
 import { loadCachedSession, loadCachedUserAccess } from "@/lib/client-cache";
 
 export function TeacherRouteGuard({ children, slug }: { children: React.ReactNode; slug: string }) {
@@ -44,7 +45,7 @@ export function TeacherRouteGuard({ children, slug }: { children: React.ReactNod
   }, [pathname, router, slug]);
 
   if (!isAllowed) {
-    return null;
+    return <GenericLoadingState label="Checking access" layout="management" />;
   }
 
   return <>{children}</>;

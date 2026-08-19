@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { GenericLoadingState } from "@/components/data/data-loading";
 import { loadUserAccessByMosqueSlug } from "@/lib/authz";
 
 type GuardState = "checking" | "allowed" | "denied";
@@ -53,9 +54,5 @@ export function AdminRouteGuard({ children, slug }: { children: React.ReactNode;
     );
   }
 
-  return (
-    <main className="flex min-h-screen items-center justify-center bg-[var(--workspace)] px-6 text-center">
-      <div className="h-10 w-10 animate-spin rounded-full border-2 border-[#DDE7E2] border-t-[#2F6F5B]" aria-label="Checking access" />
-    </main>
-  );
+  return <GenericLoadingState label="Checking access" layout="management" />;
 }

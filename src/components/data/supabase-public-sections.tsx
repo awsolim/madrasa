@@ -1408,109 +1408,36 @@ const emptyProgramApplyDetailSnapshot: ProgramApplyDetailSnapshot = {
   error: null,
 };
 
+// One RPC call instead of mosque -> program -> tracks -> active-enrollments ->
+// enrollment_tracks -> [user-scoped batch] -> [parent-scoped batch], as up to eight
+// sequential stages for a parent account. Same shape as get_program_detail_snapshot, applied
+// to the apply-flow's own fetch.
 async function fetchProgramApplyDetail(slug: string, programId: string, userId: string | null): Promise<ProgramApplyDetailSnapshot> {
+  void userId;
   const supabase = createSupabaseBrowserClient();
-  const { data: mosqueData, error: mosqueError } = await supabase.from("mosques").select("*").eq("slug", slug).maybeSingle();
-  if (mosqueError || !mosqueData) {
-    return { ...emptyProgramApplyDetailSnapshot, error: friendlyErrorMessage(mosqueError, "Masjid not found.") };
+  const { data, error } = await supabase.rpc("get_program_apply_snapshot", { p_slug: slug, p_program_id: programId });
+  if (error) {
+    return { ...emptyProgramApplyDetailSnapshot, error: error.message };
   }
 
-  const { data: programData, error: programError } = await supabase
-    .from("programs")
-    .select("*")
-    .eq("id", programId)
-    .eq("mosque_id", mosqueData.id)
-    .maybeSingle();
-  if (programError || !programData) {
-    return { ...emptyProgramApplyDetailSnapshot, mosque: mosqueData, error: friendlyErrorMessage(programError, "This class could not be loaded.") };
-  }
-  if (!["published", "hidden"].includes(programData.publication_status ?? "published")) {
-    return { ...emptyProgramApplyDetailSnapshot, mosque: mosqueData, program: programData, error: "This class is not published yet." };
+  const snapshot = data as unknown as Partial<ProgramApplyDetailSnapshot & { children: StudentDisplay[] }> | null;
+  if (!snapshot) {
+    return emptyProgramApplyDetailSnapshot;
   }
 
-  const { data: tracksData } = await supabase
-    .from("program_tracks")
-    .select("*")
-    .eq("program_id", programData.id)
-    .eq("is_active", true)
-    .order("sort_order", { ascending: true });
-  const activeTracks = tracksData ?? [];
-
-  const { data: activeEnrollments } = await supabase.from("enrollments").select("id").eq("program_id", programData.id).eq("status", "active");
-  const activeEnrollmentIds = (activeEnrollments ?? []).map((row) => row.id);
-  const { data: enrollmentTrackRows } = activeEnrollmentIds.length
-    ? await supabase.from("enrollment_tracks").select("enrollment_id, program_track_id").in("enrollment_id", activeEnrollmentIds)
-    : { data: [] as Array<{ enrollment_id: string; program_track_id: string }> };
-  const nextCountByTrackId: Record<string, number> = {};
-  for (const row of enrollmentTrackRows ?? []) {
-    nextCountByTrackId[row.program_track_id] = (nextCountByTrackId[row.program_track_id] ?? 0) + 1;
-  }
-
-  const snapshot: ProgramApplyDetailSnapshot = {
-    ...emptyProgramApplyDetailSnapshot,
-    mosque: mosqueData,
-    program: programData,
-    tracks: activeTracks,
-    enrolledCountByTrackId: nextCountByTrackId,
+  return {
+    mosque: snapshot.mosque ?? null,
+    program: snapshot.program ?? null,
+    tracks: snapshot.tracks ?? [],
+    enrolledCountByTrackId: snapshot.enrolledCountByTrackId ?? {},
+    accountType: snapshot.accountType ?? null,
+    selfProfile: snapshot.selfProfile ?? null,
+    parentChildren: snapshot.children ?? [],
+    childStatuses: snapshot.childStatuses ?? {},
+    requestStatus: snapshot.requestStatus ?? null,
+    isEnrolled: Boolean(snapshot.isEnrolled),
+    error: snapshot.error ?? null,
   };
-
-  if (!userId) {
-    return snapshot;
-  }
-
-  const [profileResult, enrollmentResult, requestResult, access] = await Promise.all([
-    supabase
-      .from("profiles")
-      .select("id, full_name, email, phone_number, avatar_url, age, gender, date_of_birth, account_type")
-      .eq("id", userId)
-      .maybeSingle(),
-    supabase.from("enrollments").select("*").eq("program_id", programData.id).eq("student_profile_id", userId).maybeSingle(),
-    supabase
-      .from("enrollment_requests")
-      .select("*")
-      .eq("program_id", programData.id)
-      .eq("student_profile_id", userId)
-      .is("student_dismissed_at", null)
-      .order("requested_at", { ascending: false })
-      .limit(1)
-      .maybeSingle(),
-    loadCachedUserAccess(slug, userId),
-  ]);
-  const nextAccountType = profileResult.data?.account_type ?? access.accountType ?? null;
-  snapshot.accountType = nextAccountType;
-  snapshot.selfProfile = (profileResult.data as StudentDisplay | null) ?? null;
-  snapshot.isEnrolled = Boolean(enrollmentResult.data && isCurrentEnrollmentStatus(enrollmentResult.data.status));
-  snapshot.requestStatus = requestResult.data?.status ?? null;
-
-  if (nextAccountType === "parent") {
-    const { children } = await fetchParentChildren(supabase, slug, userId, mosqueData.id);
-    snapshot.parentChildren = children;
-    const childIds = children.map((child) => child.id);
-    if (childIds.length) {
-      const [childEnrollments, childRequests] = await Promise.all([
-        supabase.from("enrollments").select("student_profile_id, status").eq("program_id", programData.id).in("student_profile_id", childIds),
-        supabase
-          .from("enrollment_requests")
-          .select("student_profile_id, status")
-          .eq("program_id", programData.id)
-          .eq("parent_profile_id", userId)
-          .in("student_profile_id", childIds)
-          .is("student_dismissed_at", null)
-          .order("requested_at", { ascending: false }),
-      ]);
-      const enrolledChildIds = new Set((childEnrollments.data ?? []).filter((row) => isCurrentEnrollmentStatus(row.status)).map((row) => row.student_profile_id));
-      const statuses: Record<string, { enrolled: boolean; requestStatus: string | null }> = {};
-      for (const child of children) {
-        statuses[child.id] = {
-          enrolled: enrolledChildIds.has(child.id),
-          requestStatus: childRequests.data?.find((row) => row.student_profile_id === child.id)?.status ?? null,
-        };
-      }
-      snapshot.childStatuses = statuses;
-    }
-  }
-
-  return snapshot;
 }
 
 export function ProgramApplyData({ slug, programId }: { slug: string; programId: string }) {
@@ -2002,6 +1929,9 @@ export function RegistrationConfirmationData({ slug, requestId }: { slug: string
   const cancelModalRef = useRef<HTMLDivElement>(null);
   useModalFocusTrap(cancelModalRef, cancelModalOpen, () => setCancelModalOpen(false));
 
+  // One RPC call instead of mosque -> request -> can_manage_program check -> [program+track+
+  // student+parent batch], as four sequential stages. Reuses the existing can_manage_program()
+  // permission check server-side.
   async function loadRegistration() {
     setLoading(true);
     setError(null);
@@ -2014,56 +1944,35 @@ export function RegistrationConfirmationData({ slug, requestId }: { slug: string
       return;
     }
 
-    const { data: mosqueRow, error: mosqueError } = await supabase.from("mosques").select("*").eq("slug", slug).maybeSingle();
-    if (mosqueError || !mosqueRow) {
-      setError(friendlyErrorMessage(mosqueError, "Masjid not found."));
+    const { data, error } = await supabase.rpc("get_registration_confirmation_snapshot", { p_slug: slug, p_request_id: requestId });
+    if (error) {
+      setError(friendlyErrorMessage(error, "This registration could not be found."));
       setLoading(false);
       return;
     }
 
-    const { data: requestRow, error: requestError } = await supabase
-      .from("enrollment_requests")
-      .select("*")
-      .eq("id", requestId)
-      .eq("mosque_id", mosqueRow.id)
-      .maybeSingle();
-    if (requestError || !requestRow) {
-      setError("This registration could not be found.");
+    const snapshot = data as unknown as {
+      error: string | null;
+      mosque: Mosque | null;
+      request: EnrollmentRequest | null;
+      program: Program | null;
+      track: ProgramTrack | null;
+      student: Pick<Profile, "id" | "full_name" | "email"> | null;
+      parent: Pick<Profile, "id" | "full_name" | "email"> | null;
+    } | null;
+
+    if (!snapshot || snapshot.error || !snapshot.mosque || !snapshot.request || !snapshot.program) {
+      setError(snapshot?.error ?? "This registration could not be found.");
       setLoading(false);
       return;
     }
 
-    const ownsRequest = requestRow.student_profile_id === userId || requestRow.parent_profile_id === userId;
-    const { data: canManage } = await supabase.rpc("can_manage_program", { check_program_id: requestRow.program_id, check_profile_id: userId });
-    if (!ownsRequest && !canManage) {
-      setError("You do not have access to this registration.");
-      setLoading(false);
-      return;
-    }
-
-    const [{ data: programRow }, { data: trackRow }, { data: studentRow }, { data: parentRow }] = await Promise.all([
-      supabase.from("programs").select("*").eq("id", requestRow.program_id).maybeSingle(),
-      requestRow.program_track_id
-        ? supabase.from("program_tracks").select("*").eq("id", requestRow.program_track_id).maybeSingle()
-        : Promise.resolve({ data: null }),
-      supabase.from("profiles").select("id, full_name, email").eq("id", requestRow.student_profile_id).maybeSingle(),
-      requestRow.parent_profile_id
-        ? supabase.from("profiles").select("id, full_name, email").eq("id", requestRow.parent_profile_id).maybeSingle()
-        : Promise.resolve({ data: null }),
-    ]);
-
-    if (!programRow) {
-      setError("This class is no longer available.");
-      setLoading(false);
-      return;
-    }
-
-    setMosque(mosqueRow);
-    setProgram(programRow);
-    setRequest(requestRow);
-    setTrack((trackRow as ProgramTrack | null) ?? null);
-    setStudent(studentRow ?? null);
-    setParent(parentRow ?? null);
+    setMosque(snapshot.mosque);
+    setProgram(snapshot.program);
+    setRequest(snapshot.request);
+    setTrack(snapshot.track ?? null);
+    setStudent(snapshot.student ?? null);
+    setParent(snapshot.parent ?? null);
     setLoading(false);
   }
 
@@ -2398,7 +2307,7 @@ export function StudentClassesData({ slug }: { slug: string }) {
         return;
       }
       const userId = session?.user.id ?? null;
-      for (const program of programs) {
+      for (const program of programs.slice(0, 6)) {
         prefetchQuery(`program-detail:${slug}:${program.id}:portal:${userId ?? "guest"}`, () => fetchProgramDetailSnapshot(slug, program.id, "portal", userId));
       }
     });
@@ -2589,70 +2498,62 @@ export function StudentScheduleOptionsData({ slug, programId }: { slug: string; 
   useEffect(() => {
     let cancelled = false;
 
+    // One RPC call instead of mosque -> profile -> [children] -> [program+tracks+enrollments]
+    // -> enrollment_tracks, as up to six sequential stages.
     async function load() {
       setLoading(true);
       setError(null);
       const supabase = createSupabaseBrowserClient();
-      const { data: sessionData } = await supabase.auth.getSession();
-      const userId = sessionData.session?.user.id ?? null;
-      if (!userId) {
-        setError("Please sign in to manage schedule options.");
+      const { data, error } = await supabase.rpc("get_student_schedule_options_snapshot", { p_slug: slug, p_program_id: programId });
+      if (error) {
+        if (!cancelled) {
+          setError(friendlyErrorMessage(error, "Could not load your enrollment."));
+          setLoading(false);
+        }
+        return;
+      }
+
+      const snapshot = data as unknown as {
+        error: string | null;
+        program: Program | null;
+        tracks: ProgramTrack[];
+        selfProfile: StudentDisplay | null;
+        children: StudentDisplay[];
+        enrollments: Enrollment[];
+        enrollmentTracks: Array<{ enrollment_id: string; program_track_id: string }>;
+      } | null;
+
+      if (cancelled) {
+        return;
+      }
+      if (!snapshot || snapshot.error || !snapshot.program) {
+        setError(snapshot?.error ?? "Class not found.");
         setLoading(false);
         return;
       }
 
-      const { data: mosque } = await supabase.from("mosques").select("id").eq("slug", slug).maybeSingle();
-      if (!mosque) {
-        setError("Masjid not found.");
-        setLoading(false);
-        return;
-      }
+      const programRow = snapshot.program;
+      const trackRows = snapshot.tracks ?? [];
+      const possibleStudents = [snapshot.selfProfile, ...(snapshot.children ?? [])].filter(Boolean) as StudentDisplay[];
+      const enrollmentRows = snapshot.enrollments ?? [];
+      const enrollmentTrackRows = snapshot.enrollmentTracks ?? [];
 
-      const { data: currentProfile } = await supabase
-        .from("profiles")
-        .select("id, full_name, email, phone_number, avatar_url, age, gender, date_of_birth, account_type")
-        .eq("id", userId)
-        .maybeSingle();
-      const { children } = currentProfile?.account_type === "parent" ? await fetchParentChildren(supabase, slug, userId, mosque.id) : { children: [] as StudentDisplay[] };
-      const possibleStudents = [currentProfile, ...children].filter(Boolean) as StudentDisplay[];
-      const possibleStudentIds = possibleStudents.map((student) => student.id);
-      if (!possibleStudentIds.length) {
+      if (!possibleStudents.length) {
         setError("No student profile is available for this account.");
         setLoading(false);
         return;
       }
 
-      const [{ data: programRow }, { data: trackRows }, { data: enrollmentRows, error: enrollmentError }] = await Promise.all([
-        supabase.from("programs").select("*").eq("id", programId).eq("mosque_id", mosque.id).maybeSingle(),
-        supabase.from("program_tracks").select("*").eq("program_id", programId).eq("is_active", true).order("sort_order", { ascending: true }),
-        supabase.from("enrollments").select("*").eq("program_id", programId).in("student_profile_id", possibleStudentIds),
-      ]);
-
-      if (enrollmentError) {
-        setError(friendlyErrorMessage(enrollmentError, "Could not load your enrollment."));
-        setLoading(false);
-        return;
-      }
-      if (!programRow) {
-        setError("Class not found.");
-        setLoading(false);
-        return;
-      }
-
-      const enrollmentIds = (enrollmentRows ?? []).map((enrollment) => enrollment.id);
-      const { data: enrollmentTrackRows } = enrollmentIds.length
-        ? await supabase.from("enrollment_tracks").select("enrollment_id, program_track_id").in("enrollment_id", enrollmentIds)
-        : { data: [] as Array<{ enrollment_id: string; program_track_id: string }> };
       const trackIdsByEnrollmentId = new Map<string, string[]>();
-      for (const row of enrollmentTrackRows ?? []) {
+      for (const row of enrollmentTrackRows) {
         trackIdsByEnrollmentId.set(row.enrollment_id, [...(trackIdsByEnrollmentId.get(row.enrollment_id) ?? []), row.program_track_id]);
       }
 
-      const nextItems = (enrollmentRows ?? []).map((enrollment) => {
+      const nextItems = enrollmentRows.map((enrollment) => {
         const selectedTrackIds = [
           ...(trackIdsByEnrollmentId.get(enrollment.id) ?? []),
           ...(enrollment.program_track_id ? [enrollment.program_track_id] : []),
-        ].filter((trackId, index, all) => all.indexOf(trackId) === index && (trackRows ?? []).some((track) => track.id === trackId));
+        ].filter((trackId, index, all) => all.indexOf(trackId) === index && trackRows.some((track) => track.id === trackId));
         return {
           enrollment,
           student: possibleStudents.find((student) => student.id === enrollment.student_profile_id) ?? null,
@@ -2662,12 +2563,10 @@ export function StudentScheduleOptionsData({ slug, programId }: { slug: string; 
         };
       });
 
-      if (!cancelled) {
-        setProgram(programRow);
-        setTracks(trackRows ?? []);
-        setItems(nextItems);
-        setLoading(false);
-      }
+      setProgram(programRow);
+      setTracks(trackRows);
+      setItems(nextItems);
+      setLoading(false);
     }
 
     void load();
@@ -3613,6 +3512,8 @@ export function TeacherAnnouncementData({ slug, programId }: { slug: string; pro
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // One RPC call instead of mosque -> program -> [announcements+tracks] -> [authors+receipts]
+  // -> reader profiles, as six sequential stages.
   async function loadAnnouncements() {
     setLoading(true);
     setError(null);
@@ -3621,59 +3522,44 @@ export function TeacherAnnouncementData({ slug, programId }: { slug: string; pro
     const userId = sessionData.session?.user.id ?? null;
     setCurrentUserId(userId);
 
-    const { data: mosque } = await supabase.from("mosques").select("id").eq("slug", slug).maybeSingle();
-    if (!mosque) {
-      setError("Masjid not found.");
+    const { data, error } = await supabase.rpc("get_teacher_announcements_snapshot", { p_slug: slug, p_program_id: programId });
+    if (error) {
+      setError(friendlyErrorMessage(error, "Could not load announcements."));
       setLoading(false);
       return;
     }
 
-    const { data: programRow, error: programError } = await supabase
-      .from("programs")
-      .select("*")
-      .eq("id", programId)
-      .eq("mosque_id", mosque.id)
-      .maybeSingle();
+    const snapshot = data as unknown as {
+      error: string | null;
+      program: Program | null;
+      announcements: AnnouncementWithContext[];
+      tracks: ProgramTrack[];
+      authors: Profile[];
+      receipts: AnnouncementReceipt[];
+      readers: Profile[];
+    } | null;
 
-    if (programError || !programRow) {
-      setError(friendlyErrorMessage(programError, "Class not found."));
+    if (!snapshot || !snapshot.program) {
+      setError(snapshot?.error ?? "Masjid not found.");
       setLoading(false);
       return;
     }
 
-    const [{ data: announcementRows, error: announcementError }, { data: trackRows }] = await Promise.all([
-      supabase
-        .from("program_announcements")
-        .select("*")
-        .eq("program_id", programRow.id)
-        .order("created_at", { ascending: false }),
-      supabase.from("program_tracks").select("*").eq("program_id", programRow.id).eq("is_active", true).order("sort_order", { ascending: true }),
-    ]);
-
-    if (announcementError) {
-      setError(friendlyErrorMessage(announcementError, "Could not load announcements."));
-      setLoading(false);
-      return;
-    }
-
-    const authorIds = Array.from(new Set((announcementRows ?? []).map((announcement) => announcement.author_profile_id).filter(Boolean))) as string[];
-    const announcementIds = (announcementRows ?? []).map((announcement) => announcement.id);
-    const [{ data: authors }, { data: receipts }] = await Promise.all([
-      authorIds.length ? supabase.from("profiles").select("*").in("id", authorIds) : Promise.resolve({ data: [] as Profile[] }),
-      announcementIds.length ? supabase.from("program_announcement_receipts").select("*").in("announcement_id", announcementIds) : Promise.resolve({ data: [] as AnnouncementReceipt[] }),
-    ]);
-    const readerIds = Array.from(new Set((receipts ?? []).filter((receipt) => receipt.read_at).map((receipt) => receipt.profile_id)));
-    const { data: readerProfiles } = readerIds.length ? await supabase.from("profiles").select("*").in("id", readerIds) : { data: [] as Profile[] };
-    const readerById = new Map((readerProfiles ?? []).map((reader) => [reader.id, reader]));
+    const programRow = snapshot.program;
+    const announcementRows = snapshot.announcements ?? [];
+    const authors = snapshot.authors ?? [];
+    const receipts = snapshot.receipts ?? [];
+    const readerProfiles = snapshot.readers ?? [];
+    const readerById = new Map(readerProfiles.map((reader) => [reader.id, reader]));
     const nextReaders: Record<string, Profile[]> = {};
-    for (const receipt of receipts ?? []) {
+    for (const receipt of receipts) {
       const reader = readerById.get(receipt.profile_id);
       if (receipt.read_at && reader) {
         nextReaders[receipt.announcement_id] = [...(nextReaders[receipt.announcement_id] ?? []), reader];
       }
     }
 
-    const activeTracks = trackRows ?? [];
+    const activeTracks = snapshot.tracks ?? [];
     setProgram(programRow);
     setTracks(activeTracks);
     setSelectedAnnouncementFeedValue((current) => {
@@ -3999,7 +3885,7 @@ function MessageAttachmentComposer({
             <p className="truncate text-xs font-semibold text-[#26323A]">Voice note</p>
             <p className="text-[11px] text-[#7B858C]">Preparing audio...</p>
           </div>
-          <span className="h-5 w-5 animate-spin rounded-full border-2 border-[#DDEFF4] border-t-[#2F8FB3]" aria-hidden />
+          <span className="h-5 w-5 animate-pulse rounded-full bg-[#BFE0EC]" aria-hidden />
         </div>
       ) : null}
       {recording ? (
@@ -4157,7 +4043,7 @@ export function MessageAttachmentList({
         if (!url) {
           return (
             <div key={attachment.id} className="flex min-h-12 items-center gap-2 rounded-[14px] border border-[#DDE6EA] bg-white px-3 py-2 text-xs font-medium text-[#7B858C]">
-              <span className="h-4 w-4 animate-spin rounded-full border-2 border-[#DDEFF4] border-t-[#2F8FB3]" aria-hidden />
+              <span className="h-4 w-4 animate-pulse rounded-full bg-[#BFE0EC]" aria-hidden />
               Loading attachment...
             </div>
           );
@@ -4487,7 +4373,7 @@ export function TeacherClassesData({ slug }: { slug: string }) {
         return;
       }
       const userId = session?.user.id ?? null;
-      for (const program of programs) {
+      for (const program of programs.slice(0, 6)) {
         prefetchQuery(`program-detail:${slug}:${program.id}:public:${userId ?? "guest"}`, () => fetchProgramDetailSnapshot(slug, program.id, "public", userId));
       }
     });
@@ -4602,7 +4488,7 @@ export function AdminClassesData({ slug }: { slug: string }) {
         return;
       }
       const userId = session?.user.id ?? null;
-      for (const program of programs) {
+      for (const program of programs.slice(0, 6)) {
         prefetchQuery(`program-detail:${slug}:${program.id}:public:${userId ?? "guest"}`, () => fetchProgramDetailSnapshot(slug, program.id, "public", userId));
       }
     });
@@ -4701,34 +4587,25 @@ function AdminMosqueSwitcher({ slug, target = "programs" }: { slug: string; targ
   );
 }
 
-export function AdminMasjidData({ slug }: { slug: string }) {
-  const [mosque, setMosque] = useState<Mosque | null>(null);
-  const [memberCount, setMemberCount] = useState(0);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+type AdminMasjidSnapshot = { mosque: Mosque | null; memberCount: number; error: string | null };
+const emptyAdminMasjidSnapshot: AdminMasjidSnapshot = { mosque: null, memberCount: 0, error: null };
 
-  useEffect(() => {
-    const timeout = window.setTimeout(() => {
-      void (async () => {
-        setLoading(true);
-        setError(null);
-        const supabase = createSupabaseBrowserClient();
-        const { data, error: mosqueError } = await supabase.from("mosques").select("*").eq("slug", slug).maybeSingle();
-        if (mosqueError) {
-          setError(friendlyErrorMessage(mosqueError, "Could not load your masjid."));
-        }
-        setMosque(data ?? null);
-        if (data) {
-          const { count } = await supabase.from("mosque_memberships").select("*", { count: "exact", head: true }).eq("mosque_id", data.id).eq("status", "active");
-          setMemberCount(count ?? 0);
-        } else {
-          setMemberCount(0);
-        }
-        setLoading(false);
-      })();
-    }, 0);
-    return () => window.clearTimeout(timeout);
-  }, [slug]);
+async function fetchAdminMasjidSnapshot(slug: string): Promise<AdminMasjidSnapshot> {
+  const supabase = createSupabaseBrowserClient();
+  const { data, error: mosqueError } = await supabase.from("mosques").select("*").eq("slug", slug).maybeSingle();
+  if (mosqueError) {
+    return { mosque: null, memberCount: 0, error: friendlyErrorMessage(mosqueError, "Could not load your masjid.") };
+  }
+  if (!data) {
+    return emptyAdminMasjidSnapshot;
+  }
+  const { count } = await supabase.from("mosque_memberships").select("*", { count: "exact", head: true }).eq("mosque_id", data.id).eq("status", "active");
+  return { mosque: data, memberCount: count ?? 0, error: null };
+}
+
+export function AdminMasjidData({ slug }: { slug: string }) {
+  const { data: snapshot, loading } = useCachedQuery(slug ? `admin-masjid:${slug}` : null, () => fetchAdminMasjidSnapshot(slug));
+  const { mosque, memberCount, error } = snapshot ?? emptyAdminMasjidSnapshot;
 
   if (loading) {
     return <ClassesLoadingPlaceholders count={1} />;
@@ -5108,37 +4985,33 @@ export function AdminMasjidInformationData({ slug }: { slug: string }) {
   );
 }
 
+type AdminMasjidFinancesSnapshot = { programs: Program[]; error: string | null };
+const emptyAdminMasjidFinancesSnapshot: AdminMasjidFinancesSnapshot = { programs: [], error: null };
+
+async function fetchAdminMasjidFinancesSnapshot(slug: string): Promise<AdminMasjidFinancesSnapshot> {
+  const supabase = createSupabaseBrowserClient();
+  const { data: mosque } = await supabase.from("mosques").select("id").eq("slug", slug).maybeSingle();
+  if (!mosque) {
+    return { programs: [], error: "Masjid not found." };
+  }
+  const { data, error: programsError } = await supabase.from("programs").select("*").eq("mosque_id", mosque.id).order("title", { ascending: true });
+  if (programsError) {
+    return { programs: [], error: friendlyErrorMessage(programsError, "Could not load classes.") };
+  }
+  return { programs: data ?? [], error: null };
+}
+
 export function AdminMasjidFinancesData({ slug }: { slug: string }) {
-  const [programs, setPrograms] = useState<Program[]>([]);
+  const { data: snapshot, loading } = useCachedQuery(slug ? `admin-masjid-finances:${slug}` : null, () => fetchAdminMasjidFinancesSnapshot(slug));
+  const { programs, error } = snapshot ?? emptyAdminMasjidFinancesSnapshot;
   const [selectedProgramId, setSelectedProgramId] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
-      void (async () => {
-        setLoading(true);
-        setError(null);
-        const supabase = createSupabaseBrowserClient();
-        const { data: mosque } = await supabase.from("mosques").select("id").eq("slug", slug).maybeSingle();
-        if (!mosque) {
-          setError("Masjid not found.");
-          setLoading(false);
-          return;
-        }
-        const { data, error: programsError } = await supabase.from("programs").select("*").eq("mosque_id", mosque.id).order("title", { ascending: true });
-        if (programsError) {
-          setError(friendlyErrorMessage(programsError, "Could not load classes."));
-          setLoading(false);
-          return;
-        }
-        setPrograms(data ?? []);
-        setSelectedProgramId((current) => current || data?.[0]?.id || "");
-        setLoading(false);
-      })();
+      setSelectedProgramId((current) => current || programs[0]?.id || "");
     }, 0);
     return () => window.clearTimeout(timeout);
-  }, [slug]);
+  }, [programs]);
 
   if (loading) {
     return <DirectorySkeleton layout="management" />;
@@ -5177,44 +5050,31 @@ export function AdminMasjidFinancesData({ slug }: { slug: string }) {
   );
 }
 
+type TeacherInstructorsGateSnapshot = { program: Program | null; isDirector: boolean; error: string | null };
+const emptyTeacherInstructorsGateSnapshot: TeacherInstructorsGateSnapshot = { program: null, isDirector: false, error: null };
+
+async function fetchTeacherInstructorsGate(slug: string, programId: string): Promise<TeacherInstructorsGateSnapshot> {
+  const supabase = createSupabaseBrowserClient();
+  const { data: mosque } = await supabase.from("mosques").select("id").eq("slug", slug).maybeSingle();
+  if (!mosque) {
+    return emptyTeacherInstructorsGateSnapshot;
+  }
+
+  const [{ data: programRow, error: programError }, { data: directorAllowed }] = await Promise.all([
+    supabase.from("programs").select("*").eq("id", programId).eq("mosque_id", mosque.id).maybeSingle(),
+    supabase.rpc("is_program_director", { check_program_id: programId }),
+  ]);
+
+  if (programError) {
+    return { program: null, isDirector: false, error: friendlyErrorMessage(programError, "Could not load this class.") };
+  }
+
+  return { program: programRow ?? null, isDirector: Boolean(directorAllowed), error: null };
+}
+
 export function TeacherInstructorsData({ slug, programId }: { slug: string; programId: string }) {
-  const [program, setProgram] = useState<Program | null>(null);
-  const [isDirector, setIsDirector] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    const supabase = createSupabaseBrowserClient();
-
-    async function load() {
-      setLoading(true);
-      setError(null);
-
-      const { data: mosque } = await supabase.from("mosques").select("id").eq("slug", slug).maybeSingle();
-      if (!mosque) {
-        setProgram(null);
-        setLoading(false);
-        return;
-      }
-
-      const [{ data: programRow, error: programError }, { data: directorAllowed }] = await Promise.all([
-        supabase.from("programs").select("*").eq("id", programId).eq("mosque_id", mosque.id).maybeSingle(),
-        supabase.rpc("is_program_director", { check_program_id: programId }),
-      ]);
-
-      if (programError) {
-        setError(friendlyErrorMessage(programError, "Could not load this class."));
-        setLoading(false);
-        return;
-      }
-
-        setProgram(programRow ?? null);
-      setIsDirector(Boolean(directorAllowed));
-      setLoading(false);
-    }
-
-    void load();
-  }, [programId, slug]);
+  const { data: gateSnapshot, loading } = useCachedQuery(programId ? `teacher-instructors-gate:${slug}:${programId}` : null, () => fetchTeacherInstructorsGate(slug, programId));
+  const { program, isDirector, error } = gateSnapshot ?? emptyTeacherInstructorsGateSnapshot;
 
   if (loading) {
     return <ClassesLoadingPlaceholders count={1} />;
@@ -5309,41 +5169,43 @@ export function TeacherProgramCreateData({ slug }: { slug: string }) {
       : builderStatus.billingDurationMonths || String(builderStatus.durationMonths || monthsBetweenDates(builderStatus.startDate, builderStatus.endDate) || "");
 
   useEffect(() => {
+    // One RPC call instead of profile -> mosque -> [if admin] memberships -> teachers, as
+    // four sequential stages. Only the fetch is collapsed here -- every bit of the form-default
+    // logic below (guarding against overwriting a field the user already touched, etc.) is
+    // unchanged.
     async function loadDefaults() {
       const session = await loadCachedSession();
       if (!session?.user.id) {
         return;
       }
       const supabase = createSupabaseBrowserClient();
-      const { data } = await supabase
-        .from("profiles")
-        .select("full_name, phone_number, teacher_whatsapp_number, account_type")
-        .eq("id", session.user.id)
-        .maybeSingle();
-      setCreatorAccountType(data?.account_type ?? null);
-      setInstructorDisplayName(data?.full_name ?? "");
-      setInstructorContactPhone(data?.phone_number ?? data?.teacher_whatsapp_number ?? "");
-      const { data: mosque } = await supabase.from("mosques").select("*").eq("slug", slug).maybeSingle();
+      const { data, error } = await supabase.rpc("get_program_create_defaults_snapshot", { p_slug: slug });
+      if (error) {
+        return;
+      }
+
+      const snapshot = data as unknown as {
+        profile: { full_name: string | null; phone_number: string | null; teacher_whatsapp_number: string | null; account_type: string | null } | null;
+        mosque: Mosque | null;
+        teachers: DirectorOption[];
+      } | null;
+      if (!snapshot) {
+        return;
+      }
+
+      const profile = snapshot.profile;
+      setCreatorAccountType(profile?.account_type ?? null);
+      setInstructorDisplayName(profile?.full_name ?? "");
+      setInstructorContactPhone(profile?.phone_number ?? profile?.teacher_whatsapp_number ?? "");
+      const mosque = snapshot.mosque;
       if (mosque) {
         const mosqueAddress = typeof mosque.address === "string" && mosque.address.trim() ? mosque.address.trim() : "";
         setBuilderStatus((current) => current.location ? current : { ...current, location: mosque.name ?? titleCase(slug), room: mosqueAddress });
       }
-      if (data?.account_type === "admin") {
-        if (!mosque) {
-          return;
-        }
-        const { data: teacherMemberships } = await supabase
-          .from("mosque_memberships")
-          .select("profile_id")
-          .eq("mosque_id", mosque.id)
-          .eq("role", "teacher")
-          .eq("status", "active");
-        const teacherIds = (teacherMemberships ?? []).map((membership) => membership.profile_id);
-        const { data: teachers } = teacherIds.length
-          ? await supabase.from("profiles").select("id, full_name, email, phone_number, teacher_credentials, teacher_whatsapp_number").eq("account_type", "teacher").in("id", teacherIds).order("full_name", { ascending: true })
-          : { data: [] as DirectorOption[] };
-        setDirectorOptions(teachers ?? []);
-        setSelectedDirectorId((current) => current || teachers?.[0]?.id || "");
+      if (profile?.account_type === "admin") {
+        const teachers = snapshot.teachers ?? [];
+        setDirectorOptions(teachers);
+        setSelectedDirectorId((current) => current || teachers[0]?.id || "");
       }
     }
 
@@ -9492,38 +9354,33 @@ export function AdminTeacherRequestsData({ slug }: { slug: string }) {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  // One RPC call instead of mosque -> memberships -> profiles, as three sequential stages.
   async function loadRequests() {
     setLoading(true);
     setError(null);
     const supabase = createSupabaseBrowserClient();
-    const { data: mosque } = await supabase.from("mosques").select("*").eq("slug", slug).maybeSingle();
-    if (!mosque) {
+    const { data, error } = await supabase.rpc("get_admin_teacher_requests_snapshot", { p_slug: slug });
+    if (error) {
+      setError(friendlyErrorMessage(error, "Could not load teachers."));
+      setLoading(false);
+      return;
+    }
+
+    const snapshot = data as unknown as { mosque: Mosque | null; memberships: MosqueMembership[]; profiles: Profile[] } | null;
+    if (!snapshot || !snapshot.mosque) {
       setRequests([]);
       setLoading(false);
       return;
     }
 
-    const { data: membershipRows, error: requestError } = await supabase
-      .from("mosque_memberships")
-      .select("*")
-      .eq("mosque_id", mosque.id)
-      .eq("role", "teacher")
-      .eq("status", "active")
-      .order("created_at", { ascending: true });
-
-    if (requestError) {
-      setError(friendlyErrorMessage(requestError, "Could not load teachers."));
-      setLoading(false);
-      return;
-    }
-
-    const profileIds = (membershipRows ?? []).map((request) => request.profile_id);
-    const { data: profiles } = profileIds.length ? await supabase.from("profiles").select("*").in("id", profileIds) : { data: [] as Profile[] };
+    const mosque = snapshot.mosque;
+    const membershipRows = snapshot.memberships ?? [];
+    const profiles = snapshot.profiles ?? [];
     setRequests(
-      (membershipRows ?? []).map((request) => ({
+      membershipRows.map((request) => ({
         ...request,
         mosque,
-        profile: (profiles ?? []).find((profile) => profile.id === request.profile_id) ?? null,
+        profile: profiles.find((profile) => profile.id === request.profile_id) ?? null,
       })),
     );
     setLoading(false);
@@ -9629,55 +9486,48 @@ export function AdminMembersData({ slug }: { slug: string }) {
   >(null);
   const [error, setError] = useState<string | null>(null);
 
+  // One RPC call instead of mosque -> memberships -> programs -> teacher-assignments ->
+  // enrollments -> enrollment_tracks -> tracks -> parent_child_links -> profiles, as nine
+  // fully sequential stages -- the worst waterfall found in the full-app audit.
   async function loadMembers() {
     setLoading(true);
     setError(null);
     const supabase = createSupabaseBrowserClient();
-    const { data: mosque } = await supabase.from("mosques").select("id").eq("slug", slug).maybeSingle();
-    if (!mosque) {
+    const { data, error } = await supabase.rpc("get_admin_members_snapshot", { p_slug: slug });
+    if (error) {
+      setError(friendlyErrorMessage(error, "Could not load members."));
+      setLoading(false);
+      return;
+    }
+
+    const snapshot = data as unknown as {
+      mosqueId: string | null;
+      memberships: MosqueMembership[];
+      programs: Program[];
+      teacherAssignments: ProgramTeacher[];
+      enrollments: Enrollment[];
+      enrollmentTracks: Array<{ enrollment_id: string; program_track_id: string }>;
+      tracks: ProgramTrack[];
+      links: Array<{ id: string; mosque_id: string; parent_profile_id: string; child_profile_id: string; created_at: string }>;
+      profiles: Profile[];
+    } | null;
+
+    if (!snapshot) {
       setMembers([]);
       setLoading(false);
       return;
     }
 
-    const { data: membershipRows, error: membershipError } = await supabase
-      .from("mosque_memberships")
-      .select("*")
-      .eq("mosque_id", mosque.id)
-      .eq("status", "active")
-      .order("created_at", { ascending: false });
+    const membershipRows = snapshot.memberships ?? [];
+    const programRows = snapshot.programs ?? [];
+    const teacherAssignmentRows = snapshot.teacherAssignments ?? [];
+    const enrollmentRows = snapshot.enrollments ?? [];
+    const enrollmentTrackRows = snapshot.enrollmentTracks ?? [];
+    const trackRows = snapshot.tracks ?? [];
+    const linkRows = snapshot.links ?? [];
 
-    if (membershipError) {
-      setError(friendlyErrorMessage(membershipError, "Could not load members."));
-      setLoading(false);
-      return;
-    }
-
-    const { data: programRows } = await supabase.from("programs").select("*").eq("mosque_id", mosque.id).order("title", { ascending: true });
-    const programIds = (programRows ?? []).map((program) => program.id);
-    const { data: teacherAssignmentRows } = programIds.length
-      ? await supabase.from("program_teachers").select("*").in("program_id", programIds).not("teacher_profile_id", "is", null).order("created_at", { ascending: true })
-      : { data: [] as ProgramTeacher[] };
-    const { data: enrollmentRows } = programIds.length ? await supabase.from("enrollments").select("*").in("program_id", programIds) : { data: [] as Enrollment[] };
-    const enrollmentIds = (enrollmentRows ?? []).map((enrollment) => enrollment.id);
-    const { data: enrollmentTrackRows } = enrollmentIds.length
-      ? await supabase.from("enrollment_tracks").select("enrollment_id, program_track_id").in("enrollment_id", enrollmentIds)
-      : { data: [] as Array<{ enrollment_id: string; program_track_id: string }> };
-    const { data: trackRows } = programIds.length
-      ? await supabase.from("program_tracks").select("*").in("program_id", programIds).eq("is_active", true).order("sort_order", { ascending: true })
-      : { data: [] as ProgramTrack[] };
-    const { data: linkRows } = await supabase.from("parent_child_links").select("*").eq("mosque_id", mosque.id);
-
-    const profileIds = Array.from(
-      new Set([
-        ...(membershipRows ?? []).map((membership) => membership.profile_id),
-        ...(teacherAssignmentRows ?? []).map((assignment) => assignment.teacher_profile_id).filter(Boolean) as string[],
-        ...(enrollmentRows ?? []).map((enrollment) => enrollment.student_profile_id),
-        ...(linkRows ?? []).flatMap((link) => [link.parent_profile_id, link.child_profile_id]),
-      ]),
-    );
-    const { data: profiles } = profileIds.length ? await supabase.from("profiles").select("*").in("id", profileIds) : { data: [] as Profile[] };
-    const profileById = new Map((profiles ?? []).map((profile) => [profile.id, profile]));
+    const profiles = snapshot.profiles ?? [];
+    const profileById = new Map(profiles.map((profile) => [profile.id, profile]));
     const programById = new Map((programRows ?? []).map((program) => [program.id, program]));
     const trackById = new Map((trackRows ?? []).map((track) => [track.id, track]));
     const trackIdsByEnrollmentId = new Map<string, string[]>();
@@ -9735,7 +9585,7 @@ export function AdminMembersData({ slug }: { slug: string }) {
       .filter(([profileId]) => !existingMembershipProfileIds.has(profileId))
       .map(([profileId, contexts]) => ({
         id: `teacher-assignment:${profileId}`,
-        mosque_id: mosque.id,
+        mosque_id: snapshot.mosqueId ?? "",
         profile_id: profileId,
         role: "teacher",
         status: "active",
@@ -10111,60 +9961,58 @@ export function TeacherStudentsData({ slug, programId }: { slug: string; program
     return `${basePath}/${programId}/students/${studentId}/notes`;
   }
 
+  // One RPC call instead of mosque -> program -> [enrollments+waitlist+tracks] -> [sessions+
+  // track_sessions] -> [enrollment_tracks+subscriptions+completed_requests] ->
+  // completed_request_tracks -> profiles -> parent_child_links -> parents, as nine sequential
+  // stages. All the track/session/day derivation logic below is unchanged.
   async function fetchTeacherRoster(): Promise<TeacherRosterSnapshot> {
     const supabase = createSupabaseBrowserClient();
     const { data: sessionData } = await supabase.auth.getSession();
     const userId = sessionData.session?.user.id ?? null;
 
-    const { data: mosqueData, error: mosqueError } = await supabase.from("mosques").select("*").eq("slug", slug).maybeSingle();
-    if (mosqueError || !mosqueData) {
-      return { ...emptyTeacherRosterSnapshot, currentUserId: userId, error: friendlyErrorMessage(mosqueError, "Masjid not found.") };
+    const { data, error } = await supabase.rpc("get_teacher_roster_snapshot", { p_slug: slug, p_program_id: programId });
+    if (error) {
+      return { ...emptyTeacherRosterSnapshot, currentUserId: userId, error: friendlyErrorMessage(error, "Could not load students.") };
     }
 
-    const { data: programData, error: programError } = await supabase
-      .from("programs")
-      .select("*")
-      .eq("id", programId)
-      .eq("mosque_id", mosqueData.id)
-      .maybeSingle();
+    const snapshot = data as unknown as {
+      error: string | null;
+      mosque: Mosque | null;
+      program: Program | null;
+      enrollments: Enrollment[];
+      waitlist: EnrollmentRequest[];
+      tracks: ProgramTrack[];
+      sessions: ProgramSession[];
+      trackSessions: ProgramTrackSession[];
+      enrollmentTracks: Array<{ enrollment_id: string; program_track_id: string }>;
+      subscriptions: ProgramSubscription[];
+      completedRequests: Array<Pick<EnrollmentRequest, "id" | "student_profile_id" | "program_track_id" | "reviewed_at" | "requested_at">>;
+      completedRequestTracks: Array<{ enrollment_request_id: string; program_track_id: string }>;
+      profiles: StudentDisplay[];
+      links: Array<{ child_profile_id: string; parent_profile_id: string }>;
+      parents: ParentDisplay[];
+    } | null;
 
-    if (programError || !programData) {
-      return { ...emptyTeacherRosterSnapshot, currentUserId: userId, mosque: mosqueData, error: friendlyErrorMessage(programError, "Class not found.") };
+    if (!snapshot || !snapshot.mosque) {
+      return { ...emptyTeacherRosterSnapshot, currentUserId: userId, error: snapshot?.error ?? "Masjid not found." };
+    }
+    if (!snapshot.program) {
+      return { ...emptyTeacherRosterSnapshot, currentUserId: userId, mosque: snapshot.mosque, error: snapshot.error ?? "Class not found." };
     }
 
-    const [{ data: enrollmentRows, error: enrollmentError }, { data: waitlistRows, error: waitlistError }, { data: trackRows }] = await Promise.all([
-      supabase
-        .from("enrollments")
-        .select("*")
-        .eq("program_id", programData.id)
-        .order("created_at", { ascending: true }),
-      supabase
-        .from("enrollment_requests")
-        .select("*")
-        .eq("program_id", programData.id)
-        .eq("status", "waitlisted")
-        .is("student_dismissed_at", null)
-        .order("reviewed_at", { ascending: true }),
-      supabase.from("program_tracks").select("*").eq("program_id", programData.id).eq("is_active", true).order("sort_order", { ascending: true }),
-    ]);
+    const mosqueData = snapshot.mosque;
+    const programData = snapshot.program;
+    const enrollmentRows = snapshot.enrollments ?? [];
+    const waitlistRows = snapshot.waitlist ?? [];
+    const activeTrackRows = snapshot.tracks ?? [];
+    const sessionRows = snapshot.sessions ?? [];
+    const trackSessionRows = snapshot.trackSessions ?? [];
 
-    if (enrollmentError || waitlistError) {
-      return { ...emptyTeacherRosterSnapshot, currentUserId: userId, mosque: mosqueData, program: programData, error: friendlyErrorMessage(enrollmentError ?? waitlistError, "Could not load students.") };
-    }
-
-    const activeTrackRows = trackRows ?? [];
-    const activeTrackIds = activeTrackRows.map((track) => track.id);
-    const [{ data: sessionRows }, { data: trackSessionRows }] = await Promise.all([
-      supabase.from("program_sessions").select("*").eq("program_id", programData.id),
-      activeTrackIds.length
-        ? supabase.from("program_track_sessions").select("*").in("program_track_id", activeTrackIds)
-        : Promise.resolve({ data: [] as ProgramTrackSession[] }),
-    ]);
-    const sessionById = new Map((sessionRows ?? []).map((session) => [session.id, session]));
+    const sessionById = new Map(sessionRows.map((session) => [session.id, session]));
     const nextTrackDaysById = new Map<string, string[]>();
     const nextTrackSessionKeysById = new Map<string, string[]>();
     for (const track of activeTrackRows) {
-      const linkedRows = (trackSessionRows ?? [])
+      const linkedRows = trackSessionRows
         .filter((link) => link.program_track_id === track.id)
         .map((link) => sessionById.get(link.program_session_id))
         .filter((session): session is ProgramSession => Boolean(session))
@@ -10178,35 +10026,16 @@ export function TeacherStudentsData({ slug, programId }: { slug: string; program
     }
     const availableRosterDays = Array.from(new Set(Array.from(nextTrackDaysById.values()).flat()));
 
-    const studentIds = Array.from(new Set([...(enrollmentRows ?? []).map((enrollment) => enrollment.student_profile_id), ...(waitlistRows ?? []).map((request) => request.student_profile_id)]));
-    const enrollmentIds = (enrollmentRows ?? []).map((enrollment) => enrollment.id);
-    const [{ data: enrollmentTrackRows }, { data: subscriptionRows }, { data: completedRequestRows }] = await Promise.all([
-      enrollmentIds.length
-        ? supabase.from("enrollment_tracks").select("enrollment_id, program_track_id").in("enrollment_id", enrollmentIds)
-        : Promise.resolve({ data: [] as Array<{ enrollment_id: string; program_track_id: string }> }),
-      studentIds.length
-        ? supabase.from("program_subscriptions").select("*").eq("program_id", programData.id).in("student_profile_id", studentIds)
-        : Promise.resolve({ data: [] as ProgramSubscription[] }),
-      studentIds.length
-        ? supabase
-            .from("enrollment_requests")
-            .select("id, student_profile_id, program_track_id, reviewed_at, requested_at")
-            .eq("program_id", programData.id)
-            .eq("status", "approved")
-            .in("student_profile_id", studentIds)
-            .order("reviewed_at", { ascending: false })
-        : Promise.resolve({ data: [] as Array<Pick<EnrollmentRequest, "id" | "student_profile_id" | "program_track_id" | "reviewed_at" | "requested_at">> }),
-    ]);
-    const completedRequestIds = (completedRequestRows ?? []).map((request) => request.id);
-    const { data: completedRequestTrackRows } = completedRequestIds.length
-      ? await supabase.from("enrollment_request_tracks").select("enrollment_request_id, program_track_id").in("enrollment_request_id", completedRequestIds)
-      : { data: [] as Array<{ enrollment_request_id: string; program_track_id: string }> };
+    const enrollmentTrackRows = snapshot.enrollmentTracks ?? [];
+    const subscriptionRows = snapshot.subscriptions ?? [];
+    const completedRequestRows = snapshot.completedRequests ?? [];
+    const completedRequestTrackRows = snapshot.completedRequestTracks ?? [];
     const fallbackTrackIdsByStudentId = new Map<string, string[]>();
     const requestTrackIdsByRequestId = new Map<string, string[]>();
-    for (const row of completedRequestTrackRows ?? []) {
+    for (const row of completedRequestTrackRows) {
       requestTrackIdsByRequestId.set(row.enrollment_request_id, [...(requestTrackIdsByRequestId.get(row.enrollment_request_id) ?? []), row.program_track_id]);
     }
-    for (const request of completedRequestRows ?? []) {
+    for (const request of completedRequestRows) {
       if (fallbackTrackIdsByStudentId.has(request.student_profile_id)) {
         continue;
       }
@@ -10217,20 +10046,9 @@ export function TeacherStudentsData({ slug, programId }: { slug: string; program
         fallbackTrackIdsByStudentId.set(request.student_profile_id, trackIds);
       }
     }
-    const { data: profileRows } = studentIds.length
-      ? await supabase.from("profiles").select("id, full_name, email, phone_number, avatar_url, age, gender, date_of_birth, account_type").in("id", studentIds)
-      : { data: [] as StudentDisplay[] };
-    const { data: linkRows } = studentIds.length
-      ? await supabase
-          .from("parent_child_links")
-          .select("child_profile_id, parent_profile_id")
-          .eq("mosque_id", mosqueData.id)
-          .in("child_profile_id", studentIds)
-      : { data: [] as Array<{ child_profile_id: string; parent_profile_id: string }> };
-    const parentIds = Array.from(new Set((linkRows ?? []).map((link) => link.parent_profile_id)));
-    const { data: parentRows } = parentIds.length
-      ? await supabase.from("profiles").select("id, full_name, email, phone_number, avatar_url").in("id", parentIds)
-      : { data: [] as ParentDisplay[] };
+    const profileRows = snapshot.profiles ?? [];
+    const linkRows = snapshot.links ?? [];
+    const parentRows = snapshot.parents ?? [];
 
     return {
       mosque: mosqueData,
@@ -10264,7 +10082,7 @@ export function TeacherStudentsData({ slug, programId }: { slug: string; program
         program: programData,
         student: (profileRows ?? []).find((profile) => profile.id === request.student_profile_id) ?? null,
         parent: request.parent_profile_id ? ((parentRows ?? []).find((parent) => parent.id === request.parent_profile_id) as ParentDisplay | undefined) ?? null : null,
-        track: request.program_track_id ? (trackRows ?? []).find((track) => track.id === request.program_track_id) ?? null : null,
+        track: request.program_track_id ? activeTrackRows.find((track) => track.id === request.program_track_id) ?? null : null,
       })),
       error: null,
     };
@@ -11108,6 +10926,9 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [programId, slug, mode]);
 
+  // One RPC call instead of mosque+profile -> program -> [membership+director-assignment
+  // access check] -> [5-way batch] -> parent_child_links -> profiles, as seven sequential
+  // stages.
   async function loadFinanceRows() {
     setLoading(true);
     setError(null);
@@ -11120,38 +10941,34 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
       return;
     }
 
-    const [{ data: mosque, error: mosqueError }, { data: profile }] = await Promise.all([
-      supabase.from("mosques").select("id").eq("slug", slug).maybeSingle(),
-      supabase.from("profiles").select("account_type").eq("id", userId).maybeSingle(),
-    ]);
-
-    if (mosqueError || !mosque) {
-      setError(friendlyErrorMessage(mosqueError, "Masjid not found."));
+    const { data, error } = await supabase.rpc("get_program_finances_snapshot", { p_slug: slug, p_program_id: programId });
+    if (error) {
+      setError(friendlyErrorMessage(error, "Could not load enrollments."));
       setLoading(false);
       return;
     }
 
-    const { data: programRow, error: programError } = await supabase.from("programs").select("*").eq("id", programId).eq("mosque_id", mosque.id).maybeSingle();
-    if (programError || !programRow) {
-      setError(friendlyErrorMessage(programError, "Class not found."));
+    const snapshot = data as unknown as {
+      error: string | null;
+      program: Program | null;
+      hasAccess: boolean;
+      enrollments: Enrollment[];
+      requests: EnrollmentRequest[];
+      subscriptions: ProgramSubscription[];
+      paymentTerms: ProgramPaymentTerms[];
+      auditEvents: ProgramFinanceAuditEvent[];
+      links: Array<{ child_profile_id: string; parent_profile_id: string }>;
+      profiles: Profile[];
+    } | null;
+
+    if (!snapshot || !snapshot.program) {
+      setError(snapshot?.error ?? "Masjid not found.");
       setLoading(false);
       return;
     }
 
-    const [{ data: memberships }, { data: directorAssignment }] = await Promise.all([
-      supabase.from("mosque_memberships").select("role, status").eq("mosque_id", mosque.id).eq("profile_id", userId),
-      supabase
-        .from("program_teachers")
-        .select("id, can_manage_finances, role")
-        .eq("program_id", programId)
-        .eq("teacher_profile_id", userId)
-        .eq("role", "director")
-        .maybeSingle(),
-    ]);
-    const isAdmin = profile?.account_type === "admin" && (memberships ?? []).some((membership) => membership.role === "admin" && membership.status === "active");
-    const hasDirectorFinanceAccess = Boolean(directorAssignment?.can_manage_finances);
-    if (!isAdmin && !hasDirectorFinanceAccess) {
-      setProgram(programRow);
+    if (!snapshot.hasAccess) {
+      setProgram(snapshot.program);
       setRows([]);
       setAuditEvents([]);
       setAuditActorsById({});
@@ -11160,51 +10977,28 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
       return;
     }
 
-    const [{ data: enrollmentRows, error: enrollmentError }, { data: requestRows }, { data: subscriptionRows }, { data: paymentTermsRows }, { data: auditRows }] = await Promise.all([
-      supabase.from("enrollments").select("*").eq("program_id", programId).order("created_at", { ascending: true }),
-      supabase.from("enrollment_requests").select("*").eq("program_id", programId).order("requested_at", { ascending: false }),
-      supabase.from("program_subscriptions").select("*").eq("program_id", programId).order("updated_at", { ascending: false }),
-      supabase.from("program_payment_terms").select("*").eq("program_id", programId).order("created_at", { ascending: false }),
-      supabase.from("program_finance_audit_events").select("*").eq("program_id", programId).order("created_at", { ascending: false }).limit(20),
-    ]);
-
-    if (enrollmentError) {
-      setError(friendlyErrorMessage(enrollmentError, "Could not load enrollments."));
-      setLoading(false);
-      return;
-    }
-
-    const studentIds = Array.from(new Set((enrollmentRows ?? []).map((enrollment) => enrollment.student_profile_id)));
-    const { data: linkRows } = studentIds.length
-      ? await supabase.from("parent_child_links").select("child_profile_id, parent_profile_id").eq("mosque_id", mosque.id).in("child_profile_id", studentIds)
-      : { data: [] as Array<{ child_profile_id: string; parent_profile_id: string }> };
-    const reviewerIds = Array.from(new Set((requestRows ?? []).map((request) => request.reviewed_by).filter(Boolean) as string[]));
-    const auditActorIds = Array.from(new Set((auditRows ?? []).map((event) => event.actor_profile_id).filter(Boolean) as string[]));
-    const parentIds = Array.from(
-      new Set([
-        ...(linkRows ?? []).map((link) => link.parent_profile_id),
-        ...(requestRows ?? []).map((request) => request.parent_profile_id).filter(Boolean) as string[],
-        ...(subscriptionRows ?? []).map((subscription) => subscription.parent_profile_id).filter(Boolean) as string[],
-        ...(paymentTermsRows ?? []).map((terms) => terms.parent_profile_id).filter(Boolean) as string[],
-      ]),
-    );
-    const profileIds = Array.from(new Set([...studentIds, ...parentIds, ...reviewerIds, ...auditActorIds]));
-    const { data: profileRows } = profileIds.length
-      ? await supabase.from("profiles").select("id, full_name, email, phone_number, avatar_url, age, gender, date_of_birth, account_type").in("id", profileIds)
-      : { data: [] as StudentDisplay[] };
+    const programRow = snapshot.program;
+    const enrollmentRows = snapshot.enrollments ?? [];
+    const requestRows = snapshot.requests ?? [];
+    const subscriptionRows = snapshot.subscriptions ?? [];
+    const paymentTermsRows = snapshot.paymentTerms ?? [];
+    const auditRows = snapshot.auditEvents ?? [];
+    const linkRows = snapshot.links ?? [];
+    const profileRows = snapshot.profiles ?? [];
+    const auditActorIds = Array.from(new Set(auditRows.map((event) => event.actor_profile_id).filter(Boolean) as string[]));
 
     setProgram(programRow);
     setRows(
-      (enrollmentRows ?? []).map((enrollment) => {
-        const request = (requestRows ?? []).find((item) => item.student_profile_id === enrollment.student_profile_id) ?? null;
-        const subscription = (subscriptionRows ?? []).find((item) => item.student_profile_id === enrollment.student_profile_id) ?? null;
-        const paymentTermsHistory = (paymentTermsRows ?? []).filter((terms) => terms.student_profile_id === enrollment.student_profile_id);
+      enrollmentRows.map((enrollment) => {
+        const request = requestRows.find((item) => item.student_profile_id === enrollment.student_profile_id) ?? null;
+        const subscription = subscriptionRows.find((item) => item.student_profile_id === enrollment.student_profile_id) ?? null;
+        const paymentTermsHistory = paymentTermsRows.filter((terms) => terms.student_profile_id === enrollment.student_profile_id);
         const paymentTerms = selectCurrentPaymentTerms(paymentTermsHistory, request, subscription);
         const parentId =
           paymentTerms?.parent_profile_id ??
           request?.parent_profile_id ??
           subscription?.parent_profile_id ??
-          (linkRows ?? []).find((link) => link.child_profile_id === enrollment.student_profile_id)?.parent_profile_id ??
+          linkRows.find((link) => link.child_profile_id === enrollment.student_profile_id)?.parent_profile_id ??
           null;
         return {
           enrollment,
@@ -11212,14 +11006,14 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
           subscription,
           paymentTerms,
           paymentTermsHistory,
-          student: (profileRows ?? []).find((profile) => profile.id === enrollment.student_profile_id) as StudentDisplay | null,
-          approver: request?.reviewed_by ? ((profileRows ?? []).find((profile) => profile.id === request.reviewed_by) as Profile | undefined) ?? null : null,
-          parent: parentId ? ((profileRows ?? []).find((profile) => profile.id === parentId) as ParentDisplay | undefined) ?? null : null,
+          student: profileRows.find((profile) => profile.id === enrollment.student_profile_id) as StudentDisplay | null,
+          approver: request?.reviewed_by ? (profileRows.find((profile) => profile.id === request.reviewed_by) as Profile | undefined) ?? null : null,
+          parent: parentId ? (profileRows.find((profile) => profile.id === parentId) as ParentDisplay | undefined) ?? null : null,
         };
       }),
     );
-    setAuditEvents(auditRows ?? []);
-    setAuditActorsById(Object.fromEntries(((profileRows ?? []) as Profile[]).filter((profile) => auditActorIds.includes(profile.id)).map((profile) => [profile.id, profile])));
+    setAuditEvents(auditRows);
+    setAuditActorsById(Object.fromEntries(profileRows.filter((profile) => auditActorIds.includes(profile.id)).map((profile) => [profile.id, profile])));
     setLoading(false);
   }
 
@@ -12228,6 +12022,9 @@ export function ProgramApplicationsData({ slug, programId, mode = "teacher" }: {
     return () => window.clearTimeout(timeout);
   }, [loading, rows, searchParams]);
 
+  // One RPC call instead of mosque -> program -> can_manage_program check -> [6-way batch] ->
+  // profiles, as six sequential stages. Reuses the existing can_manage_program() permission
+  // check server-side rather than a separate round-trip for it.
   async function loadApplications() {
     setLoading(true);
     setError(null);
@@ -12240,23 +12037,34 @@ export function ProgramApplicationsData({ slug, programId, mode = "teacher" }: {
       return;
     }
 
-    const { data: mosque, error: mosqueError } = await supabase.from("mosques").select("id").eq("slug", slug).maybeSingle();
-    if (mosqueError || !mosque) {
-      setError(friendlyErrorMessage(mosqueError, "Masjid not found."));
+    const { data, error } = await supabase.rpc("get_program_applications_snapshot", { p_slug: slug, p_program_id: programId });
+    if (error) {
+      setError(friendlyErrorMessage(error, "Could not load applications."));
       setLoading(false);
       return;
     }
 
-    const { data: programRow, error: programError } = await supabase.from("programs").select("*").eq("id", programId).eq("mosque_id", mosque.id).maybeSingle();
-    if (programError || !programRow) {
-      setError(friendlyErrorMessage(programError, "Class not found."));
+    const snapshot = data as unknown as {
+      error: string | null;
+      program: Program | null;
+      canManage: boolean;
+      requests: EnrollmentRequest[];
+      tracks: ProgramTrack[];
+      subscriptions: ProgramSubscription[];
+      auditEvents: ProgramFinanceAuditEvent[];
+      switchRequests: ProgramTrackSwitchRequestRow[];
+      requestTrackLinks: Array<{ enrollment_request_id: string; program_track_id: string }>;
+      profiles: Profile[];
+    } | null;
+
+    if (!snapshot || !snapshot.program) {
+      setError(snapshot?.error ?? "Class not found.");
       setLoading(false);
       return;
     }
 
-    const { data: canManage } = await supabase.rpc("can_manage_program", { check_program_id: programId, check_profile_id: userId });
-    if (!canManage) {
-      setProgram(programRow);
+    if (!snapshot.canManage) {
+      setProgram(snapshot.program);
       setRows([]);
       setAuditEvents([]);
       setAuditActorsById({});
@@ -12265,53 +12073,41 @@ export function ProgramApplicationsData({ slug, programId, mode = "teacher" }: {
       return;
     }
 
-    const [{ data: requestRows, error: requestError }, { data: trackRows }, { data: subscriptionRows }, { data: auditRows }, { data: switchRows }, { data: requestTrackLinkRows }] = await Promise.all([
-      supabase.from("enrollment_requests").select("*").eq("program_id", programId).order("requested_at", { ascending: false }),
-      supabase.from("program_tracks").select("*").eq("program_id", programId),
-      supabase.from("program_subscriptions").select("*").eq("program_id", programId),
-      supabase.from("program_finance_audit_events").select("*").eq("program_id", programId).order("created_at", { ascending: false }).limit(20),
-      supabase.from("program_track_switch_requests").select("*").eq("program_id", programId).order("requested_at", { ascending: false }),
-      supabase.from("enrollment_request_tracks").select("enrollment_request_id, program_track_id"),
-    ]);
-    if (requestError) {
-      setError(friendlyErrorMessage(requestError, "Could not load applications."));
-      setLoading(false);
-      return;
-    }
+    const programRow = snapshot.program;
+    const requestRows = snapshot.requests ?? [];
+    const trackRows = snapshot.tracks ?? [];
+    const subscriptionRows = snapshot.subscriptions ?? [];
+    const auditRows = snapshot.auditEvents ?? [];
+    const switchRows = snapshot.switchRequests ?? [];
+    const requestTrackLinkRows = snapshot.requestTrackLinks ?? [];
+    const profileRows = snapshot.profiles ?? [];
 
     const requestTrackIdsByRequestId = new Map<string, string[]>();
-    for (const linkRow of requestTrackLinkRows ?? []) {
+    for (const linkRow of requestTrackLinkRows) {
       requestTrackIdsByRequestId.set(linkRow.enrollment_request_id, [...(requestTrackIdsByRequestId.get(linkRow.enrollment_request_id) ?? []), linkRow.program_track_id]);
     }
 
-    const studentIds = Array.from(new Set([...(requestRows ?? []).map((row) => row.student_profile_id), ...(switchRows ?? []).map((row) => row.student_profile_id)]));
-    const parentIds = Array.from(new Set((requestRows ?? []).map((row) => row.parent_profile_id).filter(Boolean) as string[]));
-    const reviewerIds = Array.from(new Set((requestRows ?? []).map((row) => row.reviewed_by).filter(Boolean) as string[]));
-    const auditActorIds = Array.from(new Set((auditRows ?? []).map((event) => event.actor_profile_id).filter(Boolean) as string[]));
-    const profileIds = Array.from(new Set([...studentIds, ...parentIds, ...reviewerIds, ...auditActorIds]));
-    const { data: profileRows } = profileIds.length
-      ? await supabase.from("profiles").select("id, full_name, email, phone_number, avatar_url, age, gender, date_of_birth, account_type").in("id", profileIds)
-      : { data: [] as StudentDisplay[] };
+    const auditActorIds = Array.from(new Set(auditRows.map((event) => event.actor_profile_id).filter(Boolean) as string[]));
 
     setProgram(programRow);
-    setTracks(trackRows ?? []);
+    setTracks(trackRows);
     setRows(
-      (requestRows ?? []).map((request) => ({
+      requestRows.map((request) => ({
         request,
-        student: (profileRows ?? []).find((profile) => profile.id === request.student_profile_id) as StudentDisplay | null,
-        parent: request.parent_profile_id ? ((profileRows ?? []).find((profile) => profile.id === request.parent_profile_id) as ParentDisplay | undefined) ?? null : null,
-        track: resolveRequestTrack(request, requestTrackIdsByRequestId, trackRows ?? []),
-        subscription: (subscriptionRows ?? []).find((subscription) => subscription.student_profile_id === request.student_profile_id) ?? null,
-        approver: request.reviewed_by ? ((profileRows ?? []).find((profile) => profile.id === request.reviewed_by) as Profile | undefined) ?? null : null,
+        student: profileRows.find((profile) => profile.id === request.student_profile_id) as StudentDisplay | null,
+        parent: request.parent_profile_id ? (profileRows.find((profile) => profile.id === request.parent_profile_id) as ParentDisplay | undefined) ?? null : null,
+        track: resolveRequestTrack(request, requestTrackIdsByRequestId, trackRows),
+        subscription: subscriptionRows.find((subscription) => subscription.student_profile_id === request.student_profile_id) ?? null,
+        approver: request.reviewed_by ? (profileRows.find((profile) => profile.id === request.reviewed_by) as Profile | undefined) ?? null : null,
       })),
     );
-    setAuditEvents(auditRows ?? []);
-    setAuditActorsById(Object.fromEntries(((profileRows ?? []) as Profile[]).filter((profile) => auditActorIds.includes(profile.id)).map((profile) => [profile.id, profile])));
+    setAuditEvents(auditRows);
+    setAuditActorsById(Object.fromEntries(profileRows.filter((profile) => auditActorIds.includes(profile.id)).map((profile) => [profile.id, profile])));
     setTrackSwitchRequests(
-      (switchRows ?? []).map((request) => ({
+      switchRows.map((request) => ({
         ...request,
         program: programRow,
-        student: (profileRows ?? []).find((profile) => profile.id === request.student_profile_id) as StudentDisplay | null,
+        student: profileRows.find((profile) => profile.id === request.student_profile_id) as StudentDisplay | null,
       })),
     );
     setLoading(false);
@@ -13019,51 +12815,34 @@ function useMosquePrograms(slug: string) {
   return { mosque: data?.mosque ?? null, programs: data?.programs ?? [], loading, error: queryError, refetch };
 }
 
-async function fetchMosqueProgramsSnapshot(slug: string): Promise<MosqueProgramsSnapshot> {
+// One RPC call instead of mosque -> programs -> teachers -> program_details as four
+// sequential/parallel round-trips. Backs both the guest/public browse list and the student
+// portal's Browse tab, so this is a high-leverage collapse.
+export async function fetchMosqueProgramsSnapshot(slug: string): Promise<MosqueProgramsSnapshot> {
   const supabase = createSupabaseBrowserClient();
-  const { data: mosqueData, error: mosqueError } = await supabase.from("mosques").select("*").eq("slug", slug).maybeSingle();
-
-  if (mosqueError) {
-    throw new Error(mosqueError.message);
+  const { data, error } = await supabase.rpc("get_mosque_programs_snapshot", { p_slug: slug });
+  if (error) {
+    throw new Error(error.message);
   }
 
-  if (!mosqueData) {
-    throw new Error("Masjid not found.");
+  const snapshot = data as unknown as {
+    error: string | null;
+    mosque: Mosque | null;
+    programs: Program[];
+    teachers: TeacherDisplay[];
+    details: Array<{ program_id: string; instructor_display_name: string | null; cover_director_visibility: string }>;
+  } | null;
+
+  if (!snapshot || snapshot.error || !snapshot.mosque) {
+    throw new Error(snapshot?.error ?? "Masjid not found.");
   }
 
-  const { data: programData, error: programError } = await supabase
-    .from("programs")
-    .select("*")
-    .eq("mosque_id", mosqueData.id)
-    .eq("is_active", true)
-    .order("created_at", { ascending: false });
+  const visiblePrograms = (snapshot.programs ?? []).filter((program) => isPubliclyListed(toProgramStatusFields(program)));
+  const teachers = snapshot.teachers ?? [];
+  const detailsRows = snapshot.details ?? [];
 
-  if (programError) {
-    throw new Error(programError.message);
-  }
-
-  const visiblePrograms = (programData ?? []).filter((program) => isPubliclyListed(toProgramStatusFields(program)));
-
-  const teacherIds = Array.from(new Set(visiblePrograms.map((program) => program.director_profile_id ?? program.teacher_profile_id).filter(Boolean))) as string[];
-  let teachers: TeacherDisplay[] = [];
-
-  if (teacherIds.length > 0) {
-    const { data: teacherData, error: teacherError } = await supabase.from("profiles").select("id, full_name, avatar_url, teacher_credentials, teacher_whatsapp_number").in("id", teacherIds);
-    if (teacherError) {
-      throw new Error(teacherError.message);
-    }
-    teachers = teacherData ?? [];
-  }
-
-  const programIds = visiblePrograms.map((program) => program.id);
-  let detailsRows: Array<{ program_id: string; instructor_display_name: string | null; cover_director_visibility: string }> = [];
-  if (programIds.length > 0) {
-    const { data: detailsData } = await supabase.from("program_details").select("program_id, instructor_display_name, cover_director_visibility").in("program_id", programIds);
-    detailsRows = detailsData ?? [];
-  }
-
-  const snapshot = {
-    mosque: mosqueData,
+  return {
+    mosque: snapshot.mosque,
     programs: visiblePrograms.map((program) => {
       const details = detailsRows.find((row) => row.program_id === program.id);
       return {
@@ -13074,26 +12853,6 @@ async function fetchMosqueProgramsSnapshot(slug: string): Promise<MosquePrograms
       };
     }),
   };
-
-  return snapshot;
-}
-
-async function hydrateTracksWithLinkedSessions(
-  supabase: ReturnType<typeof createSupabaseBrowserClient>,
-  programIds: string[],
-  tracks: ProgramTrack[],
-) {
-  if (!programIds.length || !tracks.length) {
-    return tracks;
-  }
-
-  const trackIds = tracks.map((track) => track.id);
-  const [{ data: sessions }, { data: links }] = await Promise.all([
-    supabase.from("program_sessions").select("*").in("program_id", programIds),
-    supabase.from("program_track_sessions").select("*").in("program_track_id", trackIds),
-  ]);
-
-  return applyLinkedSessionsToTracks(tracks, sessions ?? [], links ?? []);
 }
 
 async function saveTrackTransferRules(
@@ -13250,66 +13009,67 @@ const emptyTeacherProgramsResult: TeacherProgramsResult = {
   error: null,
 };
 
-async function fetchTeacherPrograms(slug: string): Promise<TeacherProgramsResult> {
-  const supabase = createSupabaseBrowserClient();
+// A single RPC call instead of the mosque+profile -> programs+assignments+memberships ->
+// tracks+enrollments+requests+instructors -> sessions+links chain this used to run as five
+// sequential/parallel round-trip stages. The RPC (security invoker, same RLS as before) just
+// returns the same raw rows in one response -- every bit of business logic below (role
+// assignment, draft filtering, per-program counting, session/track linking) is unchanged.
+export async function fetchTeacherPrograms(slug: string): Promise<TeacherProgramsResult> {
   const session = await loadCachedSession();
   const userId = session?.user.id;
   if (!userId) {
     return { ...emptyTeacherProgramsResult, error: "Log in required." };
   }
 
-  const [{ data: mosque, error: mosqueError }, { data: profile, error: profileError }] = await Promise.all([
-    supabase.from("mosques").select("id").eq("slug", slug).maybeSingle(),
-    supabase.from("profiles").select("account_type").eq("id", userId).maybeSingle(),
-  ]);
-  if (mosqueError) {
-    return { ...emptyTeacherProgramsResult, currentUserId: userId, error: mosqueError.message };
-  }
-  if (profileError) {
-    return { ...emptyTeacherProgramsResult, currentUserId: userId, error: profileError.message };
+  const supabase = createSupabaseBrowserClient();
+  const { data, error } = await supabase.rpc("get_teacher_programs_snapshot", { p_slug: slug });
+  if (error) {
+    return { ...emptyTeacherProgramsResult, currentUserId: userId, error: error.message };
   }
 
-  const teacherAccountType = profile?.account_type?.toLowerCase() ?? null;
+  const snapshot = data as unknown as {
+    error: string | null;
+    accountType: string | null;
+    mosqueId: string | null;
+    programs: Program[];
+    assignments: Array<{ program_id: string; role: string; can_manage_finances: boolean }>;
+    memberships: Array<{ role: string; status: string; can_create_programs: boolean }>;
+    tracks: ProgramTrack[];
+    activeEnrollments: Array<{ program_id: string }>;
+    pendingRequests: Array<{ program_id: string }>;
+    instructorRows: Array<{ program_id: string }>;
+    sessions: ProgramSession[];
+    links: ProgramTrackSession[];
+  } | null;
+
+  if (!snapshot) {
+    return { ...emptyTeacherProgramsResult, currentUserId: userId, error: "Could not load assigned classes." };
+  }
+  if (snapshot.error) {
+    return { ...emptyTeacherProgramsResult, currentUserId: userId, error: snapshot.error };
+  }
+
+  const teacherAccountType = snapshot.accountType?.toLowerCase() ?? null;
   if (teacherAccountType !== "teacher" && teacherAccountType !== "admin") {
     return { ...emptyTeacherProgramsResult, currentUserId: userId, error: "Teacher account required." };
   }
 
-  if (!mosque) {
+  if (!snapshot.mosqueId) {
     return { ...emptyTeacherProgramsResult, currentUserId: userId };
   }
 
-  const [{ data: mosquePrograms, error: programError }, { data: assignments, error: assignmentError }, { data: memberships }] = await Promise.all([
-    // Deliberately not filtered on is_active: a director/instructor must still be able to
-    // find their own draft (is_active=false) programs in "My Classes" to finish/publish them.
-    // Inactive programs unassigned to the viewer are filtered back out below, in the
-    // "My Classes" vs "Other Classes" split, so they never leak into other directors' browsing.
-    supabase.from("programs").select("*").eq("mosque_id", mosque.id).order("title", { ascending: true }),
-    supabase.from("program_teachers").select("program_id, role, can_manage_finances").eq("teacher_profile_id", userId),
-    supabase.from("mosque_memberships").select("role, status, can_create_programs").eq("mosque_id", mosque.id).eq("profile_id", userId),
-  ]);
-
-  if (programError || assignmentError) {
-    return { ...emptyTeacherProgramsResult, currentUserId: userId, error: friendlyErrorMessage(programError ?? assignmentError, "Could not load assigned classes.") };
-  }
+  const mosquePrograms = snapshot.programs;
+  const assignments = snapshot.assignments;
+  const memberships = snapshot.memberships;
+  const trackRows = snapshot.tracks;
+  const activeEnrollmentRows = snapshot.activeEnrollments;
+  const pendingRequestRows = snapshot.pendingRequests;
+  const instructorRows = snapshot.instructorRows;
 
   const assignmentRoleByProgramId = Object.fromEntries(
     (assignments ?? []).map((assignment) => [assignment.program_id, assignment.role === "director" ? "director" : "instructor" as TeacherProgramRole]),
   ) as Record<string, TeacherProgramRole>;
   const programIds = (mosquePrograms ?? []).map((program) => program.id);
-  const [{ data: trackRows }, { data: activeEnrollmentRows }, { data: pendingRequestRows }, { data: instructorRows }] = await Promise.all([
-    programIds.length
-      ? supabase.from("program_tracks").select("*").in("program_id", programIds).eq("is_active", true).order("sort_order", { ascending: true })
-      : Promise.resolve({ data: [] as ProgramTrack[] }),
-    programIds.length
-      ? supabase.from("enrollments").select("program_id").in("program_id", programIds).eq("status", "active")
-      : Promise.resolve({ data: [] as Array<{ program_id: string }> }),
-    programIds.length
-      ? supabase.from("enrollment_requests").select("program_id").in("program_id", programIds).eq("status", "pending")
-      : Promise.resolve({ data: [] as Array<{ program_id: string }> }),
-    programIds.length
-      ? supabase.from("program_teachers").select("program_id").in("program_id", programIds).eq("role", "instructor").not("teacher_profile_id", "is", null)
-      : Promise.resolve({ data: [] as Array<{ program_id: string }> }),
-  ]);
   const nextProgramCounts: Record<string, { students: number; applications: number; instructors: number }> = {};
   for (const programId of programIds) {
     nextProgramCounts[programId] = { students: 0, applications: 0, instructors: 0 };
@@ -13323,7 +13083,7 @@ async function fetchTeacherPrograms(slug: string): Promise<TeacherProgramsResult
   for (const row of instructorRows ?? []) {
     if (nextProgramCounts[row.program_id]) nextProgramCounts[row.program_id].instructors += 1;
   }
-  const hydratedTrackRows = await hydrateTracksWithLinkedSessions(supabase, programIds, trackRows ?? []);
+  const hydratedTrackRows = applyLinkedSessionsToTracks(trackRows ?? [], snapshot.sessions ?? [], snapshot.links ?? []);
   const programsWithTracks = (mosquePrograms ?? [])
     // Keep active programs plus the viewer's own unpublished drafts (so a director can find
     // and finish one) — but never resurface archived/cancelled (i.e. deleted) programs, which
@@ -13376,60 +13136,40 @@ function useTeacherPrograms(slug: string) {
 type AdminProgramsResult = { programs: ProgramScheduleSource[]; error: string | null };
 const emptyAdminProgramsResult: AdminProgramsResult = { programs: [], error: null };
 
-async function fetchAdminProgramsWithTracks(slug: string): Promise<AdminProgramsResult> {
-  const supabase = createSupabaseBrowserClient();
+// Same one-RPC-call pattern as fetchTeacherPrograms above -- collapses the mosque+profile ->
+// admin-membership check -> programs -> tracks -> sessions+links chain into a single response.
+export async function fetchAdminProgramsWithTracks(slug: string): Promise<AdminProgramsResult> {
   const session = await loadCachedSession();
   const userId = session?.user.id;
   if (!userId) {
     return { programs: [], error: "Log in required." };
   }
 
-  const [{ data: mosque, error: mosqueError }, { data: profile }] = await Promise.all([
-    supabase.from("mosques").select("id").eq("slug", slug).maybeSingle(),
-    supabase.from("profiles").select("account_type").eq("id", userId).maybeSingle(),
-  ]);
-
-  if (mosqueError || !mosque) {
-    return { programs: [], error: friendlyErrorMessage(mosqueError, "Masjid not found.") };
+  const supabase = createSupabaseBrowserClient();
+  const { data, error } = await supabase.rpc("get_admin_programs_snapshot", { p_slug: slug });
+  if (error) {
+    return { programs: [], error: error.message };
   }
 
-  const { data: adminMembership } = await supabase
-    .from("mosque_memberships")
-    .select("id")
-    .eq("mosque_id", mosque.id)
-    .eq("profile_id", userId)
-    .eq("role", "admin")
-    .eq("status", "active")
-    .maybeSingle();
+  const snapshot = data as unknown as {
+    error: string | null;
+    programs: Program[];
+    tracks: ProgramTrack[];
+    sessions: ProgramSession[];
+    links: ProgramTrackSession[];
+  } | null;
 
-  if (profile?.account_type !== "admin" || !adminMembership) {
-    return { programs: [], error: "Admin account required." };
+  if (!snapshot) {
+    return { programs: [], error: "Could not load classes." };
+  }
+  if (snapshot.error) {
+    return { programs: [], error: snapshot.error };
   }
 
-  const { data: programRows, error: programError } = await supabase
-    .from("programs")
-    .select("*")
-    .eq("mosque_id", mosque.id)
-    .eq("is_active", true)
-    .order("title", { ascending: true });
-
-  if (programError) {
-    return { programs: [], error: programError.message };
-  }
-
-  const programIds = (programRows ?? []).map((program) => program.id);
-  const { data: trackRows } = programIds.length
-    ? await supabase
-        .from("program_tracks")
-        .select("*")
-        .in("program_id", programIds)
-        .eq("is_active", true)
-        .order("sort_order", { ascending: true })
-    : { data: [] as ProgramTrack[] };
-  const hydratedTrackRows = await hydrateTracksWithLinkedSessions(supabase, programIds, trackRows ?? []);
+  const hydratedTrackRows = applyLinkedSessionsToTracks(snapshot.tracks ?? [], snapshot.sessions ?? [], snapshot.links ?? []);
 
   return {
-    programs: (programRows ?? []).map((program) => ({
+    programs: (snapshot.programs ?? []).map((program) => ({
       ...program,
       scheduleTracks: hydratedTrackRows.filter((track) => track.program_id === program.id),
     })),
@@ -13460,23 +13200,6 @@ const emptyStudentEnrollmentsResult: StudentEnrollmentsResult = {
   accountType: null,
   viewerProfiles: [],
 };
-
-async function loadEnrollmentTrackRows(
-  supabase: ReturnType<typeof createSupabaseBrowserClient>,
-  enrollments: Array<{ id: string }>,
-) {
-  const enrollmentIds = enrollments.map((enrollment) => enrollment.id);
-  if (!enrollmentIds.length) {
-    return [] as Array<{ enrollment_id: string; program_track_id: string }>;
-  }
-
-  const { data } = await supabase
-    .from("enrollment_tracks")
-    .select("enrollment_id, program_track_id")
-    .in("enrollment_id", enrollmentIds);
-
-  return (data ?? []) as Array<{ enrollment_id: string; program_track_id: string }>;
-}
 
 function getProgramOwnerLabelsByTrackId(
   enrollments: EnrollmentTrackSelection[],
@@ -13509,29 +13232,50 @@ function getProgramOwnerLabelsByTrackId(
   return next;
 }
 
-async function fetchStudentEnrollments(slug: string, userId: string | null): Promise<StudentEnrollmentsResult> {
+// One RPC call instead of profile+mosque -> children -> enrollments -> enrollment_tracks ->
+// tracks -> sessions+links as up to seven sequential/parallel round-trips. Backs the Home
+// "Upcoming" list and Classes "My Classes" tab for both students and parents.
+export async function fetchStudentEnrollments(slug: string, userId: string | null): Promise<StudentEnrollmentsResult> {
   if (!userId) {
     return emptyStudentEnrollmentsResult;
   }
 
   const supabase = createSupabaseBrowserClient();
-  const [{ data: profile }, { data: mosque }] = await Promise.all([
-    supabase.from("profiles").select("id, full_name, email, phone_number, avatar_url, age, gender, date_of_birth, account_type").eq("id", userId).maybeSingle(),
-    supabase.from("mosques").select("id").eq("slug", slug).maybeSingle(),
-  ]);
+  const { data, error } = await supabase.rpc("get_student_enrollments_snapshot", { p_slug: slug });
+  if (error) {
+    return emptyStudentEnrollmentsResult;
+  }
 
-  const nextAccountType = profile?.account_type ?? null;
-  if (nextAccountType === "parent" && mosque?.id) {
-    const { children } = await fetchParentChildren(supabase, slug, userId, mosque.id);
+  const snapshot = data as unknown as {
+    profile: StudentDisplay | null;
+    accountType: string | null;
+    children: StudentDisplay[];
+    enrollments: EnrollmentTrackSelection[];
+    enrollmentTracks: Array<{ enrollment_id: string; program_track_id: string }>;
+    tracks: ProgramTrack[];
+    sessions: ProgramSession[];
+    links: ProgramTrackSession[];
+  } | null;
+
+  if (!snapshot) {
+    return emptyStudentEnrollmentsResult;
+  }
+
+  const profile = snapshot.profile;
+  const nextAccountType = snapshot.accountType;
+  const enrollmentTrackRows = snapshot.enrollmentTracks ?? [];
+  const tracks = snapshot.tracks ?? [];
+  const sessions = snapshot.sessions ?? [];
+  const links = snapshot.links ?? [];
+
+  if (nextAccountType === "parent") {
+    const children = snapshot.children ?? [];
     const possibleProfiles = [profile, ...children].filter(Boolean) as StudentDisplay[];
-    const childIds = children.map((child) => child.id);
-    const possibleIds = Array.from(new Set([userId, ...childIds]));
-    if (possibleIds.length === 0) {
+    if (possibleProfiles.length === 0) {
       return { ...emptyStudentEnrollmentsResult, accountType: nextAccountType, viewerProfiles: possibleProfiles };
     }
 
-    const { data } = await supabase.from("enrollments").select("id, program_id, student_profile_id, program_track_id, created_at, status").in("student_profile_id", possibleIds);
-    const activeRows = ((data ?? []) as EnrollmentTrackSelection[]).filter((row) => isCurrentEnrollmentStatus(row.status));
+    const activeRows = (snapshot.enrollments ?? []).filter((row) => isCurrentEnrollmentStatus(row.status));
     const childNameById = new Map(possibleProfiles.map((student) => [student.id, student.id === userId ? (student.full_name?.trim() || "You") : (student.full_name?.trim() || "Child")]));
     const owners: Record<string, string[]> = {};
     for (const row of activeRows) {
@@ -13541,8 +13285,7 @@ async function fetchStudentEnrollments(slug: string, userId: string | null): Pro
       }
       owners[row.program_id] = Array.from(new Set([...(owners[row.program_id] ?? []), childName]));
     }
-    const enrollmentTrackRows = await loadEnrollmentTrackRows(supabase, activeRows);
-    const trackMap = await loadEnrollmentTrackMap(supabase, activeRows, enrollmentTrackRows);
+    const trackMap = buildEnrollmentTrackMap(activeRows, enrollmentTrackRows, tracks, sessions, links);
     const ownerLabelsByTrackId = getProgramOwnerLabelsByTrackId(activeRows, enrollmentTrackRows, childNameById);
     return {
       enrolledProgramIds: Object.keys(owners),
@@ -13554,17 +13297,15 @@ async function fetchStudentEnrollments(slug: string, userId: string | null): Pro
     };
   }
 
-  const { data } = await supabase.from("enrollments").select("id, program_id, student_profile_id, program_track_id, created_at, status").eq("student_profile_id", userId);
-  const activeRows = ((data ?? []) as EnrollmentTrackSelection[]).filter((row) => isCurrentEnrollmentStatus(row.status));
-  const enrollmentTrackRows = await loadEnrollmentTrackRows(supabase, activeRows);
-  const trackMap = await loadEnrollmentTrackMap(supabase, activeRows, enrollmentTrackRows);
+  const activeRows = (snapshot.enrollments ?? []).filter((row) => isCurrentEnrollmentStatus(row.status));
+  const trackMap = buildEnrollmentTrackMap(activeRows, enrollmentTrackRows, tracks, sessions, links);
   return {
     enrolledProgramIds: activeRows.map((row) => row.program_id),
     programOwnerLabels: {},
     programOwnerLabelsByTrackId: {},
     programTracksByProgramId: trackMap,
     accountType: nextAccountType,
-    viewerProfiles: profile ? [profile as StudentDisplay] : [],
+    viewerProfiles: profile ? [profile] : [],
   };
 }
 
@@ -13599,36 +13340,31 @@ function useStudentPrograms(slug: string) {
   return { ...base, ...result, enrollmentLoading, refetchEnrollments };
 }
 
-async function loadEnrollmentTrackMap(
-  supabase: ReturnType<typeof createSupabaseBrowserClient>,
+// Pure version of the track-map assembly that loadEnrollmentTrackMap used to fetch its own way
+// (program_tracks, then program_sessions+program_track_sessions via hydrateTracksWithLinkedSessions)
+// -- now fed straight from the RPC's raw rows instead of issuing its own queries.
+function buildEnrollmentTrackMap(
   enrollments: Array<{ id: string; program_id: string; program_track_id?: string | null }>,
-  providedEnrollmentTracks?: Array<{ enrollment_id: string; program_track_id: string }>,
+  enrollmentTrackRows: Array<{ enrollment_id: string; program_track_id: string }>,
+  tracks: ProgramTrack[],
+  sessions: ProgramSession[],
+  links: ProgramTrackSession[],
 ) {
-  const enrollmentIds = enrollments.map((enrollment) => enrollment.id);
-  if (!enrollmentIds.length) {
+  if (!enrollments.length) {
     return {};
   }
 
-  const enrollmentTracks = providedEnrollmentTracks ?? (await loadEnrollmentTrackRows(supabase, enrollments));
   const legacyEnrollmentTracks = enrollments
     .filter((enrollment) => Boolean(enrollment.program_track_id))
     .map((enrollment) => ({ enrollment_id: enrollment.id, program_track_id: enrollment.program_track_id as string }));
-  const allEnrollmentTracks = [...enrollmentTracks, ...legacyEnrollmentTracks].filter(
+  const allEnrollmentTracks = [...enrollmentTrackRows, ...legacyEnrollmentTracks].filter(
     (row, index, all) => all.findIndex((item) => item.enrollment_id === row.enrollment_id && item.program_track_id === row.program_track_id) === index,
   );
-  const trackIds = Array.from(new Set(allEnrollmentTracks.map((row) => row.program_track_id).filter(Boolean))) as string[];
-  if (!trackIds.length) {
+  if (!allEnrollmentTracks.length) {
     return {};
   }
 
-  const { data: tracks } = await supabase
-    .from("program_tracks")
-    .select("*")
-    .in("id", trackIds)
-    .eq("is_active", true)
-    .order("sort_order", { ascending: true });
-  const programIds = Array.from(new Set(enrollments.map((enrollment) => enrollment.program_id)));
-  const hydratedTracks = await hydrateTracksWithLinkedSessions(supabase, programIds, tracks ?? []);
+  const hydratedTracks = applyLinkedSessionsToTracks(tracks, sessions, links);
   const trackById = new Map(hydratedTracks.map((track) => [track.id, track]));
   const enrollmentProgramById = new Map(enrollments.map((enrollment) => [enrollment.id, enrollment.program_id]));
   const next: Record<string, ProgramTrack[]> = {};
@@ -13674,59 +13410,50 @@ export function applicantRowFromRequest(request: RequestWithContext): ApplicantA
 type ApplicantApplicationsResult = { rows: ApplicantApplicationRow[]; error: string | null };
 const emptyApplicantApplicationsResult: ApplicantApplicationsResult = { rows: [], error: null };
 
+// One RPC call instead of profile+mosque -> children -> requests -> [programs+tracks+
+// subscriptions] -> extra-students as five sequential/parallel round-trips. Backs the
+// Applications tab and the Home action-required banner for both students and parents.
 async function fetchApplicantApplications(slug: string, userId: string | null): Promise<ApplicantApplicationsResult> {
   if (!userId) {
     return emptyApplicantApplicationsResult;
   }
 
   const supabase = createSupabaseBrowserClient();
-  const [{ data: profile }, { data: mosque }] = await Promise.all([
-    supabase.from("profiles").select("account_type").eq("id", userId).maybeSingle(),
-    supabase.from("mosques").select("id").eq("slug", slug).maybeSingle(),
-  ]);
-  if (!mosque) {
-    return { rows: [], error: "Masjid not found." };
+  const { data, error } = await supabase.rpc("get_applicant_applications_snapshot", { p_slug: slug });
+  if (error) {
+    return { rows: [], error: error.message };
   }
 
-  const isParent = profile?.account_type === "parent";
-  const { children } = isParent ? await fetchParentChildren(supabase, slug, userId, mosque.id) : { children: [] as StudentDisplay[] };
+  const snapshot = data as unknown as {
+    error: string | null;
+    requests: EnrollmentRequest[];
+    programs: Program[];
+    tracks: ProgramTrack[];
+    subscriptions: ProgramSubscription[];
+    children: StudentDisplay[];
+    extraStudents: StudentDisplay[];
+  } | null;
 
-  const { data: requestRows, error: requestError } = isParent
-    ? await supabase.from("enrollment_requests").select("*").eq("mosque_id", mosque.id).eq("parent_profile_id", userId).order("requested_at", { ascending: false })
-    : await supabase.from("enrollment_requests").select("*").eq("mosque_id", mosque.id).eq("student_profile_id", userId).order("requested_at", { ascending: false });
-
-  if (requestError) {
-    return { rows: [], error: requestError.message };
+  if (!snapshot) {
+    return { rows: [], error: "Could not load applications." };
+  }
+  if (snapshot.error) {
+    return { rows: [], error: snapshot.error };
   }
 
-  const requests = requestRows ?? [];
-  const programIds = Array.from(new Set(requests.map((request) => request.program_id)));
-  const trackIds = Array.from(new Set(requests.map((request) => request.program_track_id).filter(Boolean) as string[]));
-  const studentIds = Array.from(new Set(requests.map((request) => request.student_profile_id)));
-
-  const [{ data: programRows }, { data: trackRows }, { data: subscriptionRows }] = await Promise.all([
-    programIds.length ? supabase.from("programs").select("*").in("id", programIds) : Promise.resolve({ data: [] as Program[] }),
-    trackIds.length ? supabase.from("program_tracks").select("*").in("id", trackIds) : Promise.resolve({ data: [] as ProgramTrack[] }),
-    programIds.length && studentIds.length
-      ? supabase.from("program_subscriptions").select("*").in("program_id", programIds).in("student_profile_id", studentIds)
-      : Promise.resolve({ data: [] as ProgramSubscription[] }),
-  ]);
-
-  const selfProfile = profile ? ({ id: userId } as StudentDisplay) : null;
-  const knownStudents = [...children, ...(selfProfile ? [selfProfile] : [])];
-  const missingStudentIds = studentIds.filter((id) => !knownStudents.some((student) => student.id === id));
-  const { data: extraStudents } = missingStudentIds.length
-    ? await supabase.from("profiles").select("id, full_name, email, phone_number, avatar_url, age, gender, date_of_birth, account_type").in("id", missingStudentIds)
-    : { data: [] as StudentDisplay[] };
-  const allStudents = [...children, ...(extraStudents ?? [])];
+  const requests = snapshot.requests ?? [];
+  const programRows = snapshot.programs ?? [];
+  const trackRows = snapshot.tracks ?? [];
+  const subscriptionRows = snapshot.subscriptions ?? [];
+  const allStudents = [...(snapshot.children ?? []), ...(snapshot.extraStudents ?? [])];
 
   return {
     rows: requests.map((request) => ({
       request,
-      program: (programRows ?? []).find((program) => program.id === request.program_id) ?? null,
-      track: request.program_track_id ? (trackRows ?? []).find((track) => track.id === request.program_track_id) ?? null : null,
+      program: programRows.find((program) => program.id === request.program_id) ?? null,
+      track: request.program_track_id ? trackRows.find((track) => track.id === request.program_track_id) ?? null : null,
       subscription:
-        (subscriptionRows ?? []).find((subscription) => subscription.program_id === request.program_id && subscription.student_profile_id === request.student_profile_id) ?? null,
+        subscriptionRows.find((subscription) => subscription.program_id === request.program_id && subscription.student_profile_id === request.student_profile_id) ?? null,
       student: request.student_profile_id === userId ? null : allStudents.find((student) => student.id === request.student_profile_id) ?? null,
     })),
     error: null,
@@ -13944,7 +13671,7 @@ export function StudentNoteBubble({
             aria-label="Delete note"
             title="Delete note"
           >
-            {deleting ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-[#F3B8AE] border-t-[#C83F31]" aria-hidden /> : <TrashIcon />}
+            {deleting ? <span className="h-4 w-4 animate-pulse rounded-full bg-[#F3B8AE]" aria-hidden /> : <TrashIcon />}
           </button>
         ) : null}
       </div>
@@ -14852,10 +14579,17 @@ function ChildNoteRecipientPrompt({
   );
 }
 
+// One RPC call instead of mosque -> program -> enrollment -> [profile+link] -> parent -> (in
+// the child TeacherStudentNotesPage) notes -> authors, as a component-level waterfall of
+// roughly eight sequential stages across two components. Notes are fetched here too and
+// passed down as the child's initial data, so it no longer needs its own on-mount fetch --
+// only its refresh-after-send/delete fetch remains, which is a one-off user action, not a
+// page-load cost.
 export function TeacherStudentNotesData({ slug, programId, studentId }: { slug: string; programId: string; studentId: string }) {
   const [mosque, setMosque] = useState<Mosque | null>(null);
   const [program, setProgram] = useState<Program | null>(null);
   const [target, setTarget] = useState<TeacherStudentItem | null>(null);
+  const [initialNotes, setInitialNotes] = useState<StudentNoteWithContext[]>([]);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -14870,74 +14604,53 @@ export function TeacherStudentNotesData({ slug, programId, studentId }: { slug: 
       const { data: sessionData } = await supabase.auth.getSession();
       const userId = sessionData.session?.user.id ?? null;
 
-      const { data: mosqueData, error: mosqueError } = await supabase.from("mosques").select("*").eq("slug", slug).maybeSingle();
+      const { data, error: rpcError } = await supabase.rpc("get_teacher_student_notes_snapshot", { p_slug: slug, p_program_id: programId, p_student_id: studentId });
       if (cancelled) {
         return;
       }
-      if (mosqueError || !mosqueData) {
-        setError(friendlyErrorMessage(mosqueError, "Masjid not found."));
+      if (rpcError) {
+        setError(friendlyErrorMessage(rpcError, "Could not load notes."));
         setLoading(false);
         return;
       }
 
-      const { data: programData, error: programError } = await supabase
-        .from("programs")
-        .select("*")
-        .eq("id", programId)
-        .eq("mosque_id", mosqueData.id)
-        .maybeSingle();
-      if (cancelled) {
-        return;
-      }
-      if (programError || !programData) {
-        setError(friendlyErrorMessage(programError, "Class not found."));
+      const snapshot = data as unknown as {
+        error: string | null;
+        mosque: Mosque | null;
+        program: Program | null;
+        enrollment: Enrollment | null;
+        profile: StudentDisplay | null;
+        parent: ParentDisplay | null;
+        notes: Array<Database["public"]["Tables"]["program_student_notes"]["Row"]>;
+        authors: Profile[];
+      } | null;
+
+      if (!snapshot || snapshot.error || !snapshot.mosque || !snapshot.program || !snapshot.enrollment) {
+        setError(snapshot?.error ?? "Student enrollment not found.");
         setLoading(false);
         return;
       }
 
-      const { data: enrollment, error: enrollmentError } = await supabase
-        .from("enrollments")
-        .select("*")
-        .eq("program_id", programData.id)
-        .eq("student_profile_id", studentId)
-        .maybeSingle();
-      if (cancelled) {
-        return;
-      }
-      if (enrollmentError || !enrollment) {
-        setError(friendlyErrorMessage(enrollmentError, "Student enrollment not found."));
-        setLoading(false);
-        return;
-      }
+      const authors = snapshot.authors ?? [];
+      const recipient = snapshot.parent ?? snapshot.profile;
+      const notes = (snapshot.notes ?? []).map((note) => ({
+        ...note,
+        program: snapshot.program as Program,
+        student: snapshot.profile,
+        recipient: recipient as Profile | null,
+        author: authors.find((author) => author.id === note.author_profile_id) ?? null,
+      }));
 
-      const [{ data: profile }, { data: link }] = await Promise.all([
-        supabase
-          .from("profiles")
-          .select("id, full_name, email, phone_number, avatar_url, age, gender, date_of_birth, account_type")
-          .eq("id", studentId)
-          .maybeSingle(),
-        supabase
-          .from("parent_child_links")
-          .select("child_profile_id, parent_profile_id")
-          .eq("mosque_id", mosqueData.id)
-          .eq("child_profile_id", studentId)
-          .maybeSingle(),
-      ]);
-      const { data: parent } = link?.parent_profile_id
-        ? await supabase.from("profiles").select("id, full_name, email, phone_number, avatar_url").eq("id", link.parent_profile_id).maybeSingle()
-        : { data: null as ParentDisplay | null };
-
-      if (!cancelled) {
-        setMosque(mosqueData);
-        setProgram(programData);
-        setTarget({
-          enrollment,
-          profile: (profile as StudentDisplay | null) ?? null,
-          parent: (parent as ParentDisplay | null) ?? null,
-        });
-        setCurrentUserId(userId);
-        setLoading(false);
-      }
+      setMosque(snapshot.mosque);
+      setProgram(snapshot.program);
+      setTarget({
+        enrollment: snapshot.enrollment,
+        profile: snapshot.profile ?? null,
+        parent: snapshot.parent ?? null,
+      });
+      setInitialNotes(notes);
+      setCurrentUserId(userId);
+      setLoading(false);
     }
 
     void load();
@@ -14958,7 +14671,16 @@ export function TeacherStudentNotesData({ slug, programId, studentId }: { slug: 
     return <EmptyState title="Student not found" text="This student could not be loaded for notes." />;
   }
 
-  return <TeacherStudentNotesPage mosque={mosque} program={program} target={target} currentUserId={currentUserId} />;
+  return (
+    <TeacherStudentNotesPage
+      key={`${program.id}:${target.enrollment.student_profile_id}`}
+      mosque={mosque}
+      program={program}
+      target={target}
+      currentUserId={currentUserId}
+      initialNotes={initialNotes}
+    />
+  );
 }
 
 function TeacherStudentNotesPage({
@@ -14966,16 +14688,18 @@ function TeacherStudentNotesPage({
   program,
   target,
   currentUserId,
+  initialNotes,
 }: {
   mosque: Mosque | null;
   program: Program;
   target: { enrollment: Enrollment; profile: StudentDisplay | null; parent?: ParentDisplay | null };
   currentUserId: string | null;
+  initialNotes: StudentNoteWithContext[];
 }) {
-  const [notes, setNotes] = useState<StudentNoteWithContext[]>([]);
+  const [notes, setNotes] = useState<StudentNoteWithContext[]>(initialNotes);
   const [message, setMessage] = useState("");
   const [attachments, setAttachments] = useState<MessageAttachment[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [busy, setBusy] = useState(false);
   const [deletingNoteId, setDeletingNoteId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -15016,14 +14740,6 @@ function TeacherStudentNotesPage({
     );
     setLoading(false);
   }
-
-  useEffect(() => {
-    const timeout = window.setTimeout(() => {
-      void loadNotes();
-    }, 0);
-    return () => window.clearTimeout(timeout);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [program.id, target.enrollment.student_profile_id]);
 
   async function sendNote() {
     if (!mosque || !currentUserId || !recipient?.id || (!message.trim() && attachments.length === 0)) {
@@ -16525,60 +16241,52 @@ export function StudentWithdrawalRequestData({ slug, programId }: { slug: string
   useEffect(() => {
     let cancelled = false;
 
+    // One RPC call instead of mosque -> program -> profile -> [children] -> enrollments ->
+    // withdrawal_requests, as up to six sequential stages.
     async function loadOptions() {
       setLoading(true);
       setMessage(null);
       const supabase = createSupabaseBrowserClient();
-      const { data: sessionData } = await supabase.auth.getSession();
-      const userId = sessionData.session?.user.id ?? null;
-      if (!userId) {
-        setMessage({ tone: "error", text: "Please sign in to request withdrawal." });
+      const { data, error } = await supabase.rpc("get_student_withdrawal_options_snapshot", { p_slug: slug, p_program_id: programId });
+      if (error) {
+        if (!cancelled) {
+          setMessage({ tone: "error", text: friendlyErrorMessage(error, "Could not load withdrawal options.") });
+          setLoading(false);
+        }
+        return;
+      }
+
+      const snapshot = data as unknown as {
+        error: string | null;
+        program: Program | null;
+        selfProfile: StudentDisplay | null;
+        children: StudentDisplay[];
+        enrolledStudentIds: string[];
+        requests: WithdrawalRequest[];
+      } | null;
+
+      if (cancelled) {
+        return;
+      }
+      if (!snapshot || snapshot.error || !snapshot.program) {
+        setMessage({ tone: "error", text: snapshot?.error ?? "Class not found." });
         setLoading(false);
         return;
       }
 
-      const { data: mosque } = await supabase.from("mosques").select("id").eq("slug", slug).maybeSingle();
-      if (!mosque) {
-        setMessage({ tone: "error", text: "Masjid not found." });
-        setLoading(false);
-        return;
-      }
-
-      const { data: programRow } = await supabase.from("programs").select("*").eq("id", programId).eq("mosque_id", mosque.id).maybeSingle();
-      if (!programRow) {
-        setMessage({ tone: "error", text: "Class not found." });
-        setLoading(false);
-        return;
-      }
-
-      const { data: profile } = await supabase
-        .from("profiles")
-        .select("id, full_name, email, phone_number, avatar_url, age, gender, date_of_birth, account_type")
-        .eq("id", userId)
-        .maybeSingle();
-      const { children } = profile?.account_type === "parent" ? await fetchParentChildren(supabase, slug, userId, mosque.id) : { children: [] as StudentDisplay[] };
-      const possibleStudents = [profile, ...children].filter(Boolean) as StudentDisplay[];
-      const possibleStudentIds = possibleStudents.map((student) => student.id);
-      const { data: enrollments } = possibleStudentIds.length
-        ? await supabase.from("enrollments").select("student_profile_id").eq("program_id", programId).in("student_profile_id", possibleStudentIds)
-        : { data: [] as Array<{ student_profile_id: string }> };
-      const enrolledIds = new Set((enrollments ?? []).map((enrollment) => enrollment.student_profile_id));
+      const possibleStudents = [snapshot.selfProfile, ...(snapshot.children ?? [])].filter(Boolean) as StudentDisplay[];
+      const enrolledIds = new Set(snapshot.enrolledStudentIds ?? []);
       const enrolledStudents = possibleStudents.filter((student) => enrolledIds.has(student.id));
-      const { data: requestRows } = enrolledStudents.length
-        ? await supabase.from("withdrawal_requests").select("*").eq("program_id", programId).in("student_profile_id", enrolledStudents.map((student) => student.id)).eq("status", "pending")
-        : { data: [] as WithdrawalRequest[] };
-      const requestByStudentId = (requestRows ?? []).reduce<Record<string, WithdrawalRequest>>((next, request) => {
+      const requestByStudentId = (snapshot.requests ?? []).reduce<Record<string, WithdrawalRequest>>((next, request) => {
         next[request.student_profile_id] = request;
         return next;
       }, {});
 
-      if (!cancelled) {
-        setProgram(programRow);
-        setStudents(enrolledStudents);
-        setExistingRequestsByStudentId(requestByStudentId);
-        setSelectedStudentId(enrolledStudents.find((student) => !requestByStudentId[student.id])?.id ?? enrolledStudents[0]?.id ?? "");
-        setLoading(false);
-      }
+      setProgram(snapshot.program);
+      setStudents(enrolledStudents);
+      setExistingRequestsByStudentId(requestByStudentId);
+      setSelectedStudentId(enrolledStudents.find((student) => !requestByStudentId[student.id])?.id ?? enrolledStudents[0]?.id ?? "");
+      setLoading(false);
     }
 
     void loadOptions();
@@ -18414,27 +18122,39 @@ function ProgramTeacherStaffTools({ program }: { program: Program }) {
   const [latestInviteCode, setLatestInviteCode] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  // One RPC call instead of [director-check+assignments+inactive-events] -> profiles, as two
+  // sequential stages. Reuses the existing is_program_director() function server-side.
   async function loadStaff() {
     const supabase = createSupabaseBrowserClient();
-    const [{ data: directorAllowed }, { data: assignments }, { data: inactiveEvents }] = await Promise.all([
-      supabase.rpc("is_program_director", { check_program_id: program.id }),
-      supabase.from("program_teachers").select("*").eq("program_id", program.id).order("created_at", { ascending: true }),
-      supabase.from("program_instructor_events").select("*").eq("program_id", program.id).eq("event_type", "resigned").order("created_at", { ascending: false }),
-    ]);
+    const { data, error } = await supabase.rpc("get_program_staff_snapshot", { p_program_id: program.id });
+    if (error) {
+      return;
+    }
 
-    setIsDirector(Boolean(directorAllowed));
-    const profileIds = Array.from(new Set([...(assignments ?? []).map((assignment) => assignment.teacher_profile_id), ...(inactiveEvents ?? []).map((event) => event.teacher_profile_id)].filter(Boolean) as string[]));
-    const { data: profiles } = profileIds.length ? await supabase.from("profiles").select("*").in("id", profileIds) : { data: [] as Profile[] };
+    const snapshot = data as unknown as {
+      isDirector: boolean;
+      assignments: ProgramTeacher[];
+      inactiveEvents: ProgramInstructorEvent[];
+      profiles: Profile[];
+    } | null;
+    if (!snapshot) {
+      return;
+    }
+
+    setIsDirector(Boolean(snapshot.isDirector));
+    const assignments = snapshot.assignments ?? [];
+    const inactiveEvents = snapshot.inactiveEvents ?? [];
+    const profiles = snapshot.profiles ?? [];
     setInstructors(
-      (assignments ?? [])
+      assignments
         .filter((assignment) => assignment.role === "instructor")
         .map((assignment) => ({
           ...assignment,
-          profile: assignment.teacher_profile_id ? (profiles ?? []).find((profile) => profile.id === assignment.teacher_profile_id) ?? null : null,
+          profile: assignment.teacher_profile_id ? profiles.find((profile) => profile.id === assignment.teacher_profile_id) ?? null : null,
         })),
     );
-    const activeProfileIds = new Set((assignments ?? []).map((assignment) => assignment.teacher_profile_id).filter(Boolean));
-    setInactiveInstructors((inactiveEvents ?? []).filter((event) => event.teacher_profile_id && !activeProfileIds.has(event.teacher_profile_id)).map((event) => ({ ...event, profile: (profiles ?? []).find((profile) => profile.id === event.teacher_profile_id) ?? null })));
+    const activeProfileIds = new Set(assignments.map((assignment) => assignment.teacher_profile_id).filter(Boolean));
+    setInactiveInstructors(inactiveEvents.filter((event) => event.teacher_profile_id && !activeProfileIds.has(event.teacher_profile_id)).map((event) => ({ ...event, profile: profiles.find((profile) => profile.id === event.teacher_profile_id) ?? null })));
   }
 
   useEffect(() => {

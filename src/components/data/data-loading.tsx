@@ -69,3 +69,17 @@ export function GenericLoadingState({ label = "Loading", layout = "detail", comp
 export function DirectorySkeleton({ layout = "management" }: { layout?: LoadingLayout }) {
   return <AppLoadingSkeleton layout={layout} />;
 }
+
+// For the brief moment an auth flow (Google callback, password reset, profile completion)
+// checks a session/token before showing its form -- a couple of pulsing bars in the shape of
+// the form that's about to appear, not a spinner.
+export function AuthFormSkeleton({ compact = false }: { compact?: boolean }) {
+  return (
+    <div className={compact ? "space-y-3 p-6" : "space-y-4 p-5 md:p-6"} aria-label="Loading" aria-busy="true">
+      <Block className="h-5 w-2/5" />
+      <Block className="h-11 w-full" />
+      <Block className="h-11 w-full" />
+      <Block className="h-10 w-1/3 rounded-full" />
+    </div>
+  );
+}

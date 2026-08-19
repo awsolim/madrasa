@@ -2,6 +2,7 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
+import { AuthFormSkeleton } from "@/components/data/data-loading";
 import { FlatButton } from "@/components/ui/flat-button";
 import { friendlyErrorMessage } from "@/lib/errors";
 import { getDefaultLandingHref, loadUserAccessByMosqueSlug } from "@/lib/authz";
@@ -114,11 +115,7 @@ export function OAuthProfileCompletion({ slug }: { slug: string }) {
   }
 
   if (loading) {
-    return (
-      <div className="flex min-h-[260px] items-center justify-center p-6">
-        <div className="h-10 w-10 animate-spin rounded-full border-4 border-[#DDEFF4] border-t-[#2F8FB3]" />
-      </div>
-    );
+    return <AuthFormSkeleton />;
   }
 
   return (
