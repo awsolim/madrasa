@@ -1,10 +1,50 @@
 "use client";
 
-// A nav click is detected instantly (see NavigationPendingProvider) and reflected right away
-// by the thin NavigationProgressBar at the top of the screen -- that alone is the loading
-// signal for a navigation. The destination route handles its own content: cached data renders
-// immediately, anything still fetching shows its own skeleton (see data-loading.tsx). No
-// separate overlay is needed here; the old page just stays visible until the new one is ready.
+import { usePathname } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
+
+type TransitionDirection = "from-right" | "from-left";
+type TransitionPhase = "exiting" | "entering";
+
 export function PageTransitionFrame({ children }: { children: React.ReactNode }) {
-  return <main className="relative pb-20 md:pb-0">{children}</main>;
+  const pathname = usePathname();
+  const previousPathnameRef = useRef(pathname);
+  const pendingDirectionRef = useRef<TransitionDirection | null>(null);
+  const [transition, setTransition] = useState<{ pathname: string; direction: TransitionDirection; phase: TransitionPhase } | null>(null);
+
+  useEffect(() => {
+    function handlePreview(event: Event) {
+      const detail = (event as CustomEvent<{ direction?: TransitionDirection; fromPath?: string }>).detail;
+      if (detail?.fromPath === previousPathnameRef.current && detail.direction) {
+        pendingDirectionRef.current = detail.direction;
+        setTransition({ pathname: previousPathnameRef.current, direction: detail.direction, phase: "exiting" });
+      }
+    }
+
+    window.addEventListener("tareeqah:nav-preview", handlePreview);
+    return () => window.removeEventListener("tareeqah:nav-preview", handlePreview);
+  }, []);
+
+  useEffect(() => {
+    const previousPathname = previousPathnameRef.current;
+    if (pathname === previousPathname) {
+      return;
+    }
+
+    const previousDepth = previousPathname.split("/").filter(Boolean).length;
+    const nextDepth = pathname.split("/").filter(Boolean).length;
+    const direction = pendingDirectionRef.current ?? (nextDepth < previousDepth ? "from-left" : "from-right");
+
+    setTransition({ pathname, direction, phase: "entering" });
+    pendingDirectionRef.current = null;
+    previousPathnameRef.current = pathname;
+  }, [pathname]);
+
+  const transitionClass = transition?.pathname === pathname
+    ? transition.phase === "exiting"
+      ? transition.direction === "from-left" ? "page-slide-out-to-right" : "page-slide-out-to-left"
+      : transition.direction === "from-left" ? "page-slide-in-from-left" : "page-slide-in-from-right"
+    : undefined;
+
+  return <main className={`relative pb-20 md:pb-0${transitionClass ? ` ${transitionClass}` : ""}`}>{children}</main>;
 }

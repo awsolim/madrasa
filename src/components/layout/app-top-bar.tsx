@@ -359,10 +359,10 @@ export function AppTopBar({
   const pathname = usePathname();
   const overlayChromeHidden = useOverlayChromeHidden();
   const showTopBar = !overlayChromeHidden && isMainTabRoute(pathname, mobileNavItems ?? navItems);
-  const [displayName, setDisplayName] = useState(
-    mosqueSlug ? titleFromSlug(mosqueSlug) : appName
-  );
-  const [logoUrl, setLogoUrl] = useState<string | null>(null);
+  const cachedChrome = mosqueSlug ? getCachedMosqueChrome(mosqueSlug) : null;
+  const [displayName, setDisplayName] = useState(cachedChrome?.name ?? appName);
+  const [logoUrl, setLogoUrl] = useState<string | null>(cachedChrome?.logoUrl ?? null);
+  const [chromeResolved, setChromeResolved] = useState(() => !mosqueSlug || Boolean(cachedChrome));
   const cachedSession = getCachedSessionSnapshot();
   const [session, setSession] = useState<Session | null | undefined>(cachedSession);
   const [access, setAccess] = useState<UserAccess>(() =>
@@ -384,6 +384,7 @@ export function AppTopBar({
     if (!mosqueSlug) {
       setDisplayName(appName);
       setLogoUrl(null);
+      setChromeResolved(true);
       return;
     }
 
@@ -394,12 +395,18 @@ export function AppTopBar({
     if (cachedChrome) {
       setDisplayName(cachedChrome.name);
       setLogoUrl(cachedChrome.logoUrl);
+      setChromeResolved(true);
+    } else {
+      setChromeResolved(false);
     }
 
     loadMosqueChrome(mosqueSlug).then((data) => {
-      if (!cancelled && data) {
-        setDisplayName(data.name);
-        setLogoUrl(data.logoUrl);
+      if (!cancelled) {
+        if (data) {
+          setDisplayName(data.name);
+          setLogoUrl(data.logoUrl);
+        }
+        setChromeResolved(true);
       }
     });
 
@@ -493,14 +500,16 @@ export function AppTopBar({
   }, [profileName, session]);
 
   const accountLabel = useMemo(() => (session ? getAccountLabel(access) : session === null ? "Not signed in" : "Account"), [access, session]);
+  const accountResolved = session !== undefined && (session === null || (accessResolved && profileResolved));
+  const topBarReady = chromeResolved && accountResolved;
 
-  if (!showTopBar) {
+  if (!showTopBar || !topBarReady) {
     return null;
   }
 
 
   return (
-    <header className="sticky top-0 z-30 border-b border-[#E4E9EC] bg-white text-[var(--text-primary)] md:hidden">
+    <header className="app-topbar-reveal sticky top-0 z-30 border-b border-[#E4E9EC] bg-white text-[var(--text-primary)] md:hidden">
       <div className="app-container grid min-h-[42px] grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 py-1">
         <Link href={homeHref} className="flex min-w-0 items-center gap-2">
           <TopBarLogo src={logoUrl} name={displayName} compact />
@@ -565,14 +574,6 @@ function MosqueIcon({ className = "h-5 w-5" }: { className?: string }) {
       <path d="M10.5 20.5v-4a1.5 1.5 0 0 1 3 0v4" />
     </svg>
   );
-}
-
-function titleFromSlug(slug: string) {
-  return slug
-    .split("-")
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(" ");
 }
 
 

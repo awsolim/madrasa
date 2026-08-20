@@ -17,7 +17,7 @@ export default async function Layout({
   const { slug } = await params;
   const branding = await loadTenantBrandingBySlug(slug);
   return (
-    <PublicAreaGate slug={slug} mosqueName={branding.name}>
+    <PublicAreaGate slug={slug} mosqueName={branding.name} mosqueLogoUrl={branding.iconUrl}>
       {children}
     </PublicAreaGate>
   );

@@ -252,7 +252,7 @@ export function getProgramPrimaryCta(input: {
     return waitlistAllowed ? { kind: "link", label: "Join Waitlist", href: applyHref } : { kind: "disabled", label: "Class Full" };
   }
 
-  return { kind: "link", label: "Apply to Register", href: applyHref };
+  return { kind: "link", label: "Apply", href: applyHref };
 }
 
 function formatDateLabel(value: string) {

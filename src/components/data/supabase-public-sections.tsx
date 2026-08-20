@@ -832,7 +832,7 @@ export function StudentHomeData({ slug }: { slug: string }) {
   );
 }
 
-export function PublicProgramsData({ slug }: { slug: string }) {
+export function PublicProgramsData({ slug, detailReturnTo }: { slug: string; detailReturnTo?: string }) {
   const router = useRouter();
   const { mosque, programs, loading, error } = useMosquePrograms(slug);
   const [checkingSignedInRedirect, setCheckingSignedInRedirect] = useState(true);
@@ -895,7 +895,7 @@ export function PublicProgramsData({ slug }: { slug: string }) {
     return <EmptyState title="Masjid not found" text="Classes could not be loaded for this masjid." />;
   }
 
-  return <ProgramCardGrid programs={programs} mosqueSlug={mosque.slug} emptyText="No classes are available at this masjid yet." />;
+  return <ProgramCardGrid programs={programs} mosqueSlug={mosque.slug} emptyText="No classes are available at this masjid yet." detailReturnTo={detailReturnTo} />;
 }
 
 type ProgramDetailSnapshot = {
@@ -1296,10 +1296,7 @@ export function ProgramDetailData({ slug, programId, section = "public" }: { slu
 
               <div className="mt-4 border-t border-[#E6ECEF] pt-4">
                 {isTeacherContext || isStaffForProgram ? (
-                  <div className="mt-2 space-y-2">
-                    <div className="flex min-h-12 w-full items-center justify-center rounded-full bg-[#EEF6F8] px-4 text-sm font-semibold text-[#2F6F83] ring-1 ring-[#CFE2E8] md:w-auto md:px-10">
-                      {accountType === "admin" ? "Admin Control" : "Teaching"}
-                    </div>
+                  <div className="mt-2">
                     <button
                       type="button"
                       onClick={() => void shareProgramLink(slug, programId, program.title, setToast)}
@@ -15909,6 +15906,7 @@ function ProgramCardGrid({
   emptyText,
   enrolledProgramIds = [],
   detailBaseHref,
+  detailReturnTo,
   applicationStatusByProgramId,
 }: {
   programs: ProgramWithTeacher[];
@@ -15916,6 +15914,7 @@ function ProgramCardGrid({
   emptyText: string;
   enrolledProgramIds?: string[];
   detailBaseHref?: string;
+  detailReturnTo?: string;
   applicationStatusByProgramId?: Record<string, ApplicantApplicationRow>;
 }) {
   if (programs.length === 0) {
@@ -15937,7 +15936,7 @@ function ProgramCardGrid({
             key={program.id}
             program={program}
             enrolled={enrolled}
-            detailHref={`${detailBaseHref ?? `/m/${mosqueSlug}/programs`}/${program.id}`}
+            detailHref={`${detailBaseHref ?? `/m/${mosqueSlug}/programs`}/${program.id}${detailReturnTo ? `?returnTo=${encodeURIComponent(detailReturnTo)}` : ""}`}
             relationship={relationship}
           />
         );
