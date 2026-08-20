@@ -70,6 +70,10 @@ export function DirectorySkeleton({ layout = "management" }: { layout?: LoadingL
   return <AppLoadingSkeleton layout={layout} />;
 }
 
+export function QuietPageLoadingState() {
+  return <div className="min-h-[calc(100vh-260px)] bg-[var(--workspace)]" aria-busy="true" aria-label="Loading" />;
+}
+
 // For the brief moment an auth flow (Google callback, password reset, profile completion)
 // checks a session/token before showing its form -- a couple of pulsing bars in the shape of
 // the form that's about to appear, not a spinner.

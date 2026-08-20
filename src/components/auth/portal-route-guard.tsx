@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { GenericLoadingState } from "@/components/data/data-loading";
+import { QuietPageLoadingState } from "@/components/data/data-loading";
 import { loadCachedSession } from "@/lib/client-cache";
 
 type GuardState = "checking" | "allowed" | "denied";
@@ -38,5 +38,5 @@ export function PortalRouteGuard({ children, slug }: { children: React.ReactNode
     return <>{children}</>;
   }
 
-  return <GenericLoadingState label="Checking access" layout="management" />;
+  return <QuietPageLoadingState />;
 }

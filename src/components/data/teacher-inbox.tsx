@@ -6,7 +6,8 @@ import { createPortal } from "react-dom";
 import { ApplicationReviewOverlay } from "@/components/data/application-review";
 import { EditorToast, type EditorToastState } from "@/components/data/editor-toast";
 import { EmptyState } from "@/components/data/empty-state";
-import { FloatingInboxTabs, InboxLoadingPanel, MiniEmpty } from "@/components/data/inbox-shared";
+import { FloatingInboxTabs, MiniEmpty } from "@/components/data/inbox-shared";
+import { QuietPageLoadingState } from "@/components/data/data-loading";
 import {
   announcementTargetLabel,
   announcementTargetValue,
@@ -1036,7 +1037,7 @@ export function TeacherInboxData({ slug }: { slug: string }) {
         {error ? (
           <EmptyState title="Could not load teacher inbox" text={error} onRetry={() => window.location.reload()} />
         ) : loading ? (
-          <InboxLoadingPanel label={tab === "other" ? "Loading messages" : "Loading applications"} />
+          <QuietPageLoadingState />
         ) : (
           <section className="space-y-3">
             <div className="flex items-center justify-between gap-2 px-1">

@@ -10,7 +10,7 @@ import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import type { Dispatch, PointerEvent as ReactPointerEvent, ReactNode, RefObject, SetStateAction, WheelEvent as ReactWheelEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { EmptyState } from "@/components/data/empty-state";
-import { DirectorySkeleton, GenericLoadingState } from "@/components/data/data-loading";
+import { DirectorySkeleton, GenericLoadingState, QuietPageLoadingState } from "@/components/data/data-loading";
 import { EditorToast, queueEditorToast, readQueuedEditorToast, type EditorToastState } from "@/components/data/editor-toast";
 import { FloatingInboxTabs, InboxLoadingPanel, InboxSection, MiniEmpty, NotificationBadge } from "@/components/data/inbox-shared";
 import { InstallDemoTabs } from "@/components/pwa/install-demo-tabs";
@@ -787,7 +787,7 @@ export function StudentHomeData({ slug }: { slug: string }) {
   const { announcementCount, noteCount, requestCount, actionRequired } = useStudentNotificationCounts(slug);
 
   if (loading || enrollmentLoading || applicationsLoading) {
-    return <HomeLoadingState />;
+    return <QuietPageLoadingState />;
   }
 
   if (error) {
@@ -884,7 +884,7 @@ export function PublicProgramsData({ slug, detailReturnTo }: { slug: string; det
   }, [router, slug]);
 
   if (checkingSignedInRedirect || loading) {
-    return <DirectorySkeleton layout="classes" />;
+    return <QuietPageLoadingState />;
   }
 
   if (error) {
@@ -2372,7 +2372,7 @@ export function StudentClassesData({ slug }: { slug: string }) {
 
   let content: ReactNode;
   if (loading || enrollmentLoading || (tab === "applications" && applicationsLoading)) {
-    content = <ClassesLoadingPlaceholders count={tab === "browse" ? 2 : 1} />;
+    content = <QuietPageLoadingState />;
   } else if (error) {
     content = <EmptyState title="Could not load classes" text={error} onRetry={() => window.location.reload()} />;
   } else if (!mosque) {
@@ -3199,7 +3199,7 @@ export function PortalAccountData({ slug }: { slug: string }) {
   const accountType = accountLabel === "Account" && rawAccountType ? `${titleCase(rawAccountType)} Account` : accountLabel;
 
   if (loading) {
-    return <GenericLoadingState label="Loading account" layout="account" />;
+    return <QuietPageLoadingState />;
   }
 
   if (!isSignedIn) {
@@ -4290,7 +4290,7 @@ export function TeacherHomeData({ slug }: { slug: string }) {
   const { totalCount: inboxItemCount, actionRequired: inboxActionRequired } = useTeacherNotificationCounts(currentUserId ? slug : "");
 
   if (loading) {
-    return <HomeLoadingState />;
+    return <QuietPageLoadingState />;
   }
 
   if (error) {
@@ -4318,7 +4318,7 @@ export function AdminHomeData({ slug }: { slug: string }) {
   const { programs, loading, error } = useAdminProgramsWithTracks(slug);
 
   if (loading) {
-    return <HomeLoadingState />;
+    return <QuietPageLoadingState />;
   }
 
   if (error) {
@@ -4384,7 +4384,7 @@ export function TeacherClassesData({ slug }: { slug: string }) {
   }, [loading, error, programs, slug]);
 
   if (loading) {
-    return <ClassesLoadingPlaceholders count={2} />;
+    return <QuietPageLoadingState />;
   }
 
   if (error) {
@@ -4499,7 +4499,7 @@ export function AdminClassesData({ slug }: { slug: string }) {
   }, [loading, error, programs, slug]);
 
   if (loading) {
-    return <ClassesLoadingPlaceholders count={3} />;
+    return <QuietPageLoadingState />;
   }
 
   if (error) {
@@ -4609,7 +4609,7 @@ export function AdminMasjidData({ slug }: { slug: string }) {
   const { mosque, memberCount, error } = snapshot ?? emptyAdminMasjidSnapshot;
 
   if (loading) {
-    return <ClassesLoadingPlaceholders count={1} />;
+    return <QuietPageLoadingState />;
   }
 
   if (error) {

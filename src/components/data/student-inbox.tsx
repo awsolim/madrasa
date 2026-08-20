@@ -16,7 +16,8 @@ import {
 } from "@/components/data/supabase-public-sections";
 import { EditorToast, type EditorToastState } from "@/components/data/editor-toast";
 import { EmptyState } from "@/components/data/empty-state";
-import { FloatingInboxTabs, InboxLoadingPanel, InboxSection, MiniEmpty } from "@/components/data/inbox-shared";
+import { FloatingInboxTabs, InboxSection, MiniEmpty } from "@/components/data/inbox-shared";
+import { QuietPageLoadingState } from "@/components/data/data-loading";
 import { useHideMobileChromeWhileMounted, useModalFocusTrap } from "@/hooks/use-modal-behavior";
 import { friendlyErrorMessage } from "@/lib/errors";
 import { buildAnnouncementThreads, buildNoteThreads } from "@/lib/messages/threads";
@@ -1503,7 +1504,7 @@ export function InboxAnnouncementsData({ slug }: { slug: string }) {
         {error ? (
           <EmptyState title="Could not load inbox" text={error} onRetry={() => window.location.reload()} />
         ) : loading ? (
-          <InboxLoadingPanel label={tab === "announcements" ? "Loading announcements" : tab === "notes" ? "Loading notes" : "Loading applications"} />
+          <QuietPageLoadingState />
         ) : selectedThread ? (
           <StudentInboxThreadView
             thread={selectedThread}

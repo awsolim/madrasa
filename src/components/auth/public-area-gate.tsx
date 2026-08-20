@@ -4,7 +4,7 @@ import Image from "next/image";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useEffect, useState } from "react";
-import { GenericLoadingState } from "@/components/data/data-loading";
+import { QuietPageLoadingState } from "@/components/data/data-loading";
 import { AppChrome } from "@/components/layout/page-shell";
 import { loadCachedSession } from "@/lib/client-cache";
 
@@ -133,7 +133,7 @@ export function PublicAreaGate({
     );
   }
 
-  return <GenericLoadingState label="Checking access" layout="management" />;
+  return <QuietPageLoadingState />;
 }
 
 function WelcomeStep({ number, title, text }: { number: string; title: string; text: string }) {

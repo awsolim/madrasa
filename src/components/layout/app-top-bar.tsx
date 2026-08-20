@@ -533,9 +533,9 @@ export function AppTopBar({
             onClick={() => setWebMenuOpen((open) => !open)}
             aria-expanded={webMenuOpen}
             aria-controls="mobile-web-navigation"
-            className="flex min-h-9 items-center justify-self-end gap-2 rounded-full border border-[#DCE4E1] bg-[#F8FAF9] px-3 text-xs font-semibold text-[#294A40] active:scale-[0.97]"
+            aria-label={webMenuOpen ? "Close navigation" : "Open navigation"}
+            className="flex h-10 w-12 items-center justify-center justify-self-end rounded-full border border-[#DCE4E1] bg-[#F8FAF9] text-[#294A40] active:scale-[0.95]"
           >
-            Menu
             <MenuIcon open={webMenuOpen} />
           </button>
         ) : (
@@ -596,8 +596,8 @@ function isMainTabRoute(pathname: string, items: NavItem[]) {
 
 function MenuIcon({ open }: { open: boolean }) {
   return (
-    <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden>
-      {open ? <path d="m5 5 10 10M15 5 5 15" /> : <path d="M4 6h12M4 10h12M4 14h12" />}
+    <svg viewBox="0 0 24 24" className="h-6 w-6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden>
+      {open ? <path d="m6 6 12 12M18 6 6 18" /> : <path d="M4 7h16M4 12h16M4 17h16" />}
     </svg>
   );
 }
