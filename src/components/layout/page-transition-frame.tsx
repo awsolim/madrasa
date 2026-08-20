@@ -2,22 +2,22 @@
 
 import { usePathname } from "next/navigation";
 import { useEffect, useRef, useState } from "react";
+import { useStandaloneMode } from "@/lib/pwa/install";
 
 type TransitionDirection = "from-right" | "from-left";
-type TransitionPhase = "exiting" | "entering";
 
 export function PageTransitionFrame({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const standalone = useStandaloneMode();
   const previousPathnameRef = useRef(pathname);
   const pendingDirectionRef = useRef<TransitionDirection | null>(null);
-  const [transition, setTransition] = useState<{ pathname: string; direction: TransitionDirection; phase: TransitionPhase } | null>(null);
+  const [transition, setTransition] = useState<{ pathname: string; direction: TransitionDirection } | null>(null);
 
   useEffect(() => {
     function handlePreview(event: Event) {
       const detail = (event as CustomEvent<{ direction?: TransitionDirection; fromPath?: string }>).detail;
       if (detail?.fromPath === previousPathnameRef.current && detail.direction) {
         pendingDirectionRef.current = detail.direction;
-        setTransition({ pathname: previousPathnameRef.current, direction: detail.direction, phase: "exiting" });
       }
     }
 
@@ -35,16 +35,14 @@ export function PageTransitionFrame({ children }: { children: React.ReactNode })
     const nextDepth = pathname.split("/").filter(Boolean).length;
     const direction = pendingDirectionRef.current ?? (nextDepth < previousDepth ? "from-left" : "from-right");
 
-    setTransition({ pathname, direction, phase: "entering" });
+    setTransition({ pathname, direction });
     pendingDirectionRef.current = null;
     previousPathnameRef.current = pathname;
   }, [pathname]);
 
   const transitionClass = transition?.pathname === pathname
-    ? transition.phase === "exiting"
-      ? transition.direction === "from-left" ? "page-slide-out-to-right" : "page-slide-out-to-left"
-      : transition.direction === "from-left" ? "page-slide-in-from-left" : "page-slide-in-from-right"
+    ? transition.direction === "from-left" ? "page-slide-in-from-left" : "page-slide-in-from-right"
     : undefined;
 
-  return <main className={`relative pb-20 md:pb-0${transitionClass ? ` ${transitionClass}` : ""}`}>{children}</main>;
+  return <main className={`relative ${standalone === true ? "pb-20" : "pb-0"} md:pb-0${transitionClass ? ` ${transitionClass}` : ""}`}>{children}</main>;
 }

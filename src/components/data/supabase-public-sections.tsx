@@ -1011,6 +1011,8 @@ async function shareProgramLink(slug: string, programId: string, title: string, 
 }
 
 export function ProgramDetailData({ slug, programId, section = "public" }: { slug: string; programId: string; section?: "public" | "portal" | "teacher" }) {
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [mosque, setMosque] = useState<Mosque | null>(null);
   const [program, setProgram] = useState<ProgramWithTeacher | null>(null);
   const [details, setDetails] = useState<ProgramDetails | null>(null);
@@ -1168,7 +1170,9 @@ export function ProgramDetailData({ slug, programId, section = "public" }: { slu
   const applyHref = `/m/${slug}/programs/${programId}/apply`;
   const viewEnrollmentHref = `/m/${slug}/portal/classes`;
   const completePaymentHref = `/m/${slug}/portal/announcements`;
-  const loginHref = `/m/${slug}/login?returnTo=${encodeURIComponent(`/m/${slug}/programs/${programId}`)}`;
+  const detailQuery = searchParams.toString();
+  const detailReturnHref = `${pathname}${detailQuery ? `?${detailQuery}` : ""}`;
+  const loginHref = `/m/${slug}/login?returnTo=${encodeURIComponent(detailReturnHref)}`;
   const primaryCta = getProgramPrimaryCta({
     fields: toProgramStatusFields(program),
     isSignedIn,

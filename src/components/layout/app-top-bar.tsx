@@ -20,8 +20,10 @@ import {
   subscribeCachedSession,
 } from "@/lib/client-cache";
 import { cn } from "@/lib/utils";
+import { useStandaloneMode } from "@/lib/pwa/install";
 
 function BottomNav({ items, inboxBadgeCount = 0, inboxActionRequired = false }: { items: NavItem[]; inboxBadgeCount?: number; inboxActionRequired?: boolean }) {
+  const standalone = useStandaloneMode();
   const pathname = usePathname();
   const router = useRouter();
   const [pendingHref, setPendingHref] = useState<string | null>(null);
@@ -89,7 +91,7 @@ function BottomNav({ items, inboxBadgeCount = 0, inboxActionRequired = false }: 
     }
   }
 
-  if (!shouldShow) {
+  if (standalone !== true || !shouldShow) {
     return null;
   }
 
@@ -357,6 +359,8 @@ export function AppTopBar({
   mobileNavItems?: NavItem[];
 }) {
   const pathname = usePathname();
+  const standalone = useStandaloneMode();
+  const [webMenuOpen, setWebMenuOpen] = useState(false);
   const overlayChromeHidden = useOverlayChromeHidden();
   const showTopBar = !overlayChromeHidden && isMainTabRoute(pathname, mobileNavItems ?? navItems);
   const cachedChrome = mosqueSlug ? getCachedMosqueChrome(mosqueSlug) : null;
@@ -501,7 +505,11 @@ export function AppTopBar({
 
   const accountLabel = useMemo(() => (session ? getAccountLabel(access) : session === null ? "Not signed in" : "Account"), [access, session]);
   const accountResolved = session !== undefined && (session === null || (accessResolved && profileResolved));
-  const topBarReady = chromeResolved && accountResolved;
+  const topBarReady = chromeResolved && accountResolved && standalone !== null;
+  const resolvedMobileItems = mobileNavItems ?? navItems;
+  const webMenuItems = ["Home", "Classes", "Inbox", "Members", "Masjid", "Me"]
+    .map((label) => resolvedMobileItems.find((item) => item.label === label))
+    .filter((item): item is NavItem => Boolean(item));
 
   if (!showTopBar || !topBarReady) {
     return null;
@@ -519,6 +527,18 @@ export function AppTopBar({
           <span className="text-[8px] font-medium leading-[9px]">Powered by</span>
           <span className="text-[9px] font-semibold leading-[10px]">Madrasa</span>
         </div>
+        {standalone === false ? (
+          <button
+            type="button"
+            onClick={() => setWebMenuOpen((open) => !open)}
+            aria-expanded={webMenuOpen}
+            aria-controls="mobile-web-navigation"
+            className="flex min-h-9 items-center justify-self-end gap-2 rounded-full border border-[#DCE4E1] bg-[#F8FAF9] px-3 text-xs font-semibold text-[#294A40] active:scale-[0.97]"
+          >
+            Menu
+            <MenuIcon open={webMenuOpen} />
+          </button>
+        ) : (
         <div className="flex min-w-0 items-center justify-end gap-1.5">
           <span className="flex min-w-0 max-w-full flex-col items-end justify-center leading-none">
               <span className="max-w-full truncate text-right text-[12px] font-semibold leading-[13px] text-[var(--text-primary)]">
@@ -529,7 +549,42 @@ export function AppTopBar({
               </span>
             </span>
         </div>
+        )}
       </div>
+      {standalone === false && webMenuOpen ? (
+        <>
+          <button type="button" aria-label="Close navigation menu" onClick={() => setWebMenuOpen(false)} className="fixed inset-0 top-[42px] z-0 bg-[#142B24]/20 backdrop-blur-[1px]" />
+          <nav id="mobile-web-navigation" aria-label="Mobile web navigation" className="absolute inset-x-3 top-[calc(100%+8px)] z-10 overflow-hidden rounded-[22px] border border-[#DCE4E1] bg-white p-2 shadow-[0_22px_55px_rgba(24,53,44,0.18)]">
+            <div className="border-b border-[#E8ECEA] px-3 pb-3 pt-2">
+              <p className="truncate text-sm font-semibold text-[#26323A]">{userFirstName}</p>
+              <p className="mt-0.5 text-[11px] text-[#7B858C]">{accountLabel}</p>
+            </div>
+            <div className="grid grid-cols-2 gap-1 pt-2">
+              {webMenuItems.map((item, index) => {
+                const active = isNavItemActive(pathname, item);
+                const currentIndex = webMenuItems.findIndex((candidate) => isNavItemActive(pathname, candidate));
+                const direction = currentIndex >= 0 && index < currentIndex ? "from-left" : "from-right";
+                return (
+                  <Link
+                    key={`${item.label}-${item.href}`}
+                    href={item.href}
+                    onClick={() => {
+                      setWebMenuOpen(false);
+                      if (!active) {
+                        window.dispatchEvent(new CustomEvent("tareeqah:nav-preview", { detail: { href: item.href, label: item.label, direction, fromPath: pathname } }));
+                      }
+                    }}
+                    className={cn("flex min-h-14 items-center gap-3 rounded-[14px] px-3 text-sm font-semibold", active ? "bg-[#EAF5F1] text-[#17624F]" : "text-[#52616A] active:bg-[#F1F5F3]")}
+                  >
+                    <NavIcon label={item.label} active={active} />
+                    <span>{item.label}</span>
+                  </Link>
+                );
+              })}
+            </div>
+          </nav>
+        </>
+      ) : null}
     </header>
   );
 }
@@ -537,6 +592,14 @@ export function AppTopBar({
 function isMainTabRoute(pathname: string, items: NavItem[]) {
   const mainLabels = new Set(["Home", "Classes", "Inbox", "Members", "Masjid", "Me"]);
   return items.some((item) => mainLabels.has(item.label) && navItemPathCandidates(item.href).includes(pathname));
+}
+
+function MenuIcon({ open }: { open: boolean }) {
+  return (
+    <svg viewBox="0 0 20 20" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" aria-hidden>
+      {open ? <path d="m5 5 10 10M15 5 5 15" /> : <path d="M4 6h12M4 10h12M4 14h12" />}
+    </svg>
+  );
 }
 
 function navItemPathCandidates(href: string) {

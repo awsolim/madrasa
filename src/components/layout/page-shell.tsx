@@ -1,8 +1,6 @@
 import { AppTopBar, MobileBottomNav } from "@/components/layout/app-top-bar";
 import { DesktopSidebar } from "@/components/layout/desktop-sidebar";
 import { NavItem } from "@/components/layout/horizontal-nav";
-import { NavigationPendingProvider } from "@/components/layout/navigation-pending-context";
-import { NavigationProgressBar } from "@/components/layout/navigation-progress-bar";
 import { PageTransitionFrame } from "@/components/layout/page-transition-frame";
 import { PrimaryNavPrefetch } from "@/components/layout/primary-nav-prefetch";
 
@@ -75,9 +73,8 @@ export function AppChrome({
     mobileNavItems ??
     (section === "portal" ? scopedPortalMobileNav : section === "teacher" ? scopedTeacherMobileNav : section === "admin" ? scopedAdminMobileNav : scopedPublicMobileNav);
   return (
-    <NavigationPendingProvider>
+    <>
       <PrimaryNavPrefetch slug={slug} section={section} />
-      <NavigationProgressBar />
       <AppTopBar appName={defaultAppName} mosqueSlug={slug} homeHref={`/m/${slug}`} navItems={resolvedNav} mobileNavItems={resolvedMobileNav} />
       <MobileBottomNav mosqueSlug={slug} navItems={resolvedNav} mobileNavItems={resolvedMobileNav} />
       <DesktopSidebar appName={defaultAppName} mosqueSlug={slug} homeHref={`/m/${slug}`} navItems={resolvedNav} mobileNavItems={resolvedMobileNav} section={section} />
@@ -86,7 +83,7 @@ export function AppChrome({
           <PageTransitionFrame>{children}</PageTransitionFrame>
         </div>
       </div>
-    </NavigationPendingProvider>
+    </>
   );
 }
 

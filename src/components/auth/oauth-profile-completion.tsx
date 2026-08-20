@@ -18,7 +18,7 @@ const accountTypes: Array<{ value: AccountType; label: string }> = [
   { value: "teacher", label: "Teacher" },
 ];
 
-export function OAuthProfileCompletion({ slug }: { slug: string }) {
+export function OAuthProfileCompletion({ slug, returnTo }: { slug: string; returnTo?: string }) {
   const router = useRouter();
   const [accountType, setAccountType] = useState<AccountType>("student");
   const [fullName, setFullName] = useState("");
@@ -106,10 +106,11 @@ export function OAuthProfileCompletion({ slug }: { slug: string }) {
     }
 
     const access = await loadUserAccessByMosqueSlug(slug);
+    const destination = returnTo ?? getDefaultLandingHref(slug, access);
     if (accountType === "parent") {
-      router.replace(`/m/${slug}/onboarding/family?returnTo=${encodeURIComponent(getDefaultLandingHref(slug, access))}`);
+      router.replace(`/m/${slug}/onboarding/family?returnTo=${encodeURIComponent(destination)}`);
     } else {
-      router.replace(getDefaultLandingHref(slug, access));
+      router.replace(destination);
     }
     router.refresh();
   }

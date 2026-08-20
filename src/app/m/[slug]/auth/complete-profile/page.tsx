@@ -1,6 +1,8 @@
 import { CompleteOAuthProfilePage } from "@/components/pages/auth-pages";
+import { safeReturnTo } from "@/lib/authz";
 
-export default async function Page({ params }: { params: Promise<{ slug: string }> }) {
+export default async function Page({ params, searchParams }: { params: Promise<{ slug: string }>; searchParams: Promise<{ returnTo?: string | string[] }> }) {
   const { slug } = await params;
-  return <CompleteOAuthProfilePage slug={slug} />;
+  const query = await searchParams;
+  return <CompleteOAuthProfilePage slug={slug} returnTo={safeReturnTo(query.returnTo, slug)} />;
 }

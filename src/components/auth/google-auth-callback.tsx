@@ -7,7 +7,7 @@ import { AuthFormSkeleton } from "@/components/data/data-loading";
 import { getDefaultLandingHref, loadUserAccessByMosqueSlug } from "@/lib/authz";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
-export function GoogleAuthCallback({ slug }: { slug: string }) {
+export function GoogleAuthCallback({ slug, returnTo }: { slug: string; returnTo?: string }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const handledRef = useRef(false);
@@ -41,18 +41,18 @@ export function GoogleAuthCallback({ slug }: { slug: string }) {
 
       const access = await loadUserAccessByMosqueSlug(slug);
       if (!access.profileId || !access.accountType || (!access.isStudent && !access.isParent && !access.isTeacher && !access.isMosqueAdmin)) {
-        router.replace(`/m/${slug}/auth/complete-profile`);
+        router.replace(`/m/${slug}/auth/complete-profile${returnTo ? `?returnTo=${encodeURIComponent(returnTo)}` : ""}`);
         return;
       }
 
-      router.replace(getDefaultLandingHref(slug, access));
+      router.replace(returnTo ?? getDefaultLandingHref(slug, access));
       router.refresh();
     }
 
     finishSignIn().catch((callbackError: unknown) => {
       setError(callbackError instanceof Error ? callbackError.message : "Could not finish Google sign in.");
     });
-  }, [error, router, searchParams, slug]);
+  }, [error, returnTo, router, searchParams, slug]);
 
   if (error) {
     return (

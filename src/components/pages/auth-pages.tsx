@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { AuthPanel } from "@/components/auth/auth-panel";
 import { GoogleAuthCallback } from "@/components/auth/google-auth-callback";
 import { OAuthProfileCompletion } from "@/components/auth/oauth-profile-completion";
@@ -21,22 +20,9 @@ function AuthWorkspace({ children }: { children: React.ReactNode }) {
 function AuthForm({ mode, slug, returnTo }: { mode: "login" | "signup"; slug: string; returnTo?: string }) {
   return (
     <main className="min-h-screen bg-white">
-      <PageTitleBar title={mode === "login" ? "Log In" : "Create Account"} subtitle={defaultMasjidName} tone="teal" />
+      <PageTitleBar title="Welcome" subtitle={defaultMasjidName} tone="teal" />
       <AuthWorkspace>
         <AuthPanel mode={mode} slug={slug} returnTo={returnTo} />
-        {mode === "signup" ? (
-          <p className="px-5 pb-6 text-center text-xs leading-5 text-[#8A9399]">
-            By creating an account, you agree to our{" "}
-            <Link href="/legal/terms" className="font-semibold text-[#2F8FB3] hover:underline">
-              Terms of Service
-            </Link>{" "}
-            and{" "}
-            <Link href="/legal/privacy" className="font-semibold text-[#2F8FB3] hover:underline">
-              Privacy Policy
-            </Link>
-            .
-          </p>
-        ) : null}
       </AuthWorkspace>
     </main>
   );
@@ -72,23 +58,23 @@ export function ResetPasswordPage({ slug }: { slug: string }) {
   );
 }
 
-export function GoogleAuthCallbackPage({ slug }: { slug: string }) {
+export function GoogleAuthCallbackPage({ slug, returnTo }: { slug: string; returnTo?: string }) {
   return (
     <PageShell slug={slug}>
       <PageTitleBar title="Signing in" subtitle={defaultMasjidName} tone="teal" />
       <AuthWorkspace>
-        <GoogleAuthCallback slug={slug} />
+        <GoogleAuthCallback slug={slug} returnTo={returnTo} />
       </AuthWorkspace>
     </PageShell>
   );
 }
 
-export function CompleteOAuthProfilePage({ slug }: { slug: string }) {
+export function CompleteOAuthProfilePage({ slug, returnTo }: { slug: string; returnTo?: string }) {
   return (
     <main className="min-h-screen bg-white">
       <PageTitleBar title="Profile" subtitle="Finish your account setup." tone="teal" />
       <AuthWorkspace>
-        <OAuthProfileCompletion slug={slug} />
+        <OAuthProfileCompletion slug={slug} returnTo={returnTo} />
       </AuthWorkspace>
     </main>
   );

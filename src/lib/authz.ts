@@ -86,13 +86,23 @@ export function getDefaultLandingHref(slug: string, access: UserAccess) {
   return `/m/${slug}/portal`;
 }
 
+export function getClassesLandingHref(slug: string, access: UserAccess) {
+  if (access.isMosqueAdmin) {
+    return `/m/${slug}/admin/programs`;
+  }
+  if (access.isTeacher) {
+    return `/m/${slug}/teacher/classes`;
+  }
+  return `/m/${slug}/portal/classes`;
+}
+
 export function safeReturnTo(value: string | string[] | undefined, slug: string) {
   const returnTo = Array.isArray(value) ? value[0] : value;
   if (!returnTo) {
     return undefined;
   }
 
-  const exactPaths = [`/m/${slug}`, `/m/${slug}/account`];
+  const exactPaths = [`/m/${slug}`, `/m/${slug}/account`, `/m/${slug}/explore`];
   const allowedPrefixes = [`/m/${slug}/admin/`, `/m/${slug}/teacher/`, `/m/${slug}/portal/`, `/m/${slug}/programs`];
   if (exactPaths.includes(returnTo)) {
     return returnTo;

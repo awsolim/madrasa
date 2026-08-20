@@ -2,9 +2,12 @@
 
 import Image from "next/image";
 import Link from "next/link";
+import { useEffect, useState } from "react";
 import { PageTitleBar } from "@/components/layout/page-title-bar";
 import { ProgramApplyData, ProgramDetailData, PublicMasjidData, PublicProgramsData } from "@/components/data/supabase-public-sections";
 import { cn } from "@/lib/utils";
+import { getClassesLandingHref, loadUserAccessByMosqueSlug } from "@/lib/authz";
+import { loadCachedSession } from "@/lib/client-cache";
 
 function PublicWorkspace({
   children,
@@ -85,9 +88,27 @@ export function GuestProgramsPage({ slug, mosqueName, mosqueLogoUrl }: { slug: s
 
 export function PublicProgramDetailPage({ programId, slug, returnTo }: { programId: string; slug: string; returnTo?: string }) {
   const backLabel = "Classes";
+  const [signedInBackHref, setSignedInBackHref] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadCachedSession().then(async (session) => {
+      if (!session?.user.id || cancelled) {
+        return;
+      }
+      const access = await loadUserAccessByMosqueSlug(slug);
+      if (!cancelled) {
+        setSignedInBackHref(getClassesLandingHref(slug, access));
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [slug]);
+
   return (
     <>
-      <PageTitleBar title="Class Details" backHref={returnTo ?? `/m/${slug}/programs`} backLabel={backLabel} tone="teal" />
+      <PageTitleBar title="Class Details" backHref={signedInBackHref ?? returnTo ?? `/m/${slug}/programs`} backLabel={backLabel} tone="teal" />
       <PublicWorkspace>
         <ProgramDetailData slug={slug} programId={programId} section="public" />
       </PublicWorkspace>

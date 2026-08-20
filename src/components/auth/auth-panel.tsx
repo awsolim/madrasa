@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import { useRouter } from "next/navigation";
 import { type FormEvent, type ReactNode, useMemo, useState } from "react";
 import { FlatButton } from "@/components/ui/flat-button";
 import { getDefaultLandingHref, loadUserAccessByMosqueSlug } from "@/lib/authz";
@@ -19,7 +19,6 @@ const accountTypes: Array<{ value: AccountType; label: string }> = [
 
 export function AuthPanel({ mode, slug, returnTo }: { mode: AuthMode; slug: string; returnTo?: string }) {
   const router = useRouter();
-  const pathname = usePathname();
   const [accountType, setAccountType] = useState<AccountType>("student");
   const [fullName, setFullName] = useState("");
   const [phoneCountryCode, setPhoneCountryCode] = useState("+1");
@@ -35,10 +34,10 @@ export function AuthPanel({ mode, slug, returnTo }: { mode: AuthMode; slug: stri
   const [error, setError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [oauthSubmitting, setOauthSubmitting] = useState(false);
+  const [activeMode, setActiveMode] = useState<AuthMode>(mode);
 
-  const isSignup = mode === "signup";
-  const routeSlug = pathname.match(/^\/m\/([^/]+)/)?.[1];
-  const activeSlug = routeSlug ?? slug;
+  const isSignup = activeMode === "signup";
+  const activeSlug = slug;
   const submitLabel = useMemo(() => (isSignup ? "Create Account" : "Log In"), [isSignup]);
   const passwordChecks = useMemo(() => getPasswordChecks(password), [password]);
 
@@ -97,10 +96,11 @@ export function AuthPanel({ mode, slug, returnTo }: { mode: AuthMode; slug: stri
         return;
       }
 
+      const postSignupHref = returnTo ?? `/m/${activeSlug}/portal`;
       const emailConfirmTarget =
         accountType === "parent"
-          ? `${window.location.origin}/m/${activeSlug}/onboarding/family?returnTo=${encodeURIComponent(returnTo ?? `/m/${activeSlug}/portal`)}`
-          : `${window.location.origin}/m/${activeSlug}/portal`;
+          ? `${window.location.origin}/m/${activeSlug}/onboarding/family?returnTo=${encodeURIComponent(postSignupHref)}`
+          : `${window.location.origin}${postSignupHref}`;
 
       const { data, error: signUpError } = await supabase.auth.signUp({
         email: trimmedEmail,
@@ -159,8 +159,14 @@ export function AuthPanel({ mode, slug, returnTo }: { mode: AuthMode; slug: stri
       return;
     }
 
+    if (returnTo) {
+      router.replace(returnTo);
+      router.refresh();
+      return;
+    }
+
     const access = await loadUserAccessByMosqueSlug(activeSlug);
-    router.push(returnTo ?? getDefaultLandingHref(activeSlug, access));
+    router.replace(getDefaultLandingHref(activeSlug, access));
     router.refresh();
   }
 
@@ -173,7 +179,7 @@ export function AuthPanel({ mode, slug, returnTo }: { mode: AuthMode; slug: stri
     const { error: oauthError } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: {
-        redirectTo: `${window.location.origin}/m/${activeSlug}/auth/callback`,
+        redirectTo: `${window.location.origin}/m/${activeSlug}/auth/callback${returnTo ? `?returnTo=${encodeURIComponent(returnTo)}` : ""}`,
         queryParams: {
           prompt: "select_account",
         },
@@ -186,27 +192,40 @@ export function AuthPanel({ mode, slug, returnTo }: { mode: AuthMode; slug: stri
     }
   }
 
+  function changeMode(nextMode: AuthMode) {
+    if (nextMode === activeMode) {
+      return;
+    }
+    setActiveMode(nextMode);
+    setError(null);
+    setMessage(null);
+  }
+
   return (
     <div className="mx-auto max-w-xl">
       <div className="grid grid-cols-2 border-b border-[#D6DCE0]">
-        <Link
-          href={returnTo ? `/m/${activeSlug}/login?returnTo=${encodeURIComponent(returnTo)}` : `/m/${activeSlug}/login`}
+        <button
+          type="button"
+          onClick={() => changeMode("login")}
+          aria-pressed={activeMode === "login"}
           className={cn(
-            "flex min-h-12 items-center justify-center text-sm font-medium",
-            mode === "login" ? "border-b-2 border-[#2F8FB3] text-[#2F8FB3]" : "text-[#6B747B]",
+            "flex min-h-12 items-center justify-center text-sm font-medium transition-colors active:bg-[#EEF6F8]",
+            activeMode === "login" ? "border-b-2 border-[#2F8FB3] text-[#2F8FB3]" : "text-[#6B747B]",
           )}
         >
           Log In
-        </Link>
-        <Link
-          href={returnTo ? `/m/${activeSlug}/signup?returnTo=${encodeURIComponent(returnTo)}` : `/m/${activeSlug}/signup`}
+        </button>
+        <button
+          type="button"
+          onClick={() => changeMode("signup")}
+          aria-pressed={activeMode === "signup"}
           className={cn(
-            "flex min-h-12 items-center justify-center text-sm font-medium",
-            mode === "signup" ? "border-b-2 border-[#2F8FB3] text-[#2F8FB3]" : "text-[#6B747B]",
+            "flex min-h-12 items-center justify-center text-sm font-medium transition-colors active:bg-[#EEF6F8]",
+            activeMode === "signup" ? "border-b-2 border-[#2F8FB3] text-[#2F8FB3]" : "text-[#6B747B]",
           )}
         >
           Create Account
-        </Link>
+        </button>
       </div>
 
       <form onSubmit={submit} className="space-y-4 p-4 md:p-6">
@@ -322,6 +341,12 @@ export function AuthPanel({ mode, slug, returnTo }: { mode: AuthMode; slug: stri
           <Link href={`/m/${activeSlug}/forgot-password`} className="block text-center text-sm font-semibold text-[#2F6B53]">
             Forgot password?
           </Link>
+        ) : null}
+
+        {isSignup ? (
+          <p className="text-center text-xs leading-5 text-[#8A9399]">
+            By creating an account, you agree to our <Link href="/legal/terms" className="font-semibold text-[#2F8FB3] hover:underline">Terms of Service</Link> and <Link href="/legal/privacy" className="font-semibold text-[#2F8FB3] hover:underline">Privacy Policy</Link>.
+          </p>
         ) : null}
       </form>
     </div>

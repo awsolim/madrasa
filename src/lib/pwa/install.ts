@@ -77,6 +77,23 @@ export function isStandalone() {
   return window.matchMedia?.("(display-mode: standalone)").matches === true || nav.standalone === true;
 }
 
+function subscribeStandalone(listener: () => void) {
+  if (typeof window === "undefined") {
+    return () => undefined;
+  }
+  const media = window.matchMedia("(display-mode: standalone)");
+  media.addEventListener?.("change", listener);
+  window.addEventListener("appinstalled", listener);
+  return () => {
+    media.removeEventListener?.("change", listener);
+    window.removeEventListener("appinstalled", listener);
+  };
+}
+
+export function useStandaloneMode(): boolean | null {
+  return useSyncExternalStore<boolean | null>(subscribeStandalone, isStandalone, () => null);
+}
+
 export function detectMobilePlatform(): "ios" | "android" | "other" {
   if (typeof navigator === "undefined") {
     return "other";
