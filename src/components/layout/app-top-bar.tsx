@@ -517,7 +517,7 @@ export function AppTopBar({
 
 
   return (
-    <header className="app-topbar-reveal sticky top-0 z-30 border-b border-[#E4E9EC] bg-white text-[var(--text-primary)] md:hidden">
+    <header className="sticky top-0 z-30 border-b border-[#E4E9EC] bg-white text-[var(--text-primary)] md:hidden">
       <div className="app-container grid min-h-[42px] grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2 py-1">
         <Link href={homeHref} className="flex min-w-0 items-center gap-2">
           <TopBarLogo src={logoUrl} name={displayName} compact />

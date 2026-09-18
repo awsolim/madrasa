@@ -169,6 +169,9 @@ function DesktopNavGroup({
         onClick={() => {
           setOpen(true);
           if (firstSubItemHref) {
+            window.dispatchEvent(new CustomEvent("tareeqah:nav-preview", {
+              detail: { href: firstSubItemHref, label, fromPath: window.location.pathname, kind: "tab" },
+            }));
             router.push(firstSubItemHref);
           }
         }}
