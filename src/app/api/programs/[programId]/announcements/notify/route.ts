@@ -41,7 +41,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
       return Response.json({ error: "Not authenticated." }, { status: 401 });
     }
 
-    const { data: canManage } = await supabase.rpc("can_manage_program", { check_program_id: programId, check_profile_id: user.id });
+    const { data: canManage } = await supabase.rpc("can_announce_program", { check_program_id: programId, check_profile_id: user.id });
     if (!canManage) {
       return Response.json({ error: "You cannot send notifications for this class." }, { status: 403 });
     }

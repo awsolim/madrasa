@@ -10,6 +10,7 @@ import { createSupabaseServiceClient } from "@/lib/supabase/service";
 import type { Database } from "@/lib/supabase/types";
 import { getAppBaseUrl } from "@/lib/email/resend";
 import { sendProfileNotificationEmails } from "@/lib/email/notifications";
+import { monthlyBillingEndDate } from "@/lib/stripe/billing-anchor";
 
 type ProgramPaymentTermsRow = Database["public"]["Tables"]["program_payment_terms"]["Row"];
 
@@ -56,6 +57,13 @@ async function ensureFixedDurationSchedule(
     price: typeof item.price === "string" ? item.price : item.price.id,
     quantity: item.quantity ?? 1,
   }));
+  // A first-of-month anchor creates a short prorated opening period. Count that
+  // as the first billing month, then end after the remaining full periods.
+  const hasProratedOpeningPeriod = terms.monthly_billing_anchor === "first_of_month"
+    && subscription.billing_cycle_anchor > subscription.start_date + 60;
+  const alignedEndDate = hasProratedOpeningPeriod
+    ? monthlyBillingEndDate(subscription.billing_cycle_anchor, terms.billing_months - 1, terms.monthly_billing_timezone)
+    : null;
 
   const updatedSchedule = await stripe.subscriptionSchedules.update(
     schedule.id,
@@ -65,7 +73,7 @@ async function ensureFixedDurationSchedule(
         {
           start_date: phase?.start_date ?? "now",
           items,
-          duration: { interval: "month", interval_count: terms.billing_months },
+          ...(alignedEndDate ? { end_date: alignedEndDate } : { duration: { interval: "month" as const, interval_count: terms.billing_months } }),
           metadata: {
             payment_terms_id: terms.id,
             enrollment_request_id: terms.enrollment_request_id ?? "",

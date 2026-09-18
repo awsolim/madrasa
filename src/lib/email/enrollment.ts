@@ -3,7 +3,7 @@ import "server-only";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
 import type { Database } from "@/lib/supabase/types";
 import { escapeHtml, getAppBaseUrl, sendEmail } from "@/lib/email/resend";
-import { getProgramManagerProfileIds } from "@/lib/push/program-recipients";
+import { getProgramApplicationReviewerProfileIds } from "@/lib/push/program-recipients";
 import { sendPushNotification } from "@/lib/push/send-push";
 import { sendProfileNotificationEmails } from "@/lib/email/notifications";
 
@@ -121,7 +121,7 @@ export async function sendEnrollmentSubmittedEmails(requestIds: string[], userId
       const parentName = parent ? profileName(parent, "A parent") : null;
       const requesterText = parentName ? `${parentName} submitted this request for ${studentName}.` : `${studentName} submitted this request.`;
 
-      const managerIds = await getProgramManagerProfileIds(supabase, program);
+      const managerIds = await getProgramApplicationReviewerProfileIds(supabase, program);
       void sendPushNotification(supabase, {
         recipientProfileIds: managerIds,
         title: "New application received",
@@ -164,7 +164,7 @@ export async function sendEnrollmentReviewedEmail(requestId: string, reviewerUse
   }
 
   const supabase = createSupabaseServiceClient();
-  const { data: canManage, error: canManageError } = await supabase.rpc("can_manage_program", {
+  const { data: canManage, error: canManageError } = await supabase.rpc("can_decide_program_applications", {
     check_program_id: context.program.id,
     check_profile_id: reviewerUserId,
   });

@@ -4,6 +4,7 @@ import { ensurePaymentTermsForRequest, markPaymentTermsCheckoutStarted } from "@
 import { toProgramStatusFields } from "@/lib/programs/status";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
 import { logServerError } from "@/lib/monitoring/log-error";
+import { monthlyBillingAnchor } from "@/lib/stripe/billing-anchor";
 
 export const runtime = "nodejs";
 
@@ -152,6 +153,9 @@ export async function POST(request: Request) {
       billing_end_behavior: paymentTerms.billing_end_behavior,
       stripe_price_id: dynamicPrice.id,
     };
+    const billingAnchor = isRecurringMonthly
+      ? monthlyBillingAnchor({ monthly_billing_anchor: paymentTerms.monthly_billing_anchor, schedule_timezone: program.schedule_timezone })
+      : undefined;
 
     const session = await stripe.checkout.sessions.create(
       {
@@ -161,7 +165,7 @@ export async function POST(request: Request) {
         client_reference_id: enrollmentRequest.id,
         success_url: `${origin}${returnPath}?result=success&session_id={CHECKOUT_SESSION_ID}`,
         cancel_url: `${origin}${returnPath}?result=cancelled`,
-        ...(isRecurring ? { subscription_data: { metadata: checkoutMetadata } } : {}),
+        ...(isRecurring ? { subscription_data: { metadata: checkoutMetadata, ...(billingAnchor ? { billing_cycle_anchor: billingAnchor, proration_behavior: "create_prorations" as const } : {}) } } : {}),
         metadata: checkoutMetadata,
       },
       stripeRequestOptions,

@@ -1,6 +1,7 @@
 import { getStripe, shouldUseStripeConnect } from "@/lib/stripe/server";
 import { getCheckoutOrigin, getPortalReturnPath } from "@/lib/stripe/checkout-url";
 import { isActiveStripeSubscriptionStatus } from "@/lib/stripe/subscriptions";
+import { monthlyBillingAnchor } from "@/lib/stripe/billing-anchor";
 import { requireProgramFinanceAccess } from "@/lib/finance/auth";
 import { recordFinanceAuditEvent } from "@/lib/finance/audit";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
@@ -142,6 +143,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
         currency: "cad",
         billing_months: billingMonths,
         billing_start_behavior: billingMode === "monthly" ? program.billing_start_behavior ?? "on_payment" : "not_applicable",
+        monthly_billing_anchor: billingMode === "monthly" ? program.monthly_billing_anchor : "signup_date",
+        monthly_billing_timezone: program.schedule_timezone,
         billing_end_behavior: billingMode === "monthly" ? (billingMonths ? "fixed_month_count" : "ongoing_until_cancelled") : isRecurringAnnual ? "ongoing_until_cancelled" : "not_applicable",
         program_start_date_snapshot: program.start_date ?? null,
         program_end_date_snapshot: program.end_date ?? null,
@@ -192,6 +195,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
       billing_end_behavior: terms.billing_end_behavior,
       stripe_price_id: dynamicPrice.id,
     };
+    const billingAnchor = billingMode === "monthly" ? monthlyBillingAnchor(program) : undefined;
 
     const session = await stripe.checkout.sessions.create(
       {
@@ -200,7 +204,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
         customer_email: parent?.email ?? student?.email ?? undefined,
         success_url: `${origin}${returnPath}?payment=success&session_id={CHECKOUT_SESSION_ID}`,
         cancel_url: `${origin}${returnPath}?payment=cancelled`,
-        ...(isRecurring ? { subscription_data: { metadata: checkoutMetadata } } : {}),
+        ...(isRecurring ? { subscription_data: { metadata: checkoutMetadata, ...(billingAnchor ? { billing_cycle_anchor: billingAnchor, proration_behavior: "create_prorations" as const } : {}) } } : {}),
         metadata: checkoutMetadata,
       },
       stripeRequestOptions,

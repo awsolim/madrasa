@@ -36,6 +36,7 @@ type CreateProgramBody = {
   roomArea?: string | null;
   paymentKind?: string;
   billingStartBehavior?: string;
+  monthlyBillingAnchor?: string;
   billingEndBehavior?: string;
   billingDurationMonths?: number | null;
   allowCustomPrices?: boolean;
@@ -132,6 +133,7 @@ const optionalProgramBuilderColumns = new Set([
   "room_area",
   "payment_kind",
   "billing_start_behavior",
+  "monthly_billing_anchor",
   "billing_end_behavior",
   "billing_duration_months",
   "offers_monthly_payment",
@@ -412,6 +414,7 @@ export async function POST(request: Request) {
         is_paid: isPaid,
         payment_kind: paymentKind,
         billing_start_behavior: pickAllowed(body.billingStartBehavior, ["on_payment", "program_start"], "on_payment"),
+        monthly_billing_anchor: pickAllowed(body.monthlyBillingAnchor, ["signup_date", "first_of_month"], "signup_date"),
         billing_end_behavior: billingEndBehavior,
         billing_duration_months: Number.isFinite(body.billingDurationMonths) ? Math.max(1, Math.round(Number(body.billingDurationMonths))) : 10,
         offers_monthly_payment: isPaid ? offersMonthlyPayment : false,

@@ -253,11 +253,13 @@ export async function fetchTeacherNotificationCounts(slug: string, userId: strin
 
   const [{ data: mosquePrograms }, { data: assignments }] = await Promise.all([
     supabase.from("programs").select("id, teacher_profile_id, director_profile_id").eq("mosque_id", mosque.id).eq("is_active", true),
-    supabase.from("program_teachers").select("program_id, role").eq("teacher_profile_id", userId),
+    supabase.from("program_teachers").select("program_id, role, can_view_applications, can_decide_applications").eq("teacher_profile_id", userId),
   ]);
   const directorAssignmentIds = new Set((assignments ?? []).filter((assignment) => assignment.role === "director").map((assignment) => assignment.program_id));
+  const applicationAssignmentIds = new Set((assignments ?? []).filter((assignment) => assignment.role === "director" || assignment.can_view_applications || assignment.can_decide_applications).map((assignment) => assignment.program_id));
+  const directorProgramIds = (mosquePrograms ?? []).filter((program) => (program.director_profile_id ?? program.teacher_profile_id) === userId || directorAssignmentIds.has(program.id)).map((program) => program.id);
   const programIds = (mosquePrograms ?? [])
-    .filter((program) => (program.director_profile_id ?? program.teacher_profile_id) === userId || directorAssignmentIds.has(program.id))
+    .filter((program) => (program.director_profile_id ?? program.teacher_profile_id) === userId || applicationAssignmentIds.has(program.id))
     .map((program) => program.id);
 
   if (programIds.length === 0) {
@@ -273,20 +275,20 @@ export async function fetchTeacherNotificationCounts(slug: string, userId: strin
     supabase
       .from("withdrawal_requests")
       .select("id, status, reviewed_at, requested_at")
-      .in("program_id", programIds)
+      .in("program_id", directorProgramIds.length ? directorProgramIds : ["00000000-0000-0000-0000-000000000000"])
       .eq("status", "pending")
       .is("teacher_dismissed_at", null),
     supabase
       .from("program_teachers")
       .select("id, teacher_profile_id")
-      .in("program_id", programIds)
+      .in("program_id", directorProgramIds.length ? directorProgramIds : ["00000000-0000-0000-0000-000000000000"])
       .eq("role", "instructor")
       .not("teacher_profile_id", "is", null),
     supabase
       .from("program_instructor_events")
       .select("id, assignment_id, teacher_profile_id, event_type")
-      .in("program_id", programIds),
-    supabase.from("program_track_switch_requests").select("id, status, requested_at").in("program_id", programIds),
+      .in("program_id", directorProgramIds.length ? directorProgramIds : ["00000000-0000-0000-0000-000000000000"]),
+    supabase.from("program_track_switch_requests").select("id, status, requested_at").in("program_id", directorProgramIds.length ? directorProgramIds : ["00000000-0000-0000-0000-000000000000"]),
   ]);
   const { seen: seenIds, dismissed: dismissedIds } = await fetchNotificationState(userId);
 

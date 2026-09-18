@@ -19,6 +19,25 @@ function dispatchPreview({ href, label, direction, fromPath, kind }: { href: str
   );
 }
 
+function rememberNavigationParent(href: string, parentPath: string) {
+  try {
+    window.sessionStorage.setItem(`tareeqah:nav-parent:${new URL(href, window.location.href).pathname}`, parentPath);
+  } catch {
+    // Navigation still works when browser storage is unavailable.
+  }
+}
+
+function returnToPreviousParent(pathname: string, fallbackHref: string) {
+  try {
+    const key = `tareeqah:nav-parent:${pathname}`;
+    if (window.sessionStorage.getItem(key) !== new URL(fallbackHref, window.location.href).pathname || window.history.length <= 1) return false;
+    window.sessionStorage.removeItem(key);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function TransitionLink({
   href,
   label,
@@ -47,6 +66,7 @@ export function TransitionLink({
         }
 
         event.preventDefault();
+        rememberNavigationParent(href, pathname);
         dispatchPreview({ href, label, direction, fromPath: pathname, kind });
         router.push(href);
       }}
@@ -77,7 +97,11 @@ export function TransitionBackButton({
       className={className}
       onClick={() => {
         dispatchPreview({ href: fallbackHref, label, direction: "from-left", fromPath: pathname, kind: label === "Classes" || label === "Programs" ? "classes" : "subpage" });
-        router.push(fallbackHref);
+        if (returnToPreviousParent(pathname, fallbackHref)) {
+          router.back();
+        } else {
+          router.push(fallbackHref);
+        }
       }}
     >
       <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" aria-hidden>

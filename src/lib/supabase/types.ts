@@ -64,6 +64,7 @@ export type Database = {
           is_paid: boolean;
           payment_kind: string;
           billing_start_behavior: string;
+          monthly_billing_anchor: string;
           offers_monthly_payment: boolean;
           offers_annual_payment: boolean;
           billing_end_behavior: string;
@@ -151,6 +152,7 @@ export type Database = {
           can_view_applications: boolean;
           can_decide_applications: boolean;
           can_edit_class: boolean;
+          can_announce: boolean;
           can_send_direct_invitations: boolean;
           invite_code: string | null;
           invite_code_created_at: string | null;
@@ -257,6 +259,8 @@ export type Database = {
           billing_months: number | null;
           billing_start_behavior: string;
           billing_end_behavior: string;
+          monthly_billing_anchor: string;
+          monthly_billing_timezone: string | null;
           program_start_date_snapshot: string | null;
           program_end_date_snapshot: string | null;
           status: string;
@@ -858,6 +862,10 @@ export type Database = {
         Returns: boolean;
       };
       can_edit_program_details: {
+        Args: { check_program_id: string; check_profile_id?: string };
+        Returns: boolean;
+      };
+      can_announce_program: {
         Args: { check_program_id: string; check_profile_id?: string };
         Returns: boolean;
       };

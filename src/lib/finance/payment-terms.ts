@@ -96,6 +96,8 @@ export async function createApprovedPaymentTerms(supabase: SupaClient, input: Ap
       currency: "cad",
       billing_months: billingMonthsFor(input.program, paymentType),
       billing_start_behavior: paymentType === "monthly" ? input.program.billing_start_behavior ?? "on_payment" : "not_applicable",
+      monthly_billing_anchor: paymentType === "monthly" ? input.program.monthly_billing_anchor : "signup_date",
+      monthly_billing_timezone: input.program.schedule_timezone,
       billing_end_behavior: billingEndBehaviorFor(input.program, paymentType),
       program_start_date_snapshot: input.program.start_date ?? null,
       program_end_date_snapshot: input.program.end_date ?? null,

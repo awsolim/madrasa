@@ -247,6 +247,7 @@ type ProgramBuilderStatus = {
   roomArea: string;
   paymentKind: "free" | "tareeqah";
   billingStartBehavior: "on_payment" | "program_start";
+  monthlyBillingAnchor: "signup_date" | "first_of_month";
   billingEndBehavior: "manual_cancel" | "program_end" | "fixed_months";
   billingDurationMonths: string;
   allowCustomPrices: boolean;
@@ -312,6 +313,7 @@ function defaultBuilderStatus(): ProgramBuilderStatus {
     roomArea: "",
     paymentKind: "free",
     billingStartBehavior: "on_payment",
+    monthlyBillingAnchor: "signup_date",
     billingEndBehavior: "fixed_months",
     billingDurationMonths: "",
     allowCustomPrices: true,
@@ -357,6 +359,7 @@ function defaultProgramBuilderColumns(): Pick<Program,
   | "room_area"
   | "payment_kind"
   | "billing_start_behavior"
+  | "monthly_billing_anchor"
   | "billing_end_behavior"
   | "billing_duration_months"
   | "allow_custom_prices"
@@ -402,6 +405,7 @@ function defaultProgramBuilderColumns(): Pick<Program,
     room_area: null,
     payment_kind: defaults.paymentKind,
     billing_start_behavior: defaults.billingStartBehavior,
+    monthly_billing_anchor: defaults.monthlyBillingAnchor,
     billing_end_behavior: defaults.billingEndBehavior,
     billing_duration_months: Number(defaults.billingDurationMonths || "10"),
     allow_custom_prices: true,
@@ -2256,12 +2260,12 @@ export function RegistrationConfirmationData({ slug, requestId }: { slug: string
               ) : state === "payment_required_annual_subscription" ? (
                 <p className="text-sm leading-6 text-[#52616A]">Your registration has been approved. Start your annual subscription to complete registration — {listedPrice}/year, renews automatically until cancelled.</p>
               ) : (
-                <p className="text-sm leading-6 text-[#52616A]">Your registration has been approved. Start your monthly subscription to complete registration — {listedPrice}/month.</p>
+                <p className="text-sm leading-6 text-[#52616A]">Your registration has been approved. Start your monthly subscription to complete registration — {listedPrice}/month. {program.monthly_billing_anchor === "first_of_month" ? "If you join after the first, the initial payment is prorated; later payments are due on the first." : ""}</p>
               )}
               {state !== "completed" ? (
                 <div className="rounded-[14px] bg-[#F7FAFB] p-3 text-sm">
                   <div className="flex items-center justify-between">
-                    <span className="text-[#6B747B]">Amount</span>
+                    <span className="text-[#6B747B]">{state === "payment_required_monthly" ? "Monthly amount" : "Amount"}</span>
                     <span className="font-semibold text-[#26323A]">{listedPrice}</span>
                   </div>
                 </div>
@@ -3846,6 +3850,7 @@ function ConfirmStudentRescindModal({
 }
 
 export function TeacherAnnouncementData({ slug, programId }: { slug: string; programId: string }) {
+  const [canAnnounce, setCanAnnounce] = useState(false);
   const [program, setProgram] = useState<Program | null>(null);
   const [tracks, setTracks] = useState<ProgramTrack[]>([]);
   const [announcements, setAnnouncements] = useState<AnnouncementWithContext[]>([]);
@@ -3868,6 +3873,8 @@ export function TeacherAnnouncementData({ slug, programId }: { slug: string; pro
     const { data: sessionData } = await supabase.auth.getSession();
     const userId = sessionData.session?.user.id ?? null;
     setCurrentUserId(userId);
+    const { data: allowed } = await supabase.rpc("can_announce_program", { check_program_id: programId, check_profile_id: userId ?? undefined });
+    setCanAnnounce(Boolean(allowed));
 
     const { data, error } = await supabase.rpc("get_teacher_announcements_snapshot", { p_slug: slug, p_program_id: programId });
     if (error) {
@@ -3940,7 +3947,7 @@ export function TeacherAnnouncementData({ slug, programId }: { slug: string; pro
   }, [programId, slug]);
 
   async function sendAnnouncement() {
-    if (!currentUserId || !program || (!message.trim() && attachments.length === 0)) {
+    if (!canAnnounce || !currentUserId || !program || (!message.trim() && attachments.length === 0)) {
       return;
     }
 
@@ -3998,7 +4005,7 @@ export function TeacherAnnouncementData({ slug, programId }: { slug: string; pro
   return (
     <section className="space-y-6 bg-[var(--workspace)] p-4 pb-28 text-[#26323A]">
       <div className="px-1">
-        {!composeOpen ? (
+        {!canAnnounce ? <p className="text-sm text-[#6B747B]">You can view class announcements. Sending announcements requires permission from the Director.</p> : !composeOpen ? (
           <button
             type="button"
             onClick={() => setComposeOpen(true)}
@@ -4681,7 +4688,7 @@ export function AdminHomeData({ slug }: { slug: string }) {
 }
 
 export function TeacherClassesData({ slug }: { slug: string }) {
-  const { programs, allPrograms, roleByProgramId, financeAccessByProgramId, programCounts, canCreateClass, loading, error } = useTeacherPrograms(slug);
+  const { programs, allPrograms, roleByProgramId, permissionsByProgramId, programCounts, canCreateClass, loading, error } = useTeacherPrograms(slug);
   const router = useRouter();
   const searchParams = useSearchParams();
   const initialTeacherClassesTab = searchParams.get("tab");
@@ -4774,7 +4781,7 @@ export function TeacherClassesData({ slug }: { slug: string }) {
                   program={program}
                   mosqueSlug={slug}
                   role={roleByProgramId[program.id] ?? "instructor"}
-                  canManageFinances={financeAccessByProgramId[program.id] ?? false}
+                  permissions={permissionsByProgramId[program.id]}
                   counts={programCounts[program.id]}
                   onResigned={() => {
                     setHiddenProgramIds((current) => new Set([...current, program.id]));
@@ -4868,7 +4875,7 @@ export function AdminClassesData({ slug }: { slug: string }) {
               role="director"
               basePath={`/m/${slug}/admin/programs`}
               controlLabel="Admin Control"
-              canManageFinances
+              permissions={{ can_view_applications: true, can_decide_applications: true, can_edit_class: true, can_manage_finances: true, can_announce: true }}
               counts={programCounts[program.id]}
               onDeleted={() => {
                 setHiddenProgramIds((current) => new Set([...current, program.id]));
@@ -5781,6 +5788,7 @@ export function TeacherProgramCreateData({ slug }: { slug: string }) {
           roomArea: effectiveBuilderStatus.roomArea.trim() || null,
           paymentKind: effectiveBuilderStatus.paymentKind,
           billingStartBehavior: effectiveBuilderStatus.billingStartBehavior,
+          monthlyBillingAnchor: effectiveBuilderStatus.monthlyBillingAnchor,
           billingEndBehavior: effectiveBuilderStatus.billingEndBehavior,
           billingDurationMonths: effectiveBuilderStatus.billingDurationMonths ? Number(effectiveBuilderStatus.billingDurationMonths) : 10,
           allowCustomPrices: true,
@@ -5853,6 +5861,7 @@ export function TeacherProgramCreateData({ slug }: { slug: string }) {
             roomArea: effectiveBuilderStatus.roomArea.trim() || null,
             paymentKind: effectiveBuilderStatus.paymentKind,
             billingStartBehavior: effectiveBuilderStatus.billingStartBehavior,
+            monthlyBillingAnchor: effectiveBuilderStatus.monthlyBillingAnchor,
             billingEndBehavior: effectiveBuilderStatus.billingEndBehavior,
             billingDurationMonths: effectiveBuilderStatus.billingDurationMonths ? Number(effectiveBuilderStatus.billingDurationMonths) : 10,
             allowCustomPrices: true,
@@ -6172,6 +6181,16 @@ export function TeacherProgramCreateData({ slug }: { slug: string }) {
               <label className="block">
                 <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-[#6B747B]">Number of billing months</span>
                 <input value="Ongoing — billed until cancelled" disabled className="h-10 w-full rounded-[8px] border border-[#D6DCE0] bg-[#F1F4F5] px-3 text-sm font-medium text-[#8A949B] outline-none" />
+              </label>
+            ) : null}
+            {builderStatus.paymentKind === "tareeqah" && offersMonthlyPayment && builderStatus.programType !== "event" ? (
+              <label className="block">
+                <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-[#6B747B]">Monthly billing date</span>
+                <select value={builderStatus.monthlyBillingAnchor} onChange={(event) => setBuilderStatus((current) => ({ ...current, monthlyBillingAnchor: event.target.value as ProgramBuilderStatus["monthlyBillingAnchor"] }))} className="h-10 w-full rounded-[8px] border border-[#B9C3C8] bg-white px-3 text-sm font-medium text-[#26323A]">
+                  <option value="signup_date">Each family’s signup date</option>
+                  <option value="first_of_month">First of every month</option>
+                </select>
+                <p className="mt-1 text-xs text-[#6B747B]">For first-of-month billing, the first payment is prorated. Existing subscriptions keep their current dates.</p>
               </label>
             ) : null}
             {builderStatus.paymentKind === "tareeqah" ? (
@@ -6613,6 +6632,7 @@ export function TeacherProgramSettingsData({ slug, programId, returnHref }: { sl
           roomArea: programRow.room_area ?? "",
           paymentKind: ["free", "tareeqah"].includes(programRow.payment_kind) ? programRow.payment_kind as ProgramBuilderStatus["paymentKind"] : (programRow.is_paid ? "tareeqah" : "free"),
           billingStartBehavior: ["on_payment", "program_start"].includes(programRow.billing_start_behavior) ? programRow.billing_start_behavior as ProgramBuilderStatus["billingStartBehavior"] : "on_payment",
+          monthlyBillingAnchor: programRow.monthly_billing_anchor === "first_of_month" ? "first_of_month" : "signup_date",
           billingEndBehavior: ["manual_cancel", "program_end", "fixed_months"].includes(programRow.billing_end_behavior) ? programRow.billing_end_behavior as ProgramBuilderStatus["billingEndBehavior"] : "fixed_months",
           billingDurationMonths: programRow.billing_duration_months ? String(programRow.billing_duration_months) : "",
           allowCustomPrices: programRow.allow_custom_prices !== false,
@@ -6929,6 +6949,7 @@ export function TeacherProgramSettingsData({ slug, programId, returnHref }: { sl
         roomArea: effectiveBuilderStatus.roomArea.trim() || null,
         paymentKind: effectiveBuilderStatus.paymentKind,
         billingStartBehavior: effectiveBuilderStatus.billingStartBehavior,
+        monthlyBillingAnchor: effectiveBuilderStatus.monthlyBillingAnchor,
         billingEndBehavior: effectiveBuilderStatus.billingEndBehavior,
         billingDurationMonths: effectiveBuilderStatus.billingDurationMonths ? Number(effectiveBuilderStatus.billingDurationMonths) : null,
         allowCustomPrices: true,
@@ -7273,6 +7294,16 @@ export function TeacherProgramSettingsData({ slug, programId, returnHref }: { sl
               <label className="block">
                 <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-[#6B747B]">Number of billing months</span>
                 <input value="Ongoing — billed until cancelled" disabled className="h-10 w-full rounded-[8px] border border-[#D6DCE0] bg-[#F1F4F5] px-3 text-sm font-medium text-[#8A949B] outline-none" />
+              </label>
+            ) : null}
+            {builderStatus.paymentKind === "tareeqah" && offersMonthlyPayment && builderStatus.programType !== "event" ? (
+              <label className="block">
+                <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-[#6B747B]">Monthly billing date</span>
+                <select value={builderStatus.monthlyBillingAnchor} onChange={(event) => setBuilderStatus((current) => ({ ...current, monthlyBillingAnchor: event.target.value as ProgramBuilderStatus["monthlyBillingAnchor"] }))} className="h-10 w-full rounded-[8px] border border-[#B9C3C8] bg-white px-3 text-sm font-medium text-[#26323A]">
+                  <option value="signup_date">Each family’s signup date</option>
+                  <option value="first_of_month">First of every month</option>
+                </select>
+                <p className="mt-1 text-xs text-[#6B747B]">For first-of-month billing, the first payment is prorated. Existing subscriptions keep their current dates.</p>
               </label>
             ) : null}
             {builderStatus.paymentKind === "tareeqah" ? (
@@ -13319,7 +13350,7 @@ type TeacherProgramsResult = {
   programs: ProgramScheduleSource[];
   allPrograms: ProgramScheduleSource[];
   roleByProgramId: Record<string, TeacherProgramRole>;
-  financeAccessByProgramId: Record<string, boolean>;
+  permissionsByProgramId: Record<string, InstructorPermissions>;
   programCounts: Record<string, { students: number; applications: number; instructors: number }>;
   canCreateClass: boolean;
   currentUserId: string | null;
@@ -13330,7 +13361,7 @@ const emptyTeacherProgramsResult: TeacherProgramsResult = {
   programs: [],
   allPrograms: [],
   roleByProgramId: {},
-  financeAccessByProgramId: {},
+  permissionsByProgramId: {},
   programCounts: {},
   canCreateClass: false,
   currentUserId: null,
@@ -13423,7 +13454,11 @@ export async function fetchTeacherPrograms(slug: string): Promise<TeacherProgram
     }));
 
   const nextRoleByProgramId: Record<string, TeacherProgramRole> = {};
-  const nextFinanceAccessByProgramId: Record<string, boolean> = {};
+  const nextPermissionsByProgramId: Record<string, InstructorPermissions> = {};
+  const { data: permissionRows, error: permissionError } = await supabase.from("program_teachers")
+    .select("program_id, role, can_view_applications, can_decide_applications, can_edit_class, can_manage_finances, can_announce")
+    .eq("teacher_profile_id", userId);
+  if (permissionError) return { ...emptyTeacherProgramsResult, currentUserId: userId, error: permissionError.message };
   const isAdminForMosque = teacherAccountType === "admin" && (memberships ?? []).some((membership) => membership.role === "admin" && membership.status === "active");
   const canCreateForMosque = isAdminForMosque || (teacherAccountType === "teacher" && (memberships ?? []).some((membership) => membership.role === "teacher" && membership.status === "active" && membership.can_create_programs));
   const assignedPrograms = isAdminForMosque ? programsWithTracks : programsWithTracks.filter((program) => {
@@ -13431,7 +13466,10 @@ export async function fetchTeacherPrograms(slug: string): Promise<TeacherProgram
     const assignedRole = isDirector ? "director" : assignmentRoleByProgramId[program.id];
     if (assignedRole) {
       nextRoleByProgramId[program.id] = assignedRole;
-      nextFinanceAccessByProgramId[program.id] = assignedRole === "director" && Boolean((assignments ?? []).find((assignment) => assignment.program_id === program.id && assignment.role === "director")?.can_manage_finances);
+      const permissionRow = (permissionRows ?? []).find((row) => row.program_id === program.id);
+      nextPermissionsByProgramId[program.id] = assignedRole === "director"
+        ? { can_view_applications: true, can_decide_applications: true, can_edit_class: true, can_manage_finances: Boolean(permissionRow?.can_manage_finances), can_announce: true }
+        : { can_view_applications: Boolean(permissionRow?.can_view_applications || permissionRow?.can_decide_applications), can_decide_applications: Boolean(permissionRow?.can_decide_applications), can_edit_class: Boolean(permissionRow?.can_edit_class), can_manage_finances: Boolean(permissionRow?.can_manage_finances), can_announce: permissionRow?.can_announce !== false };
       return true;
     }
     return false;
@@ -13439,7 +13477,7 @@ export async function fetchTeacherPrograms(slug: string): Promise<TeacherProgram
   if (isAdminForMosque) {
     for (const program of assignedPrograms) {
       nextRoleByProgramId[program.id] = "director";
-      nextFinanceAccessByProgramId[program.id] = true;
+      nextPermissionsByProgramId[program.id] = { can_view_applications: true, can_decide_applications: true, can_edit_class: true, can_manage_finances: true, can_announce: true };
     }
   }
 
@@ -13447,7 +13485,7 @@ export async function fetchTeacherPrograms(slug: string): Promise<TeacherProgram
     programs: assignedPrograms,
     allPrograms: programsWithTracks,
     roleByProgramId: nextRoleByProgramId,
-    financeAccessByProgramId: nextFinanceAccessByProgramId,
+    permissionsByProgramId: nextPermissionsByProgramId,
     programCounts: nextProgramCounts,
     canCreateClass: canCreateForMosque,
     currentUserId: userId,
@@ -17626,7 +17664,7 @@ function TeacherClassCard({
   role,
   basePath,
   controlLabel,
-  canManageFinances = false,
+  permissions,
   counts,
   onResigned,
   onResignError,
@@ -17638,7 +17676,7 @@ function TeacherClassCard({
   role: TeacherProgramRole;
   basePath?: string;
   controlLabel?: string;
-  canManageFinances?: boolean;
+  permissions?: InstructorPermissions;
   counts?: { students?: number; applications?: number; instructors?: number };
   onResigned?: () => void;
   onResignError?: (message: string) => void;
@@ -17723,13 +17761,13 @@ function TeacherClassCard({
         <div className="divide-y divide-[#E3E8EC] border-t border-[#E3E8EC]">
           <TeacherActionLink href={publicHref} icon={<ExternalLinkIcon />} label="View Public Page" previewLabel="Class Details" />
           <TeacherActionLink href={`${classBasePath}/${program.id}/students`} icon={<StudentsIcon />} label="Students" count={counts?.students} />
-          {isDirector ? <TeacherActionLink href={`${classBasePath}/${program.id}/applications`} icon={<ClipboardIcon />} label="Manage Applications" count={counts?.applications} urgent /> : null}
+          {isDirector || permissions?.can_view_applications || permissions?.can_decide_applications ? <TeacherActionLink href={`${classBasePath}/${program.id}/applications`} icon={<ClipboardIcon />} label="Manage Applications" count={counts?.applications} urgent /> : null}
           {isDirector ? <TeacherActionLink href={`${classBasePath}/${program.id}/instructors`} icon={<InstructorManageIcon />} label="Instructors" count={counts?.instructors} /> : null}
-          <TeacherActionLink href={`${classBasePath}/${program.id}/announcement`} icon={<MegaphoneIcon />} label="Announcement" />
+          {isDirector || permissions?.can_announce ? <TeacherActionLink href={`${classBasePath}/${program.id}/announcement`} icon={<MegaphoneIcon />} label="Announcement" /> : null}
           <TeacherActionLink href={attendanceHistoryHref(mosqueSlug, program.id, classBasePath)} icon={<AttendanceIcon />} label="Attendance History" />
-          {canManageFinances ? <TeacherActionLink href={`${classBasePath}/${program.id}/finances`} icon={<FinanceIcon />} label="Manage Finances" /> : null}
-          {isDirector || canManageFinances ? <TeacherActionLink href={`${classBasePath}/${program.id}/exports`} icon={<ClipboardIcon />} label="Export Data" /> : null}
-          {isDirector ? <TeacherActionLink href={`${classBasePath}/${program.id}`} icon={<EditClassIcon />} label="Edit Class" /> : null}
+          {permissions?.can_manage_finances ? <TeacherActionLink href={`${classBasePath}/${program.id}/finances`} icon={<FinanceIcon />} label="Manage Finances" /> : null}
+          {isDirector || permissions?.can_manage_finances ? <TeacherActionLink href={`${classBasePath}/${program.id}/exports`} icon={<ClipboardIcon />} label="Export Data" /> : null}
+          {isDirector || permissions?.can_edit_class ? <TeacherActionLink href={`${classBasePath}/${program.id}`} icon={<EditClassIcon />} label="Edit Class" /> : null}
           {!isDirector ? <TeacherActionButton icon={<XIcon />} label="Resign from Class" onClick={() => setResignOpen(true)} /> : null}
         </div>
       </div>
@@ -18451,7 +18489,6 @@ function ProgramTeacherStaffTools({ program }: { program: Program }) {
   const [toast, setToast] = useState<EditorToastState | null>(null);
   const [latestInviteCode, setLatestInviteCode] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
-  const [permissionBusyId, setPermissionBusyId] = useState<string | null>(null);
   const [copiedCode, setCopiedCode] = useState<string | null>(null);
 
   // One RPC call instead of [director-check+assignments+inactive-events] -> profiles, as two
@@ -18532,21 +18569,22 @@ function ProgramTeacherStaffTools({ program }: { program: Program }) {
     }, 2000);
   }
 
-  async function setInstructorPermission(assignmentId: string, field: "can_view_applications" | "can_decide_applications" | "can_edit_class" | "can_manage_finances", value: boolean) {
-    setPermissionBusyId(assignmentId);
+  async function saveInstructorPermissions(assignmentId: string, update: InstructorPermissions) {
     const supabase = createSupabaseBrowserClient();
-    const update: Partial<ProgramTeacher> = { [field]: value };
-    const { error: updateError } = await supabase
+    const { data: updatedAssignment, error: updateError } = await supabase
       .from("program_teachers")
       .update(update)
       .eq("id", assignmentId)
-      .eq("role", "instructor");
-    setPermissionBusyId(null);
-    if (updateError) {
-      setToast({ tone: "error", message: friendlyErrorMessage(updateError, "Could not update this permission.") });
-      return;
+      .eq("role", "instructor")
+      .select("id")
+      .maybeSingle();
+    if (updateError || !updatedAssignment) {
+      setToast({ tone: "error", message: updateError ? friendlyErrorMessage(updateError, "Could not update this permission.") : "No permission changes were saved. Please reload and try again." });
+      return false;
     }
     await loadStaff();
+    setToast({ tone: "success", message: "Instructor permissions saved." });
+    return true;
   }
 
   async function removeInstructor(assignmentId: string) {
@@ -18646,32 +18684,7 @@ function ProgramTeacherStaffTools({ program }: { program: Program }) {
                     Remove
                   </button>
                 </div>
-                <div className="mt-3 grid grid-cols-2 gap-1.5">
-                  <InstructorPermissionToggle
-                    label="View Applications"
-                    active={assignment.can_view_applications}
-                    disabled={permissionBusyId === assignment.id}
-                    onClick={() => void setInstructorPermission(assignment.id, "can_view_applications", !assignment.can_view_applications)}
-                  />
-                  <InstructorPermissionToggle
-                    label="Accept / Decline"
-                    active={assignment.can_decide_applications}
-                    disabled={permissionBusyId === assignment.id}
-                    onClick={() => void setInstructorPermission(assignment.id, "can_decide_applications", !assignment.can_decide_applications)}
-                  />
-                  <InstructorPermissionToggle
-                    label="Edit Class"
-                    active={assignment.can_edit_class}
-                    disabled={permissionBusyId === assignment.id}
-                    onClick={() => void setInstructorPermission(assignment.id, "can_edit_class", !assignment.can_edit_class)}
-                  />
-                  <InstructorPermissionToggle
-                    label="Manage Finances"
-                    active={assignment.can_manage_finances}
-                    disabled={permissionBusyId === assignment.id}
-                    onClick={() => void setInstructorPermission(assignment.id, "can_manage_finances", !assignment.can_manage_finances)}
-                  />
-                </div>
+                <InstructorPermissionEditor assignment={assignment} onSave={(update) => saveInstructorPermissions(assignment.id, update)} />
               </div>
             ))}
           </div>
@@ -18722,31 +18735,55 @@ function ProgramTeacherStaffTools({ program }: { program: Program }) {
   );
 }
 
-function InstructorPermissionToggle({
-  label,
-  active,
-  disabled,
-  onClick,
-}: {
-  label: string;
-  active: boolean;
-  disabled?: boolean;
-  onClick: () => void;
-}) {
+type InstructorPermissions = Pick<ProgramTeacher, "can_view_applications" | "can_decide_applications" | "can_edit_class" | "can_manage_finances" | "can_announce">;
+
+function instructorPermissions(assignment: ProgramTeacher): InstructorPermissions {
+  return {
+    can_view_applications: assignment.can_view_applications,
+    can_decide_applications: assignment.can_decide_applications,
+    can_edit_class: assignment.can_edit_class,
+    can_manage_finances: assignment.can_manage_finances,
+    can_announce: assignment.can_announce,
+  };
+}
+
+function InstructorPermissionEditor({ assignment, onSave }: { assignment: ProgramTeacher; onSave: (update: InstructorPermissions) => Promise<boolean> }) {
+  const [saved, setSaved] = useState(() => instructorPermissions(assignment));
+  const [draft, setDraft] = useState(() => instructorPermissions(assignment));
+  const [busy, setBusy] = useState(false);
+  const fields: Array<{ key: keyof InstructorPermissions; label: string; detail: string }> = [
+    { key: "can_view_applications", label: "View applications", detail: "See applications for this class" },
+    { key: "can_decide_applications", label: "Accept or decline", detail: "Review and decide applications" },
+    { key: "can_edit_class", label: "Edit class", detail: "Change class details and pricing" },
+    { key: "can_manage_finances", label: "Manage finances", detail: "Access student billing and payments" },
+    { key: "can_announce", label: "Send announcements", detail: "Post class announcements" },
+  ];
+  const changed = fields.some(({ key }) => draft[key] !== saved[key]);
+
+  async function save() {
+    setBusy(true);
+    const next = { ...draft, can_view_applications: draft.can_view_applications || draft.can_decide_applications };
+    const ok = await onSave(next);
+    setBusy(false);
+    if (ok) {
+      setSaved(next);
+      setDraft(next);
+    }
+  }
+
   return (
-    <button
-      type="button"
-      disabled={disabled}
-      onClick={onClick}
-      aria-pressed={active}
-      className={cn(
-        "flex min-h-9 items-center justify-between gap-2 rounded-[10px] border px-2.5 py-1.5 text-left text-xs font-semibold transition-colors disabled:opacity-50",
-        active ? "border-[#17624F] bg-[#EAF7F1] text-[#17624F]" : "border-[#D6DCE0] bg-white text-[#7B858C]",
-      )}
-    >
-      <span className="truncate">{label}</span>
-      <span className={cn("h-2 w-2 shrink-0 rounded-full", active ? "bg-[#17624F]" : "bg-[#D6DCE0]")} aria-hidden />
-    </button>
+    <div className="mt-4 border-t border-[#E3E8EC] pt-3">
+      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[#52616A]">Class permissions</p>
+      <div className="divide-y divide-[#E3E8EC]">
+        {fields.map(({ key, label, detail }) => (
+          <label key={key} className="flex min-h-14 cursor-pointer items-center justify-between gap-3 py-2">
+            <span className="min-w-0"><span className="block text-sm font-semibold text-[#26323A]">{label}</span><span className="block text-xs text-[#6B747B]">{detail}</span></span>
+            <input type="checkbox" checked={draft[key]} disabled={busy} onChange={(event) => setDraft((current) => ({ ...current, [key]: event.target.checked, ...(key === "can_decide_applications" && event.target.checked ? { can_view_applications: true } : {}), ...(key === "can_view_applications" && !event.target.checked ? { can_decide_applications: false } : {}) }))} className="h-5 w-5 shrink-0 accent-[#17624F]" />
+          </label>
+        ))}
+      </div>
+      {changed ? <div className="mt-3 flex items-center justify-between gap-3"><span className="text-xs font-medium text-[#8B5B18]">Unsaved changes</span><div className="flex gap-2"><button type="button" disabled={busy} onClick={() => setDraft(saved)} className="min-h-10 px-3 text-sm font-semibold text-[#52616A]">Cancel</button><button type="button" disabled={busy} onClick={() => void save()} className="min-h-10 rounded-[8px] bg-[#17624F] px-4 text-sm font-semibold text-white disabled:opacity-50">{busy ? "Saving…" : "Save changes"}</button></div></div> : null}
+    </div>
   );
 }
 

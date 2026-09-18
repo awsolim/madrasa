@@ -1,6 +1,6 @@
 import { requireProgramFinanceAccess } from "@/lib/finance/auth";
-import { recordFinanceAuditEvent } from "@/lib/finance/audit";
 import { requireProgramManageAccess } from "@/lib/programs/auth";
+import { recordFinanceAuditEvent } from "@/lib/finance/audit";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
 import type { Database } from "@/lib/supabase/types";
 import { logServerError } from "@/lib/monitoring/log-error";
@@ -358,7 +358,13 @@ export async function GET(request: Request, { params }: { params: Promise<{ prog
 
     const access = financeExportTypes.has(type)
       ? await requireProgramFinanceAccess(supabase, programId, user.id)
-      : await requireProgramManageAccess(supabase, programId, user.id);
+      : type === "applications"
+        ? await supabase.rpc("can_view_program_applications", { check_program_id: programId, check_profile_id: user.id }).then(({ data, error }) => error ? { ok: false as const, status: 500, error: error.message } : data ? { ok: true as const } : { ok: false as const, status: 403, error: "Application access required." })
+        : await requireProgramManageAccess(supabase, programId, user.id).then(async (result) => {
+            if (result.ok) return result;
+            const { data, error } = await supabase.rpc("is_program_teacher", { check_program_id: programId, check_profile_id: user.id });
+            return error ? { ok: false as const, status: 500, error: error.message } : data ? { ok: true as const } : result;
+          });
     if (!access.ok) {
       return Response.json({ error: access.error }, { status: access.status });
     }

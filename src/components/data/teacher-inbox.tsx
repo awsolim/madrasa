@@ -506,18 +506,34 @@ export function TeacherInboxData({ slug }: { slug: string }) {
     }
 
     const announcementRows = snapshot.announcements ?? [];
-    const requestRows = snapshot.requests ?? [];
+    const { data: applicationAssignments } = await supabase.from("program_teachers")
+      .select("program_id, can_view_applications, can_decide_applications")
+      .eq("teacher_profile_id", userId)
+      .eq("role", "instructor");
+    const permittedInstructorProgramIds = (applicationAssignments ?? [])
+      .filter((assignment) => assignment.can_view_applications || assignment.can_decide_applications)
+      .map((assignment) => assignment.program_id)
+      .filter((programId) => teacherPrograms.some((program) => program.id === programId));
+    const { data: instructorRequests } = permittedInstructorProgramIds.length
+      ? await supabase.from("enrollment_requests").select("*").in("program_id", permittedInstructorProgramIds).is("teacher_dismissed_at", null)
+      : { data: [] as EnrollmentRequest[] };
+    const requestRows = [...(snapshot.requests ?? []), ...(instructorRequests ?? [])]
+      .filter((request, index, rows) => rows.findIndex((row) => row.id === request.id) === index);
     const withdrawalRows = snapshot.withdrawals ?? [];
     const instructorRows = snapshot.instructorRows ?? [];
     const instructorEventRows = snapshot.instructorEventRows ?? [];
     const trackRows = snapshot.trackRows ?? [];
     const trackSwitchRows = snapshot.trackSwitchRows ?? [];
-    const students = snapshot.students ?? [];
-    const parents = snapshot.parents ?? [];
+    const extraProfileIds = Array.from(new Set((instructorRequests ?? []).flatMap((request) => [request.student_profile_id, request.parent_profile_id].filter((id): id is string => Boolean(id)))));
+    const { data: extraProfiles } = extraProfileIds.length ? await supabase.from("profiles").select("*").in("id", extraProfileIds) : { data: [] as Profile[] };
+    const students = [...(snapshot.students ?? []), ...(extraProfiles ?? [])];
+    const parents = [...(snapshot.parents ?? []), ...(extraProfiles ?? [])];
     const authors = snapshot.authors ?? [];
     const instructorProfiles = snapshot.instructorProfiles ?? [];
     const subscriptions = snapshot.subscriptions ?? [];
-    const requestTrackLinkRows = snapshot.requestTrackLinks ?? [];
+    const extraRequestIds = (instructorRequests ?? []).map((request) => request.id);
+    const { data: extraRequestTrackLinks } = extraRequestIds.length ? await supabase.from("enrollment_request_tracks").select("enrollment_request_id, program_track_id").in("enrollment_request_id", extraRequestIds) : { data: [] as Array<{ enrollment_request_id: string; program_track_id: string }> };
+    const requestTrackLinkRows = [...(snapshot.requestTrackLinks ?? []), ...(extraRequestTrackLinks ?? [])];
 
     const requestTrackIdsByRequestId = new Map<string, string[]>();
     for (const linkRow of requestTrackLinkRows) {
@@ -558,7 +574,7 @@ export function TeacherInboxData({ slug }: { slug: string }) {
       dismissedNotificationIds: initialDismissedIds,
       programs: teacherPrograms,
       selectedProgramId: activeProgramId,
-      canReviewRequests: directorProgramIds.length > 0,
+      canReviewRequests: directorProgramIds.length > 0 || permittedInstructorProgramIds.length > 0,
       announcementTracksByProgramId: tracksByProgramId,
       selectedAnnouncementTargetValue: selectedAnnouncementTargetValue || (activeProgramId ? announcementTargetValue(activeProgramId, null) : ""),
       announcements: announcementRows.map((announcement) => ({
