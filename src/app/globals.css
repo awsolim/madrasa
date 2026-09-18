@@ -98,39 +98,3 @@ textarea {
     padding: 0 24px;
   }
 }
-
-.page-navigation-surface {
-  position: absolute;
-  inset: 0;
-  z-index: 20;
-  min-height: 100dvh;
-  background: var(--workspace);
-  animation: page-navigation-enter 180ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
-}
-
-.page-navigation-surface.from-left {
-  animation-name: page-navigation-enter-left;
-}
-
-.page-navigation-label {
-  padding: 26px 20px;
-  font-size: 17px;
-  font-weight: 650;
-  color: var(--text-primary);
-}
-
-@keyframes page-navigation-enter {
-  from { transform: translate3d(100%, 0, 0); }
-  to { transform: translate3d(0, 0, 0); }
-}
-
-@keyframes page-navigation-enter-left {
-  from { transform: translate3d(-100%, 0, 0); }
-  to { transform: translate3d(0, 0, 0); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .page-navigation-surface {
-    animation: none;
-  }
-}

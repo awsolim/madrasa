@@ -25,7 +25,7 @@ import { friendlyErrorMessage } from "@/lib/errors";
 import { attachmentDisplayName, attachmentMetaLabel, formatAttachmentSize, normalizeMessageAttachments, type MessageAttachment } from "@/lib/messages/attachments";
 import { buildAnnouncementThreads, buildNoteThreads } from "@/lib/messages/threads";
 import { detectMobilePlatform, isStandalone } from "@/lib/pwa/install";
-import { invalidateQuery, invalidateQueryPrefix, prefetchQuery, useCachedQuery } from "@/lib/query-cache";
+import { clearPrivatePage, invalidateQuery, invalidateQueryPrefix, loadPrivateSnapshot, operationalSnapshotKey, prefetchQuery, readPrivatePage, useCachedQuery, writePrivatePage } from "@/lib/query-cache";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { Database, Json } from "@/lib/supabase/types";
 import { cn } from "@/lib/utils";
@@ -857,7 +857,7 @@ export function StudentHomeData({ slug }: { slug: string }) {
   const { announcementCount, noteCount, requestCount, actionRequired } = useStudentNotificationCounts(slug);
 
   if (loading || enrollmentLoading || applicationsLoading) {
-    return <QuietPageLoadingState />;
+    return <QuietPageLoadingState layout="home" />;
   }
 
   if (error) {
@@ -3395,7 +3395,7 @@ export function PortalAccountData({ slug }: { slug: string }) {
   const accountType = accountLabel === "Account" && rawAccountType ? `${titleCase(rawAccountType)} Account` : accountLabel;
 
   if (loading) {
-    return <QuietPageLoadingState />;
+    return <QuietPageLoadingState layout="account" />;
   }
 
   if (!isSignedIn) {
@@ -3849,34 +3849,48 @@ function ConfirmStudentRescindModal({
   );
 }
 
+type CachedAnnouncementPage = {
+  program: Program;
+  tracks: ProgramTrack[];
+  announcements: AnnouncementWithContext[];
+  readersByAnnouncementId: Record<string, Profile[]>;
+  canAnnounce: boolean;
+};
+
 export function TeacherAnnouncementData({ slug, programId }: { slug: string; programId: string }) {
-  const [canAnnounce, setCanAnnounce] = useState(false);
-  const [program, setProgram] = useState<Program | null>(null);
-  const [tracks, setTracks] = useState<ProgramTrack[]>([]);
-  const [announcements, setAnnouncements] = useState<AnnouncementWithContext[]>([]);
-  const [readersByAnnouncementId, setReadersByAnnouncementId] = useState<Record<string, Profile[]>>({});
+  const cacheKey = `announcements:${slug}:${programId}:${getCachedSessionSnapshot()?.user.id ?? "unresolved"}`;
+  const [initialPage] = useState(() => readPrivatePage<CachedAnnouncementPage>(cacheKey));
+  const [canAnnounce, setCanAnnounce] = useState(initialPage?.canAnnounce ?? false);
+  const [program, setProgram] = useState<Program | null>(initialPage?.program ?? null);
+  const [tracks, setTracks] = useState<ProgramTrack[]>(initialPage?.tracks ?? []);
+  const [announcements, setAnnouncements] = useState<AnnouncementWithContext[]>(initialPage?.announcements ?? []);
+  const [readersByAnnouncementId, setReadersByAnnouncementId] = useState<Record<string, Profile[]>>(initialPage?.readersByAnnouncementId ?? {});
   const [message, setMessage] = useState("");
   const [attachments, setAttachments] = useState<MessageAttachment[]>([]);
   const [selectedAnnouncementFeedValue, setSelectedAnnouncementFeedValue] = useState(announcementTargetValue(programId, null));
   const [selectedAnnouncementTrackIds, setSelectedAnnouncementTrackIds] = useState<string[]>([]);
   const [composeOpen, setComposeOpen] = useState(false);
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(getCachedSessionSnapshot()?.user.id ?? null);
+  const [loading, setLoading] = useState(!initialPage);
   const [error, setError] = useState<string | null>(null);
 
   // One RPC call instead of mosque -> program -> [announcements+tracks] -> [authors+receipts]
   // -> reader profiles, as six sequential stages.
   async function loadAnnouncements() {
-    setLoading(true);
+    if (!program) setLoading(true);
     setError(null);
     const supabase = createSupabaseBrowserClient();
-    const { data: sessionData } = await supabase.auth.getSession();
-    const userId = sessionData.session?.user.id ?? null;
+    const [session, permissionResult, snapshotResult] = await Promise.all([
+      loadCachedSession(),
+      supabase.rpc("can_announce_program", { check_program_id: programId }),
+      supabase.rpc("get_teacher_announcements_snapshot", { p_slug: slug, p_program_id: programId }),
+    ]);
+    const userId = session?.user.id ?? null;
     setCurrentUserId(userId);
-    const { data: allowed } = await supabase.rpc("can_announce_program", { check_program_id: programId, check_profile_id: userId ?? undefined });
-    setCanAnnounce(Boolean(allowed));
+    const allowed = Boolean(permissionResult.data);
+    setCanAnnounce(allowed);
 
-    const { data, error } = await supabase.rpc("get_teacher_announcements_snapshot", { p_slug: slug, p_program_id: programId });
+    const { data, error } = snapshotResult;
     if (error) {
       setError(friendlyErrorMessage(error, "Could not load announcements."));
       setLoading(false);
@@ -3928,13 +3942,16 @@ export function TeacherAnnouncementData({ slug, programId }: { slug: string; pro
       return next.length ? next : activeTrackIds;
     });
     setReadersByAnnouncementId(nextReaders);
-    setAnnouncements(
-      (announcementRows ?? []).map((announcement) => ({
+    const mappedAnnouncements = (announcementRows ?? []).map((announcement) => ({
         ...announcement,
         program: programRow,
         author: (authors ?? []).find((author) => author.id === announcement.author_profile_id) ?? null,
-      })),
-    );
+      }));
+    setAnnouncements(mappedAnnouncements);
+    if (userId) writePrivatePage<CachedAnnouncementPage>(`announcements:${slug}:${programId}:${userId}`, {
+      program: programRow, tracks: activeTracks, announcements: mappedAnnouncements,
+      readersByAnnouncementId: nextReaders, canAnnounce: allowed,
+    });
     setLoading(false);
   }
 
@@ -3990,7 +4007,7 @@ export function TeacherAnnouncementData({ slug, programId }: { slug: string; pro
     return <InboxLoadingPanel label="Loading announcements" />;
   }
 
-  if (error) {
+  if (error && !program) {
     return <EmptyState title="Could not load announcements" text={error} onRetry={() => window.location.reload()} />;
   }
 
@@ -4004,6 +4021,7 @@ export function TeacherAnnouncementData({ slug, programId }: { slug: string; pro
 
   return (
     <section className="space-y-6 bg-[var(--workspace)] p-4 pb-28 text-[#26323A]">
+      {error ? <p role="status" className="rounded-xl bg-[#FFF6E8] px-4 py-3 text-sm text-[#79521B]">Could not refresh announcements. Showing the last loaded messages.</p> : null}
       <div className="px-1">
         {!canAnnounce ? <p className="text-sm text-[#6B747B]">You can view class announcements. Sending announcements requires permission from the Director.</p> : !composeOpen ? (
           <button
@@ -4643,7 +4661,7 @@ export function TeacherHomeData({ slug }: { slug: string }) {
   const { totalCount: inboxItemCount, actionRequired: inboxActionRequired } = useTeacherNotificationCounts(currentUserId ? slug : "");
 
   if (loading) {
-    return <QuietPageLoadingState />;
+    return <QuietPageLoadingState layout="home" />;
   }
 
   if (error) {
@@ -4671,7 +4689,7 @@ export function AdminHomeData({ slug }: { slug: string }) {
   const { programs, loading, error } = useAdminProgramsWithTracks(slug);
 
   if (loading) {
-    return <QuietPageLoadingState />;
+    return <QuietPageLoadingState layout="home" />;
   }
 
   if (error) {
@@ -4962,7 +4980,7 @@ export function AdminMasjidData({ slug }: { slug: string }) {
   const { mosque, memberCount, error } = snapshot ?? emptyAdminMasjidSnapshot;
 
   if (loading) {
-    return <QuietPageLoadingState />;
+    return <QuietPageLoadingState layout="management" />;
   }
 
   if (error) {
@@ -5533,8 +5551,14 @@ export function TeacherProgramCreateData({ slug }: { slug: string }) {
         return;
       }
       const supabase = createSupabaseBrowserClient();
-      const { data, error } = await supabase.rpc("get_program_create_defaults_snapshot", { p_slug: slug });
-      if (error) {
+      let data: unknown;
+      try {
+        data = await loadPrivateSnapshot(`wizard-defaults:${slug}:${session.user.id}`, async () => {
+          const result = await supabase.rpc("get_program_create_defaults_snapshot", { p_slug: slug });
+          if (result.error) throw result.error;
+          return result.data;
+        });
+      } catch {
         return;
       }
 
@@ -11279,11 +11303,20 @@ function TaxReceiptStatusControl({
   );
 }
 
+type CachedFinancesPage = {
+  program: Program;
+  rows: FinanceEnrollmentRow[];
+  auditEvents: ProgramFinanceAuditEvent[];
+  auditActorsById: Record<string, Profile>;
+};
+
 export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slug: string; programId: string; mode?: "teacher" | "admin" }) {
-  const [program, setProgram] = useState<Program | null>(null);
-  const [rows, setRows] = useState<FinanceEnrollmentRow[]>([]);
-  const [auditEvents, setAuditEvents] = useState<ProgramFinanceAuditEvent[]>([]);
-  const [auditActorsById, setAuditActorsById] = useState<Record<string, Profile>>({});
+  const cacheKey = `finances:${slug}:${programId}:${mode}:${getCachedSessionSnapshot()?.user.id ?? "unresolved"}`;
+  const [initialPage] = useState(() => readPrivatePage<CachedFinancesPage>(cacheKey));
+  const [program, setProgram] = useState<Program | null>(initialPage?.program ?? null);
+  const [rows, setRows] = useState<FinanceEnrollmentRow[]>(initialPage?.rows ?? []);
+  const [auditEvents, setAuditEvents] = useState<ProgramFinanceAuditEvent[]>(initialPage?.auditEvents ?? []);
+  const [auditActorsById, setAuditActorsById] = useState<Record<string, Profile>>(initialPage?.auditActorsById ?? {});
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [paymentFilter, setPaymentFilter] = useState("all");
@@ -11295,7 +11328,7 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
   const [actionTarget, setActionTarget] = useState<{ row: FinanceEnrollmentRow; action: FinanceAction } | null>(null);
   const [detailsTarget, setDetailsTarget] = useState<FinanceEnrollmentRow | null>(null);
   const [noteTarget, setNoteTarget] = useState<FinanceEnrollmentRow | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!initialPage);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -11310,7 +11343,7 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
   // access check] -> [5-way batch] -> parent_child_links -> profiles, as seven sequential
   // stages.
   async function loadFinanceRows() {
-    setLoading(true);
+    if (!program) setLoading(true);
     setError(null);
     const supabase = createSupabaseBrowserClient();
     const session = await loadCachedSession();
@@ -11321,8 +11354,18 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
       return;
     }
 
-    const { data, error } = await supabase.rpc("get_program_finances_snapshot", { p_slug: slug, p_program_id: programId });
-    if (error) {
+    let data: unknown;
+    try {
+      data = await loadPrivateSnapshot(
+        operationalSnapshotKey("finances", slug, programId, userId),
+        async () => {
+          const result = await supabase.rpc("get_program_finances_snapshot", { p_slug: slug, p_program_id: programId });
+          if (result.error) throw result.error;
+          return result.data;
+        },
+        Boolean(program),
+      );
+    } catch (error) {
       setError(friendlyErrorMessage(error, "Could not load enrollments."));
       setLoading(false);
       return;
@@ -11348,6 +11391,7 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
     }
 
     if (!snapshot.hasAccess) {
+      clearPrivatePage(`finances:${slug}:${programId}:${mode}:${userId}`);
       setProgram(snapshot.program);
       setRows([]);
       setAuditEvents([]);
@@ -11368,8 +11412,7 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
     const auditActorIds = Array.from(new Set(auditRows.map((event) => event.actor_profile_id).filter(Boolean) as string[]));
 
     setProgram(programRow);
-    setRows(
-      enrollmentRows.map((enrollment) => {
+    const mappedRows = enrollmentRows.map((enrollment) => {
         const request = requestRows.find((item) => item.student_profile_id === enrollment.student_profile_id) ?? null;
         const subscription = subscriptionRows.find((item) => item.student_profile_id === enrollment.student_profile_id) ?? null;
         const paymentTermsHistory = paymentTermsRows.filter((terms) => terms.student_profile_id === enrollment.student_profile_id);
@@ -11390,10 +11433,14 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
           approver: request?.reviewed_by ? (profileRows.find((profile) => profile.id === request.reviewed_by) as Profile | undefined) ?? null : null,
           parent: parentId ? (profileRows.find((profile) => profile.id === parentId) as ParentDisplay | undefined) ?? null : null,
         };
-      }),
-    );
+      });
+    setRows(mappedRows);
     setAuditEvents(auditRows);
-    setAuditActorsById(Object.fromEntries(profileRows.filter((profile) => auditActorIds.includes(profile.id)).map((profile) => [profile.id, profile])));
+    const actorsById = Object.fromEntries(profileRows.filter((profile) => auditActorIds.includes(profile.id)).map((profile) => [profile.id, profile]));
+    setAuditActorsById(actorsById);
+    writePrivatePage<CachedFinancesPage>(`finances:${slug}:${programId}:${mode}:${userId}`, {
+      program: programRow, rows: mappedRows, auditEvents: auditRows, auditActorsById: actorsById,
+    });
     setLoading(false);
   }
 
@@ -11450,12 +11497,13 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
     return <EmptyState title="Class not found" text="This class could not be loaded." />;
   }
 
-  if (error) {
+  if (error?.startsWith("Finance access has not been enabled")) {
     return <EmptyState title="Finance access unavailable" text={error} />;
   }
 
   return (
     <section className="space-y-5 bg-white px-4 pb-28 pt-4 text-[#26323A]">
+      {error ? <p role="status" className="rounded-xl bg-[#FFF6E8] px-4 py-3 text-sm text-[#79521B]">Could not refresh finances. Showing the last loaded records.</p> : null}
       <div className="rounded-[28px] bg-[#17624F] p-5 text-white shadow-[0_18px_45px_rgba(23,98,79,0.22)]">
         <div className="grid gap-5 md:grid-cols-[1fr_auto] md:items-end">
           <div>
@@ -12355,11 +12403,22 @@ export function applicationListedPrice(row: { request: EnrollmentRequest; track:
   return formatPrice(cents);
 }
 
+type CachedApplicationsPage = {
+  program: Program;
+  rows: ApplicationRow[];
+  tracks: ProgramTrack[];
+  auditEvents: ProgramFinanceAuditEvent[];
+  switchRequests: ProgramTrackSwitchRequestWithContext[];
+  canDecide: boolean;
+};
+
 export function ProgramApplicationsData({ slug, programId, mode = "teacher" }: { slug: string; programId: string; mode?: "teacher" | "admin" }) {
   const searchParams = useSearchParams();
-  const [program, setProgram] = useState<Program | null>(null);
-  const [rows, setRows] = useState<ApplicationRow[]>([]);
-  const [auditEvents, setAuditEvents] = useState<ProgramFinanceAuditEvent[]>([]);
+  const cacheKey = `applications:${slug}:${programId}:${mode}:${getCachedSessionSnapshot()?.user.id ?? "unresolved"}`;
+  const [initialPage] = useState(() => readPrivatePage<CachedApplicationsPage>(cacheKey));
+  const [program, setProgram] = useState<Program | null>(initialPage?.program ?? null);
+  const [rows, setRows] = useState<ApplicationRow[]>(initialPage?.rows ?? []);
+  const [auditEvents, setAuditEvents] = useState<ProgramFinanceAuditEvent[]>(initialPage?.auditEvents ?? []);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [payStatusFilter, setPayStatusFilter] = useState("all");
@@ -12367,14 +12426,14 @@ export function ProgramApplicationsData({ slug, programId, mode = "teacher" }: {
   const [planFilter, setPlanFilter] = useState("all");
   const [needsActionOnly, setNeedsActionOnly] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
-  const [tracks, setTracks] = useState<ProgramTrack[]>([]);
+  const [tracks, setTracks] = useState<ProgramTrack[]>(initialPage?.tracks ?? []);
   const [detailsTarget, setDetailsTarget] = useState<ApplicationRow | null>(null);
-  const [trackSwitchRequests, setTrackSwitchRequests] = useState<ProgramTrackSwitchRequestWithContext[]>([]);
+  const [trackSwitchRequests, setTrackSwitchRequests] = useState<ProgramTrackSwitchRequestWithContext[]>(initialPage?.switchRequests ?? []);
   const [switchRequestBusyId, setSwitchRequestBusyId] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!initialPage);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<EditorToastState | null>(null);
-  const [canDecide, setCanDecide] = useState(true);
+  const [canDecide, setCanDecide] = useState(initialPage?.canDecide ?? true);
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
@@ -12405,7 +12464,7 @@ export function ProgramApplicationsData({ slug, programId, mode = "teacher" }: {
   // profiles, as six sequential stages. Reuses the existing can_manage_program() permission
   // check server-side rather than a separate round-trip for it.
   async function loadApplications() {
-    setLoading(true);
+    if (!program) setLoading(true);
     setError(null);
     const supabase = createSupabaseBrowserClient();
     const session = await loadCachedSession();
@@ -12416,8 +12475,18 @@ export function ProgramApplicationsData({ slug, programId, mode = "teacher" }: {
       return;
     }
 
-    const { data, error } = await supabase.rpc("get_program_applications_snapshot", { p_slug: slug, p_program_id: programId });
-    if (error) {
+    let data: unknown;
+    try {
+      data = await loadPrivateSnapshot(
+        operationalSnapshotKey("applications", slug, programId, userId),
+        async () => {
+          const result = await supabase.rpc("get_program_applications_snapshot", { p_slug: slug, p_program_id: programId });
+          if (result.error) throw result.error;
+          return result.data;
+        },
+        Boolean(program),
+      );
+    } catch (error) {
       setError(friendlyErrorMessage(error, "Could not load applications."));
       setLoading(false);
       return;
@@ -12444,6 +12513,7 @@ export function ProgramApplicationsData({ slug, programId, mode = "teacher" }: {
     }
 
     if (!snapshot.canView) {
+      clearPrivatePage(`applications:${slug}:${programId}:${mode}:${userId}`);
       setProgram(snapshot.program);
       setRows([]);
       setAuditEvents([]);
@@ -12470,24 +12540,26 @@ export function ProgramApplicationsData({ slug, programId, mode = "teacher" }: {
 
     setProgram(programRow);
     setTracks(trackRows);
-    setRows(
-      requestRows.map((request) => ({
+    const mappedRows = requestRows.map((request) => ({
         request,
         student: profileRows.find((profile) => profile.id === request.student_profile_id) as StudentDisplay | null,
         parent: request.parent_profile_id ? (profileRows.find((profile) => profile.id === request.parent_profile_id) as ParentDisplay | undefined) ?? null : null,
         track: resolveRequestTrack(request, requestTrackIdsByRequestId, trackRows),
         subscription: subscriptionRows.find((subscription) => subscription.student_profile_id === request.student_profile_id) ?? null,
         approver: request.reviewed_by ? (profileRows.find((profile) => profile.id === request.reviewed_by) as Profile | undefined) ?? null : null,
-      })),
-    );
+      }));
+    setRows(mappedRows);
     setAuditEvents(auditRows);
-    setTrackSwitchRequests(
-      switchRows.map((request) => ({
+    const mappedSwitchRequests = switchRows.map((request) => ({
         ...request,
         program: programRow,
         student: profileRows.find((profile) => profile.id === request.student_profile_id) as StudentDisplay | null,
-      })),
-    );
+      }));
+    setTrackSwitchRequests(mappedSwitchRequests);
+    writePrivatePage<CachedApplicationsPage>(`applications:${slug}:${programId}:${mode}:${userId}`, {
+      program: programRow, rows: mappedRows, tracks: trackRows, auditEvents: auditRows,
+      switchRequests: mappedSwitchRequests, canDecide: Boolean(snapshot.canDecide),
+    });
     setLoading(false);
   }
 
@@ -12560,12 +12632,13 @@ export function ProgramApplicationsData({ slug, programId, mode = "teacher" }: {
     return <EmptyState title="Class not found" text="This class could not be loaded." />;
   }
 
-  if (error) {
+  if (error?.startsWith("You don't have permission")) {
     return <EmptyState title="Applications unavailable" text={error} />;
   }
 
   return (
     <section className="space-y-5 bg-white px-4 pb-28 pt-4 text-[#26323A]">
+      {error ? <p role="status" className="rounded-xl bg-[#FFF6E8] px-4 py-3 text-sm text-[#79521B]">Could not refresh applications. Showing the last loaded records.</p> : null}
       <EditorToast toast={toast} onClose={() => setToast(null)} />
       <div className="rounded-[28px] bg-[#17624F] p-5 text-white shadow-[0_18px_45px_rgba(23,98,79,0.22)]">
         <h2 className="mt-2 text-2xl font-semibold leading-7">{program.title}</h2>
@@ -13164,8 +13237,8 @@ function mosqueProgramsQueryKey(slug: string) {
  * teacher's and admin's own program lists, and every viewer-scoped program-detail snapshot. */
 function invalidateProgramCaches(slug: string, programId: string) {
   invalidateQuery(mosqueProgramsQueryKey(slug));
-  invalidateQuery(`teacher-programs:${slug}`);
-  invalidateQuery(`admin-programs:${slug}`);
+  invalidateQueryPrefix(`teacher-programs:${slug}:`);
+  invalidateQueryPrefix(`admin-programs:${slug}:`);
   invalidateQueryPrefix(`program-detail:${slug}:${programId}:`);
 }
 
@@ -13381,10 +13454,16 @@ export async function fetchTeacherPrograms(slug: string): Promise<TeacherProgram
   }
 
   const supabase = createSupabaseBrowserClient();
-  const { data, error } = await supabase.rpc("get_teacher_programs_snapshot", { p_slug: slug });
+  const [{ data, error }, { data: permissionRows, error: permissionError }] = await Promise.all([
+    supabase.rpc("get_teacher_programs_snapshot", { p_slug: slug }),
+    supabase.from("program_teachers")
+      .select("program_id, role, can_view_applications, can_decide_applications, can_edit_class, can_manage_finances, can_announce")
+      .eq("teacher_profile_id", userId),
+  ]);
   if (error) {
     return { ...emptyTeacherProgramsResult, currentUserId: userId, error: error.message };
   }
+  if (permissionError) return { ...emptyTeacherProgramsResult, currentUserId: userId, error: permissionError.message };
 
   const snapshot = data as unknown as {
     error: string | null;
@@ -13455,10 +13534,6 @@ export async function fetchTeacherPrograms(slug: string): Promise<TeacherProgram
 
   const nextRoleByProgramId: Record<string, TeacherProgramRole> = {};
   const nextPermissionsByProgramId: Record<string, InstructorPermissions> = {};
-  const { data: permissionRows, error: permissionError } = await supabase.from("program_teachers")
-    .select("program_id, role, can_view_applications, can_decide_applications, can_edit_class, can_manage_finances, can_announce")
-    .eq("teacher_profile_id", userId);
-  if (permissionError) return { ...emptyTeacherProgramsResult, currentUserId: userId, error: permissionError.message };
   const isAdminForMosque = teacherAccountType === "admin" && (memberships ?? []).some((membership) => membership.role === "admin" && membership.status === "active");
   const canCreateForMosque = isAdminForMosque || (teacherAccountType === "teacher" && (memberships ?? []).some((membership) => membership.role === "teacher" && membership.status === "active" && membership.can_create_programs));
   const assignedPrograms = isAdminForMosque ? programsWithTracks : programsWithTracks.filter((program) => {
@@ -13493,8 +13568,20 @@ export async function fetchTeacherPrograms(slug: string): Promise<TeacherProgram
   };
 }
 
+function useViewerCacheId() {
+  const [session, setSession] = useState<ReturnType<typeof getCachedSessionSnapshot>>(() => getCachedSessionSnapshot());
+  useEffect(() => {
+    let active = true;
+    void loadCachedSession().then((next) => { if (active) setSession(next); });
+    const unsubscribe = subscribeCachedSession(setSession);
+    return () => { active = false; unsubscribe(); };
+  }, []);
+  return session === undefined ? null : session?.user.id ?? "guest";
+}
+
 function useTeacherPrograms(slug: string) {
-  const { data, loading, error: queryError, refetch } = useCachedQuery(slug ? `teacher-programs:${slug}` : null, () => fetchTeacherPrograms(slug));
+  const viewerId = useViewerCacheId();
+  const { data, loading, error: queryError, refetch } = useCachedQuery(slug && viewerId ? `teacher-programs:${slug}:${viewerId}` : null, () => fetchTeacherPrograms(slug));
   const result = data ?? emptyTeacherProgramsResult;
   return { ...result, error: result.error ?? queryError, loading, refetch };
 }
@@ -13544,7 +13631,8 @@ export async function fetchAdminProgramsWithTracks(slug: string): Promise<AdminP
 }
 
 function useAdminProgramsWithTracks(slug: string) {
-  const { data, loading, error: queryError, refetch } = useCachedQuery(slug ? `admin-programs:${slug}` : null, () => fetchAdminProgramsWithTracks(slug));
+  const viewerId = useViewerCacheId();
+  const { data, loading, error: queryError, refetch } = useCachedQuery(slug && viewerId ? `admin-programs:${slug}:${viewerId}` : null, () => fetchAdminProgramsWithTracks(slug));
   const result = data ?? emptyAdminProgramsResult;
   return { programs: result.programs, error: result.error ?? queryError, loading, refetch };
 }
@@ -14951,26 +15039,37 @@ function ChildNoteRecipientPrompt({
 // passed down as the child's initial data, so it no longer needs its own on-mount fetch --
 // only its refresh-after-send/delete fetch remains, which is a one-off user action, not a
 // page-load cost.
+type CachedStudentNotesPage = {
+  mosque: Mosque;
+  program: Program;
+  target: TeacherStudentItem;
+  notes: StudentNoteWithContext[];
+  userId: string;
+};
+
 export function TeacherStudentNotesData({ slug, programId, studentId }: { slug: string; programId: string; studentId: string }) {
-  const [mosque, setMosque] = useState<Mosque | null>(null);
-  const [program, setProgram] = useState<Program | null>(null);
-  const [target, setTarget] = useState<TeacherStudentItem | null>(null);
-  const [initialNotes, setInitialNotes] = useState<StudentNoteWithContext[]>([]);
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const cacheKey = `student-notes:${slug}:${programId}:${studentId}:${getCachedSessionSnapshot()?.user.id ?? "unresolved"}`;
+  const [initialPage] = useState(() => readPrivatePage<CachedStudentNotesPage>(cacheKey));
+  const [mosque, setMosque] = useState<Mosque | null>(initialPage?.mosque ?? null);
+  const [program, setProgram] = useState<Program | null>(initialPage?.program ?? null);
+  const [target, setTarget] = useState<TeacherStudentItem | null>(initialPage?.target ?? null);
+  const [initialNotes, setInitialNotes] = useState<StudentNoteWithContext[]>(initialPage?.notes ?? []);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(initialPage?.userId ?? null);
+  const [loading, setLoading] = useState(!initialPage);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
 
     async function load() {
-      setLoading(true);
+      if (!initialPage) setLoading(true);
       setError(null);
       const supabase = createSupabaseBrowserClient();
-      const { data: sessionData } = await supabase.auth.getSession();
-      const userId = sessionData.session?.user.id ?? null;
-
-      const { data, error: rpcError } = await supabase.rpc("get_teacher_student_notes_snapshot", { p_slug: slug, p_program_id: programId, p_student_id: studentId });
+      const [session, { data, error: rpcError }] = await Promise.all([
+        loadCachedSession(),
+        supabase.rpc("get_teacher_student_notes_snapshot", { p_slug: slug, p_program_id: programId, p_student_id: studentId }),
+      ]);
+      const userId = session?.user.id ?? null;
       if (cancelled) {
         return;
       }
@@ -15009,13 +15108,17 @@ export function TeacherStudentNotesData({ slug, programId, studentId }: { slug: 
 
       setMosque(snapshot.mosque);
       setProgram(snapshot.program);
-      setTarget({
+      const nextTarget = {
         enrollment: snapshot.enrollment,
         profile: snapshot.profile ?? null,
         parent: snapshot.parent ?? null,
-      });
+      };
+      setTarget(nextTarget);
       setInitialNotes(notes);
       setCurrentUserId(userId);
+      if (userId) writePrivatePage<CachedStudentNotesPage>(`student-notes:${slug}:${programId}:${studentId}:${userId}`, {
+        mosque: snapshot.mosque, program: snapshot.program, target: nextTarget, notes, userId,
+      });
       setLoading(false);
     }
 
@@ -15029,7 +15132,7 @@ export function TeacherStudentNotesData({ slug, programId, studentId }: { slug: 
     return <DirectorySkeleton layout="inbox" />;
   }
 
-  if (error) {
+  if (error && !program) {
     return <EmptyState title="Could not load notes" text={error} onRetry={() => window.location.reload()} />;
   }
 
@@ -15038,14 +15141,17 @@ export function TeacherStudentNotesData({ slug, programId, studentId }: { slug: 
   }
 
   return (
-    <TeacherStudentNotesPage
-      key={`${program.id}:${target.enrollment.student_profile_id}`}
-      mosque={mosque}
-      program={program}
-      target={target}
-      currentUserId={currentUserId}
-      initialNotes={initialNotes}
-    />
+    <>
+      {error ? <p role="status" className="mx-4 mt-3 rounded-xl bg-[#FFF6E8] px-4 py-3 text-sm text-[#79521B]">Could not refresh notes. Showing the last loaded messages.</p> : null}
+      <TeacherStudentNotesPage
+        key={`${program.id}:${target.enrollment.student_profile_id}`}
+        mosque={mosque}
+        program={program}
+        target={target}
+        currentUserId={currentUserId}
+        initialNotes={initialNotes}
+      />
+    </>
   );
 }
 
@@ -15063,6 +15169,11 @@ function TeacherStudentNotesPage({
   initialNotes: StudentNoteWithContext[];
 }) {
   const [notes, setNotes] = useState<StudentNoteWithContext[]>(initialNotes);
+  const [previousInitialNotes, setPreviousInitialNotes] = useState(initialNotes);
+  if (previousInitialNotes !== initialNotes) {
+    setPreviousInitialNotes(initialNotes);
+    setNotes(initialNotes);
+  }
   const [message, setMessage] = useState("");
   const [attachments, setAttachments] = useState<MessageAttachment[]>([]);
   const [loading, setLoading] = useState(false);

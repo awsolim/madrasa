@@ -20,6 +20,8 @@ import { FloatingInboxTabs, InboxSection, MiniEmpty } from "@/components/data/in
 import { QuietPageLoadingState } from "@/components/data/data-loading";
 import { useHideMobileChromeWhileMounted, useModalFocusTrap } from "@/hooks/use-modal-behavior";
 import { friendlyErrorMessage } from "@/lib/errors";
+import { getCachedSessionSnapshot, loadCachedSession } from "@/lib/client-cache";
+import { readPrivatePage, writePrivatePage } from "@/lib/query-cache";
 import { buildAnnouncementThreads, buildNoteThreads } from "@/lib/messages/threads";
 import {
   fetchNotificationState,
@@ -762,28 +764,45 @@ function StudentInboxThreadView({
   );
 }
 
+type CachedStudentInboxPage = {
+  announcements: AnnouncementWithContext[];
+  enrolledPrograms: Program[];
+  noteStudentsByProgramId: Record<string, StudentDisplay[]>;
+  notes: StudentNoteWithContext[];
+  requests: RequestWithContext[];
+  withdrawals: WithdrawalRequestWithContext[];
+  accountType: string | null;
+  trackIdsByProgramId: Record<string, string[]>;
+  joinDatesByProgramId: Record<string, string>;
+  announcementExhausted: Record<string, boolean>;
+  noteExhausted: Record<string, boolean>;
+  userId: string;
+  seenRequestIds: string[];
+};
+
 export function InboxAnnouncementsData({ slug }: { slug: string }) {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [announcements, setAnnouncements] = useState<AnnouncementWithContext[]>([]);
-  const [enrolledProgramsForInbox, setEnrolledProgramsForInbox] = useState<Program[]>([]);
-  const [noteStudentsByProgramId, setNoteStudentsByProgramId] = useState<Record<string, StudentDisplay[]>>({});
-  const [notes, setNotes] = useState<StudentNoteWithContext[]>([]);
-  const [requests, setRequests] = useState<RequestWithContext[]>([]);
-  const [studentWithdrawals, setStudentWithdrawals] = useState<WithdrawalRequestWithContext[]>([]);
+  const [initialInbox] = useState(() => readPrivatePage<CachedStudentInboxPage>(`student-inbox:${slug}:${getCachedSessionSnapshot()?.user.id ?? "unresolved"}`));
+  const [announcements, setAnnouncements] = useState<AnnouncementWithContext[]>(initialInbox?.announcements ?? []);
+  const [enrolledProgramsForInbox, setEnrolledProgramsForInbox] = useState<Program[]>(initialInbox?.enrolledPrograms ?? []);
+  const [noteStudentsByProgramId, setNoteStudentsByProgramId] = useState<Record<string, StudentDisplay[]>>(initialInbox?.noteStudentsByProgramId ?? {});
+  const [notes, setNotes] = useState<StudentNoteWithContext[]>(initialInbox?.notes ?? []);
+  const [requests, setRequests] = useState<RequestWithContext[]>(initialInbox?.requests ?? []);
+  const [studentWithdrawals, setStudentWithdrawals] = useState<WithdrawalRequestWithContext[]>(initialInbox?.withdrawals ?? []);
   const initialInboxTab = searchParams.get("tab");
   const [tab, setTab] = useState<"announcements" | "notes" | "requests">(initialInboxTab === "notes" || initialInboxTab === "requests" ? initialInboxTab : "announcements");
   const [selectedThread, setSelectedThread] = useState<StudentInboxThread | null>(null);
   const [selectedNoteProgramId, setSelectedNoteProgramId] = useState<string | null>(null);
-  const [inboxAccountType, setInboxAccountType] = useState<string | null>(null);
-  const [announcementTrackIdsByProgramId, setAnnouncementTrackIdsByProgramId] = useState<Record<string, string[]>>({});
-  const [announcementJoinDateByProgramId, setAnnouncementJoinDateByProgramId] = useState<Record<string, string>>({});
-  const [announcementThreadExhausted, setAnnouncementThreadExhausted] = useState<Record<string, boolean>>({});
+  const [inboxAccountType, setInboxAccountType] = useState<string | null>(initialInbox?.accountType ?? null);
+  const [announcementTrackIdsByProgramId, setAnnouncementTrackIdsByProgramId] = useState<Record<string, string[]>>(initialInbox?.trackIdsByProgramId ?? {});
+  const [announcementJoinDateByProgramId, setAnnouncementJoinDateByProgramId] = useState<Record<string, string>>(initialInbox?.joinDatesByProgramId ?? {});
+  const [announcementThreadExhausted, setAnnouncementThreadExhausted] = useState<Record<string, boolean>>(initialInbox?.announcementExhausted ?? {});
   const [announcementThreadLoadingOlder, setAnnouncementThreadLoadingOlder] = useState<Record<string, boolean>>({});
-  const [noteThreadExhausted, setNoteThreadExhausted] = useState<Record<string, boolean>>({});
+  const [noteThreadExhausted, setNoteThreadExhausted] = useState<Record<string, boolean>>(initialInbox?.noteExhausted ?? {});
   const [noteThreadLoadingOlder, setNoteThreadLoadingOlder] = useState<Record<string, boolean>>({});
-  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
-  const [seenRequestIds, setSeenRequestIds] = useState<Set<string>>(new Set());
+  const [currentUserId, setCurrentUserId] = useState<string | null>(initialInbox?.userId ?? null);
+  const [seenRequestIds, setSeenRequestIds] = useState<Set<string>>(new Set(initialInbox?.seenRequestIds ?? []));
   const [paymentNotice, setPaymentNotice] = useState<"success" | "cancelled" | null>(null);
   const [protectedClear, setProtectedClear] = useState<{ mode: "single" | "all"; requestIds: string[]; count: number } | null>(null);
   const [toast, setToast] = useState<EditorToastState | null>(null);
@@ -795,7 +814,8 @@ export function InboxAnnouncementsData({ slug }: { slug: string }) {
   const [cancelRegistrationTarget, setCancelRegistrationTarget] = useState<ApplicantApplicationRow | null>(null);
   const [cancelRegistrationBusy, setCancelRegistrationBusy] = useState(false);
   const [paymentConfirming, setPaymentConfirming] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(!initialInbox);
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(Boolean(initialInbox));
   const [error, setError] = useState<string | null>(null);
   const inboxDeepLinkHandledRef = useRef<string | null>(null);
 
@@ -866,9 +886,13 @@ export function InboxAnnouncementsData({ slug }: { slug: string }) {
   // used to be a per-thread SQL LIMIT happens here instead, on the RPC's full result set --
   // same output, just computed client-side rather than N round-trips.
   async function loadInbox() {
+    setError(null);
     const supabase = createSupabaseBrowserClient();
-    const { data: sessionData } = await supabase.auth.getSession();
-    const userId = sessionData.session?.user.id;
+    const [session, inboxResult] = await Promise.all([
+      loadCachedSession(),
+      supabase.rpc("get_student_inbox_snapshot", { p_slug: slug }),
+    ]);
+    const userId = session?.user.id;
     if (!userId) {
       setCurrentUserId(null);
       setSeenRequestIds(new Set());
@@ -892,7 +916,7 @@ export function InboxAnnouncementsData({ slug }: { slug: string }) {
     const { seen: initialSeenRequestIds } = await fetchNotificationState(userId);
     setSeenRequestIds(initialSeenRequestIds);
 
-    const { data, error } = await supabase.rpc("get_student_inbox_snapshot", { p_slug: slug });
+    const { data, error } = inboxResult;
     if (error) {
       setLoading(false);
       setError(friendlyErrorMessage(error, "Could not load inbox."));
@@ -937,11 +961,11 @@ export function InboxAnnouncementsData({ slug }: { slug: string }) {
     const enrollmentRows = (snapshot.enrollments ?? []).filter((enrollment) => isCurrentEnrollmentStatus(enrollment.status));
     const enrollmentTrackRows = snapshot.enrollmentTracks ?? [];
     const enrolledTrackIdsByProgramId = getEnrollmentTrackIdsByProgram(enrollmentRows, enrollmentTrackRows);
-    setAnnouncementTrackIdsByProgramId(
-      Object.fromEntries(Array.from(enrolledTrackIdsByProgramId.entries()).map(([programId, trackIds]) => [programId, Array.from(trackIds)])),
-    );
+    const nextTrackIdsByProgramId = Object.fromEntries(Array.from(enrolledTrackIdsByProgramId.entries()).map(([programId, trackIds]) => [programId, Array.from(trackIds)]));
+    setAnnouncementTrackIdsByProgramId(nextTrackIdsByProgramId);
     const enrolledJoinDatesByProgramId = getEnrollmentJoinDatesByProgram(enrollmentRows);
-    setAnnouncementJoinDateByProgramId(Object.fromEntries(enrolledJoinDatesByProgramId.entries()));
+    const nextJoinDatesByProgramId = Object.fromEntries(enrolledJoinDatesByProgramId.entries());
+    setAnnouncementJoinDateByProgramId(nextJoinDatesByProgramId);
 
     const enrolledProgramIds = enrollmentRows.map((enrollment) => enrollment.program_id);
     const requestRows = snapshot.requests ?? [];
@@ -976,7 +1000,8 @@ export function InboxAnnouncementsData({ slug }: { slug: string }) {
     }
     const childProfiles = isParent ? [...children, ...requestStudents] : requestStudents;
     const enrolledProgramSet = new Set(enrolledProgramIds);
-    setEnrolledProgramsForInbox(programs.filter((program) => enrolledProgramSet.has(program.id)));
+    const nextEnrolledPrograms = programs.filter((program) => enrolledProgramSet.has(program.id));
+    setEnrolledProgramsForInbox(nextEnrolledPrograms);
     const studentProfilesForNotes = isParent ? childProfiles : ([...(profile ? [{ id: userId, account_type: profile.account_type } as StudentDisplay] : []), ...noteStudents] as StudentDisplay[]);
     const nextNoteStudentsByProgramId: Record<string, StudentDisplay[]> = {};
     for (const enrollment of enrollmentRows) {
@@ -991,8 +1016,7 @@ export function InboxAnnouncementsData({ slug }: { slug: string }) {
     }
     setNoteStudentsByProgramId(nextNoteStudentsByProgramId);
 
-    setRequests(
-      requestRows.map((request) => ({
+    const nextRequests = requestRows.map((request) => ({
         ...request,
         program: programs.find((program) => program.id === request.program_id) ?? null,
         student: childProfiles.find((student) => student.id === request.student_profile_id) ?? null,
@@ -1000,28 +1024,26 @@ export function InboxAnnouncementsData({ slug }: { slug: string }) {
         approver: request.reviewed_by ? (requestReviewers.find((reviewer) => reviewer.id === request.reviewed_by) as Profile | undefined) ?? null : null,
         track: resolveRequestTrack(request, requestTrackIdsByRequestId, programTrackRows),
         subscription: requestSubscriptions.find((subscription) => subscription.program_id === request.program_id && subscription.student_profile_id === request.student_profile_id) ?? null,
-      })),
-    );
-    setStudentWithdrawals(
-      withdrawalRows.map((request) => ({
+      }));
+    setRequests(nextRequests);
+    const nextWithdrawals = withdrawalRows.map((request) => ({
         ...request,
         program: programs.find((program) => program.id === request.program_id) ?? null,
         student: childProfiles.find((student) => student.id === request.student_profile_id) ?? null,
-      })),
-    );
+      }));
+    setStudentWithdrawals(nextWithdrawals);
 
     const noteAuthors = snapshot.noteAuthors ?? [];
     const noteRecipients = snapshot.noteRecipients ?? [];
     const studentProfiles = [...childProfiles, ...noteStudents];
-    setNotes(
-      noteRows.map((note) => ({
+    const nextNotes = noteRows.map((note) => ({
         ...note,
         program: programs.find((program) => program.id === note.program_id) ?? null,
         student: studentProfiles.find((student) => student.id === note.student_profile_id) ?? null,
         recipient: noteRecipients.find((recipient) => recipient.id === note.recipient_profile_id) ?? null,
         author: noteAuthors.find((author) => author.id === note.author_profile_id) ?? null,
-      })),
-    );
+      }));
+    setNotes(nextNotes);
 
     if (enrolledProgramIds.length === 0) {
       setAnnouncements([]);
@@ -1031,6 +1053,13 @@ export function InboxAnnouncementsData({ slug }: { slug: string }) {
       setAnnouncementThreadLoadingOlder({});
       setNoteThreadExhausted({});
       setNoteThreadLoadingOlder({});
+      writePrivatePage<CachedStudentInboxPage>(`student-inbox:${slug}:${userId}`, {
+        announcements: [], enrolledPrograms: [], noteStudentsByProgramId: {}, notes: nextNotes,
+        requests: nextRequests, withdrawals: nextWithdrawals, accountType: snapshot.accountType ?? null,
+        trackIdsByProgramId: nextTrackIdsByProgramId, joinDatesByProgramId: nextJoinDatesByProgramId,
+        announcementExhausted: {}, noteExhausted: {}, userId, seenRequestIds: Array.from(initialSeenRequestIds),
+      });
+      setHasLoadedOnce(true);
       setLoading(false);
       return;
     }
@@ -1063,6 +1092,15 @@ export function InboxAnnouncementsData({ slug }: { slug: string }) {
       .filter((announcement) => !announcement.receipt?.dismissed_at);
 
     setAnnouncements(visibleAnnouncements);
+    writePrivatePage<CachedStudentInboxPage>(`student-inbox:${slug}:${userId}`, {
+      announcements: visibleAnnouncements, enrolledPrograms: nextEnrolledPrograms,
+      noteStudentsByProgramId: nextNoteStudentsByProgramId, notes: nextNotes,
+      requests: nextRequests, withdrawals: nextWithdrawals, accountType: snapshot.accountType ?? null,
+      trackIdsByProgramId: nextTrackIdsByProgramId, joinDatesByProgramId: nextJoinDatesByProgramId,
+      announcementExhausted: nextAnnouncementThreadExhausted, noteExhausted: nextNoteThreadExhausted,
+      userId, seenRequestIds: Array.from(initialSeenRequestIds),
+    });
+    setHasLoadedOnce(true);
     setLoading(false);
   }
 
@@ -1507,10 +1545,11 @@ export function InboxAnnouncementsData({ slug }: { slug: string }) {
         />
       </div>
       <div className="space-y-4 p-4">
-        {error ? (
+        {error && hasLoadedOnce ? <p role="status" className="rounded-xl bg-[#FFF6E8] px-4 py-3 text-sm text-[#79521B]">Could not refresh inbox. Showing the last loaded messages.</p> : null}
+        {error && !hasLoadedOnce ? (
           <EmptyState title="Could not load inbox" text={error} onRetry={() => window.location.reload()} />
         ) : loading ? (
-          <QuietPageLoadingState />
+          <QuietPageLoadingState layout="inbox" />
         ) : selectedThread ? (
           <StudentInboxThreadView
             thread={selectedThread}

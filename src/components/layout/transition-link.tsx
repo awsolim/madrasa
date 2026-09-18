@@ -3,6 +3,9 @@
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
 import type { ComponentProps, MouseEvent, ReactNode } from "react";
+import { getCachedSessionSnapshot, loadCachedSession } from "@/lib/client-cache";
+import { operationalSnapshotKey, prefetchPrivateSnapshot } from "@/lib/query-cache";
+import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 
 type TransitionDirection = "from-right" | "from-left";
 type PreviewKind = "home" | "classes" | "inbox" | "me" | "subpage";
@@ -55,10 +58,45 @@ export function TransitionLink({
   const pathname = usePathname();
   const router = useRouter();
 
+  function warmDestination() {
+    router.prefetch(href);
+    const destination = new URL(href, window.location.href).pathname;
+    const match = destination.match(/^\/m\/([^/]+)\/(?:teacher\/classes|admin\/programs)\/([^/]+)\/(applications|finances)$/);
+    const wizardMatch = destination.match(/^\/m\/([^/]+)\/(?:teacher\/classes|admin\/programs)\/new$/);
+    if (!match && !wizardMatch) return;
+    void (getCachedSessionSnapshot() === undefined ? loadCachedSession() : Promise.resolve(getCachedSessionSnapshot())).then((session) => {
+      const userId = session?.user.id;
+      if (!userId) return;
+      if (wizardMatch) {
+        const slug = wizardMatch[1];
+        prefetchPrivateSnapshot(`wizard-defaults:${slug}:${userId}`, async () => {
+          const { data, error } = await createSupabaseBrowserClient().rpc("get_program_create_defaults_snapshot", { p_slug: slug });
+          if (error) throw error;
+          return data;
+        });
+        return;
+      }
+      if (!match) return;
+      const [, slug, programId, kind] = match;
+      const key = operationalSnapshotKey(kind as "applications" | "finances", slug, programId, userId);
+      prefetchPrivateSnapshot(key, async () => {
+        const supabase = createSupabaseBrowserClient();
+        const { data, error } = kind === "applications"
+          ? await supabase.rpc("get_program_applications_snapshot", { p_slug: slug, p_program_id: programId })
+          : await supabase.rpc("get_program_finances_snapshot", { p_slug: slug, p_program_id: programId });
+        if (error) throw error;
+        return data;
+      });
+    });
+  }
+
   return (
     <Link
       {...props}
       href={href}
+      onPointerEnter={(event) => { props.onPointerEnter?.(event); warmDestination(); }}
+      onFocus={(event) => { props.onFocus?.(event); warmDestination(); }}
+      onTouchStart={(event) => { props.onTouchStart?.(event); warmDestination(); }}
       onClick={(event) => {
         props.onClick?.(event);
         if (!canHandleClientClick(event) || href === pathname) {

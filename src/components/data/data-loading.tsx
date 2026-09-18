@@ -70,8 +70,8 @@ export function DirectorySkeleton({ layout = "management" }: { layout?: LoadingL
   return <AppLoadingSkeleton layout={layout} />;
 }
 
-export function QuietPageLoadingState() {
-  return <div className="min-h-[calc(100vh-260px)] bg-[var(--workspace)]" aria-busy="true" aria-label="Loading" />;
+export function QuietPageLoadingState({ layout = "classes" }: { layout?: LoadingLayout }) {
+  return <AppLoadingSkeleton layout={layout} />;
 }
 
 // For the brief moment an auth flow (Google callback, password reset, profile completion)

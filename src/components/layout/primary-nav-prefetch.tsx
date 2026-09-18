@@ -29,13 +29,13 @@ export function PrimaryNavPrefetch({ slug, section }: { slug: string; section: "
       const userId = session?.user.id ?? null;
 
       if (section === "teacher" && userId) {
-        prefetchQuery(`teacher-programs:${slug}`, () => fetchTeacherPrograms(slug));
+        prefetchQuery(`teacher-programs:${slug}:${userId}`, () => fetchTeacherPrograms(slug));
         prefetchQuery(`notification-counts:teacher:${slug}:${userId}`, () => fetchTeacherNotificationCounts(slug, userId));
       }
 
       if (section === "admin" && userId) {
-        prefetchQuery(`teacher-programs:${slug}`, () => fetchTeacherPrograms(slug));
-        prefetchQuery(`admin-programs:${slug}`, () => fetchAdminProgramsWithTracks(slug));
+        prefetchQuery(`teacher-programs:${slug}:${userId}`, () => fetchTeacherPrograms(slug));
+        prefetchQuery(`admin-programs:${slug}:${userId}`, () => fetchAdminProgramsWithTracks(slug));
         prefetchQuery(`notification-counts:teacher:${slug}:${userId}`, () => fetchTeacherNotificationCounts(slug, userId));
       }
 

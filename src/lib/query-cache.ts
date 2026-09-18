@@ -20,6 +20,52 @@ type CacheEntry<T> = { data: T; updatedAt: number };
 const cache = new Map<string, CacheEntry<unknown>>();
 const inflight = new Map<string, Promise<unknown>>();
 const subscribers = new Map<string, Set<() => void>>();
+// Operational views (applications and finances) contain private records. Keep their
+// last rendered result only in memory, so a back navigation is warm without writing
+// those records to localStorage.
+const privatePageCache = new Map<string, unknown>();
+const privateSnapshotCache = new Map<string, CacheEntry<unknown>>();
+const privateSnapshotInflight = new Map<string, Promise<unknown>>();
+let privateCacheEpoch = 0;
+
+export function operationalSnapshotKey(kind: "applications" | "finances", slug: string, programId: string, userId: string) {
+  return `${kind}:${slug}:${programId}:${userId}`;
+}
+
+export function loadPrivateSnapshot<T>(key: string, fetcher: () => Promise<T>, force = false): Promise<T> {
+  const existing = privateSnapshotCache.get(key);
+  if (!force && existing && Date.now() - existing.updatedAt < 20_000) return Promise.resolve(existing.data as T);
+  const running = privateSnapshotInflight.get(key);
+  if (running) return running as Promise<T>;
+  const epoch = privateCacheEpoch;
+  const request = fetcher().then((data) => {
+    if (epoch === privateCacheEpoch) {
+      privateSnapshotCache.set(key, { data, updatedAt: Date.now() });
+      // Keep this small and short lived; these snapshots can contain private records.
+      if (privateSnapshotCache.size > 12) privateSnapshotCache.delete(privateSnapshotCache.keys().next().value as string);
+    }
+    return data;
+  }).finally(() => privateSnapshotInflight.delete(key));
+  privateSnapshotInflight.set(key, request);
+  return request;
+}
+
+export function prefetchPrivateSnapshot<T>(key: string, fetcher: () => Promise<T>) {
+  void loadPrivateSnapshot(key, fetcher).catch(() => undefined);
+}
+
+export function readPrivatePage<T>(key: string): T | undefined {
+  return privatePageCache.get(key) as T | undefined;
+}
+
+export function writePrivatePage<T>(key: string, value: T) {
+  privatePageCache.set(key, value);
+  if (privatePageCache.size > 24) privatePageCache.delete(privatePageCache.keys().next().value as string);
+}
+
+export function clearPrivatePage(key: string) {
+  privatePageCache.delete(key);
+}
 
 const PERSIST_PREFIX = "madrasa:query-cache:";
 // Skips persisting any entry over this size. Real list snapshots with several classes' worth
@@ -134,7 +180,7 @@ function subscribe(key: string, listener: () => void) {
   };
 }
 
-async function runFetch<T>(key: string, fetcher: () => Promise<T>): Promise<T> {
+async function runFetch<T>(key: string, fetcher: () => Promise<T>, persist = true): Promise<T> {
   const existing = inflight.get(key);
   if (existing) {
     return existing as Promise<T>;
@@ -144,7 +190,8 @@ async function runFetch<T>(key: string, fetcher: () => Promise<T>): Promise<T> {
     .then((data) => {
       const entry = { data, updatedAt: Date.now() };
       cache.set(key, entry);
-      persistEntry(key, entry);
+      if (persist) persistEntry(key, entry);
+      else removePersistedEntry(key);
       notify(key);
       return data;
     })
@@ -173,7 +220,7 @@ function cacheSnapshot<T>(key: string | null | undefined) {
 export function useCachedQuery<T>(
   key: string | null | undefined,
   fetcher: () => Promise<T>,
-  options?: { staleTimeMs?: number },
+  options?: { staleTimeMs?: number; persist?: boolean },
 ): { data: T | undefined; loading: boolean; error: string | null; refetch: () => Promise<void> } {
   const staleTimeMs = options?.staleTimeMs ?? 30_000;
   const fetcherRef = useRef(fetcher);
@@ -203,9 +250,11 @@ export function useCachedQuery<T>(
       return;
     }
     try {
-      await runFetch(key, () => fetcherRef.current());
+      await runFetch(key, () => fetcherRef.current(), options?.persist !== false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Something went wrong.");
+      // A failed background refresh must not replace an already useful page
+      // with its initial error state. Cold loads still report the failure.
+      if (!cache.has(key)) setError(err instanceof Error ? err.message : "Something went wrong.");
       setSnapshot((current) => ({ ...current, loading: false }));
     }
   }
@@ -218,6 +267,9 @@ export function useCachedQuery<T>(
     const unsubscribe = subscribe(key, () => {
       setSnapshot({ data: (cache.get(key) as CacheEntry<T> | undefined)?.data, loading: false });
       setError(null);
+      // Invalidation marks visible data stale instead of removing it. Refresh while
+      // the user continues reading the previous result.
+      void load(false);
     });
 
     // load()'s own setState calls only happen inside an awaited async continuation (the
@@ -244,18 +296,22 @@ export function useCachedQuery<T>(
   return { data, loading, error, refetch };
 }
 
-/** Drops one cached entry and notifies any mounted consumers to refetch on next read. */
+/** Marks one entry stale while preserving its data for the next render. */
 export function invalidateQuery(key: string) {
-  cache.delete(key);
+  const entry = cache.get(key);
+  if (entry) {
+    entry.updatedAt = 0;
+  }
   removePersistedEntry(key);
   notify(key);
 }
 
-/** Drops every cached entry whose key starts with `prefix` (e.g. all keys for one program). */
+/** Marks matching entries stale without blanking mounted views. */
 export function invalidateQueryPrefix(prefix: string) {
   for (const key of Array.from(cache.keys())) {
     if (key.startsWith(prefix)) {
-      cache.delete(key);
+      const entry = cache.get(key);
+      if (entry) entry.updatedAt = 0;
       removePersistedEntry(key);
       notify(key);
     }
@@ -277,6 +333,10 @@ export function prefetchQuery<T>(key: string, fetcher: () => Promise<T>) {
  * now that the cache survives a closed app, a full sign-out must leave no trace on a
  * shared device for the next person who logs in. */
 export function clearAllQueryCache() {
+  privateCacheEpoch += 1;
+  privatePageCache.clear();
+  privateSnapshotCache.clear();
+  privateSnapshotInflight.clear();
   for (const key of Array.from(cache.keys())) {
     cache.delete(key);
     notify(key);

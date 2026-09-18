@@ -39,6 +39,8 @@ export function DesktopSidebar({
 }) {
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const [pendingNavigation, setPendingNavigation] = useState<{ fromPath: string; href: string } | null>(null);
+  const pendingHref = pendingNavigation?.fromPath === pathname ? pendingNavigation.href : null;
   const whiteChrome = /\/teacher\/classes\/[^/]+\/instructors$/.test(pathname);
 
   const [displayName, setDisplayName] = useState(titleFromSlug(mosqueSlug) || appName);
@@ -91,7 +93,9 @@ export function DesktopSidebar({
         <p className="px-3 pb-2 text-[11px] font-semibold uppercase tracking-wide text-[#8A9399]">Workspace</p>
 
         {visibleItems.map((item) => {
-          const active = isNavItemActive(pathname, item);
+          const active = pendingHref
+            ? pendingHref === item.href || pendingHref.startsWith(`${item.href}/`)
+            : isNavItemActive(pathname, item);
           const isInboxItem = item.label === "Inbox" || item.label === "Announcements";
           const badgeCount = isInboxItem ? inboxBadgeCount : 0;
           const actionRequired = isInboxItem ? inboxActionRequired : false;
@@ -102,7 +106,7 @@ export function DesktopSidebar({
           if (label === "Me" || subItems.length) {
             const firstSubItemHref = label === "Me" ? `${accountHref}?panel=settings` : subItems[0]?.href;
             return (
-              <DesktopNavGroup key={`${item.label}-${item.href}`} item={item} active={active || subItemActive} firstSubItemHref={firstSubItemHref} badgeCount={badgeCount} actionRequired={actionRequired}>
+              <DesktopNavGroup key={`${item.label}-${item.href}`} item={item} active={active || subItemActive} firstSubItemHref={firstSubItemHref} badgeCount={badgeCount} actionRequired={actionRequired} onNavigate={(href) => setPendingNavigation({ fromPath: pathname, href })}>
                 {label === "Me" ? (
                   <DesktopAccountSubnav mosqueSlug={mosqueSlug} accountHref={accountHref} />
                 ) : (
@@ -116,6 +120,7 @@ export function DesktopSidebar({
             <Link
               key={`${item.label}-${item.href}`}
               href={item.href}
+              onClick={() => setPendingNavigation({ fromPath: pathname, href: item.href })}
               className={cn(
                 "flex min-h-11 items-center gap-3 rounded-2xl px-3 text-sm font-semibold text-[#5B6770] transition-colors hover:bg-[#F1F5F6] hover:text-[var(--text-primary)]",
                 active && "bg-[#E8F5F1] text-[var(--brand-green)]",
@@ -144,6 +149,7 @@ function DesktopNavGroup({
   badgeCount,
   actionRequired = false,
   children,
+  onNavigate,
 }: {
   item: NavItem;
   active: boolean;
@@ -151,6 +157,7 @@ function DesktopNavGroup({
   badgeCount: number;
   actionRequired?: boolean;
   children: ReactNode;
+  onNavigate: (href: string) => void;
 }) {
   const router = useRouter();
   const [open, setOpen] = useState(active);
@@ -169,6 +176,7 @@ function DesktopNavGroup({
         onClick={() => {
           setOpen(true);
           if (firstSubItemHref) {
+            onNavigate(firstSubItemHref);
             window.dispatchEvent(new CustomEvent("tareeqah:nav-preview", {
               detail: { href: firstSubItemHref, label, fromPath: window.location.pathname, kind: "tab" },
             }));

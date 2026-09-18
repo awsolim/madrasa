@@ -449,17 +449,21 @@ export function TeacherInboxData({ slug }: { slug: string }) {
   // below (matching program/student/parent/author/track context onto each row) is unchanged.
   async function fetchTeacherInboxSnapshot(): Promise<TeacherInboxSnapshot> {
     const supabase = createSupabaseBrowserClient();
-    const { data: sessionData } = await supabase.auth.getSession();
-    const userId = sessionData.session?.user.id;
+    const session = await loadCachedSession();
+    const userId = session?.user.id;
     if (!userId) {
       return { ...emptyTeacherInboxSnapshot };
     }
 
-    const { seen: initialSeenIds, dismissed: initialDismissedIds } = await fetchNotificationState(userId);
-    const { data, error } = await supabase.rpc("get_teacher_inbox_snapshot", {
-      p_slug: slug,
-      p_selected_program_id: selectedProgramId || null,
-    });
+    const [notificationState, { data, error }, { data: applicationAssignments }] = await Promise.all([
+      fetchNotificationState(userId),
+      supabase.rpc("get_teacher_inbox_snapshot", { p_slug: slug, p_selected_program_id: selectedProgramId || null }),
+      supabase.from("program_teachers")
+        .select("program_id, can_view_applications, can_decide_applications")
+        .eq("teacher_profile_id", userId)
+        .eq("role", "instructor"),
+    ]);
+    const { seen: initialSeenIds, dismissed: initialDismissedIds } = notificationState;
 
     if (error) {
       return { ...emptyTeacherInboxSnapshot, currentUserId: userId, seenRequestIds: initialSeenIds, dismissedNotificationIds: initialDismissedIds, error: friendlyErrorMessage(error, "Could not load teacher inbox.") };
@@ -506,10 +510,6 @@ export function TeacherInboxData({ slug }: { slug: string }) {
     }
 
     const announcementRows = snapshot.announcements ?? [];
-    const { data: applicationAssignments } = await supabase.from("program_teachers")
-      .select("program_id, can_view_applications, can_decide_applications")
-      .eq("teacher_profile_id", userId)
-      .eq("role", "instructor");
     const permittedInstructorProgramIds = (applicationAssignments ?? [])
       .filter((assignment) => assignment.can_view_applications || assignment.can_decide_applications)
       .map((assignment) => assignment.program_id)
@@ -608,7 +608,7 @@ export function TeacherInboxData({ slug }: { slug: string }) {
   }
 
   const teacherInboxKey = teacherInboxSession === undefined ? null : `teacher-inbox:${slug}:${teacherInboxSession?.user.id ?? "guest"}`;
-  const { data: inboxSnapshot, loading: inboxQueryLoading, refetch } = useCachedQuery(teacherInboxKey, () => fetchTeacherInboxSnapshot());
+  const { data: inboxSnapshot, loading: inboxQueryLoading, refetch } = useCachedQuery(teacherInboxKey, () => fetchTeacherInboxSnapshot(), { persist: false });
 
   useEffect(() => {
     if (!inboxSnapshot) {
