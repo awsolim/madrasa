@@ -1,13 +1,14 @@
 "use client";
 
 import Image from "next/image";
-import Link from "next/link";
+import Link from "@/components/layout/workspace-link";
 import { createPortal } from "react-dom";
 import { Upload } from "tus-js-client";
 import { ApplicationDecisionModal, ApplicationReviewOverlay, type ApplicationRow } from "@/components/data/application-review";
 import { ChildrenManager } from "@/components/data/children-manager";
 import { TransitionLink } from "@/components/layout/transition-link";
-import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
+import { useWorkspacePathname as usePathname, useWorkspaceRouter as useRouter } from "@/components/layout/workspace-navigation";
 import type { Dispatch, PointerEvent as ReactPointerEvent, ReactNode, RefObject, SetStateAction, WheelEvent as ReactWheelEvent } from "react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { EmptyState } from "@/components/data/empty-state";
@@ -25,7 +26,8 @@ import { friendlyErrorMessage } from "@/lib/errors";
 import { attachmentDisplayName, attachmentMetaLabel, formatAttachmentSize, normalizeMessageAttachments, type MessageAttachment } from "@/lib/messages/attachments";
 import { buildAnnouncementThreads, buildNoteThreads } from "@/lib/messages/threads";
 import { detectMobilePlatform, isStandalone } from "@/lib/pwa/install";
-import { clearPrivatePage, invalidateQuery, invalidateQueryPrefix, loadPrivateSnapshot, operationalSnapshotKey, prefetchQuery, readPrivatePage, useCachedQuery, writePrivatePage } from "@/lib/query-cache";
+import { clearPrivatePage, invalidatePrivateSnapshots, invalidateQuery, invalidateQueryPrefix, loadPrivateSnapshot, operationalSnapshotKey, prefetchQuery, readPrivatePage, useCachedQuery, writePrivatePage } from "@/lib/query-cache";
+import { loadProgramEditor, loadProgramDirectorOptions } from "@/lib/program-editor-data";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { Database, Json } from "@/lib/supabase/types";
 import { cn } from "@/lib/utils";
@@ -6527,89 +6529,35 @@ export function TeacherProgramSettingsData({ slug, programId, returnHref }: { sl
       : builderStatus.billingDurationMonths || String(builderStatus.durationMonths || monthsBetweenDates(builderStatus.startDate, builderStatus.endDate) || "");
 
   useEffect(() => {
-    const supabase = createSupabaseBrowserClient();
+    let cancelled = false;
+    void loadProgramDirectorOptions(slug).then(options => {
+      if (!cancelled) setDirectorOptions(options);
+    }).catch(() => { /* The class can still be edited without changing its director. */ });
 
     async function load() {
       setLoading(true);
       setError(null);
-
-      const { data: mosque } = await supabase.from("mosques").select("id").eq("slug", slug).maybeSingle();
-      if (!mosque) {
-        setProgram(null);
-        setLoading(false);
-        return;
-      }
-
-      const [{ data: programRow, error: programError }, { data: editAllowed }, detailResult, outcomeResult, contentSectionResult, faqResult, mediaResult, trackResult, sessionResult, transferRuleResult] = await Promise.all([
-        supabase.from("programs").select("*").eq("id", programId).eq("mosque_id", mosque.id).maybeSingle(),
-        supabase.rpc("can_edit_program_details", { check_program_id: programId }),
-        supabase.from("program_details").select("*").eq("program_id", programId).maybeSingle(),
-        supabase.from("program_outcomes").select("*").eq("program_id", programId).order("sort_order", { ascending: true }),
-        supabase.from("program_content_sections").select("*").eq("program_id", programId).order("sort_order", { ascending: true }),
-        supabase.from("program_faqs").select("*").eq("program_id", programId).order("sort_order", { ascending: true }),
-        supabase.from("program_media").select("*").eq("program_id", programId).order("sort_order", { ascending: true }),
-        supabase.from("program_tracks").select("*").eq("program_id", programId).order("sort_order", { ascending: true }),
-        supabase.from("program_sessions").select("*").eq("program_id", programId).order("session_date", { ascending: true }).order("start_time", { ascending: true }),
-        supabase.from("program_track_transfer_rules").select("*").eq("program_id", programId),
-      ]);
-      const trackIds = (trackResult.data ?? []).map((track) => track.id);
-      const { data: trackSessionLinks } = trackIds.length
-        ? await supabase.from("program_track_sessions").select("*").in("program_track_id", trackIds)
-        : { data: [] as ProgramTrackSession[] };
-
-      if (programError) {
-        setError(friendlyErrorMessage(programError, "Could not load this class."));
-        setLoading(false);
-        return;
-      }
-
-      setProgram(programRow ?? null);
-      setDetails(detailResult.data ?? null);
-      setCanEdit(Boolean(editAllowed));
-      setIsAdminEditor(false);
-      setDirectorOptions([]);
-      if (programRow) {
+      try {
+        const snapshot = await loadProgramEditor(slug, programId);
+        if (cancelled) return;
+        const programRow = snapshot.program;
+        const detailResult = { data: snapshot.details };
+        const outcomeResult = { data: snapshot.outcomes };
+        const contentSectionResult = { data: snapshot.contentSections };
+        const faqResult = { data: snapshot.faqs };
+        const mediaResult = { data: snapshot.media };
+        const trackResult = { data: snapshot.tracks };
+        const sessionResult = { data: snapshot.sessions };
+        const transferRuleResult = { data: snapshot.transferRules };
+        const trackSessionLinks = snapshot.trackSessionLinks;
+        const directorProfile = snapshot.director;
+        setProgram(programRow);
+        setDetails(snapshot.details);
+        setCanEdit(true);
+        setIsAdminEditor(snapshot.isAdminEditor);
         const directorProfileId = programRow.director_profile_id ?? programRow.teacher_profile_id;
         setSelectedDirectorId(directorProfileId ?? "");
         loadedDirectorRef.current = directorProfileId ?? "";
-        const session = await loadCachedSession();
-        const viewerId = session?.user.id ?? null;
-        if (viewerId) {
-          const [{ data: viewerProfile }, { data: adminMembership }] = await Promise.all([
-            supabase.from("profiles").select("account_type").eq("id", viewerId).maybeSingle(),
-            supabase
-              .from("mosque_memberships")
-              .select("id")
-              .eq("mosque_id", mosque.id)
-              .eq("profile_id", viewerId)
-              .eq("role", "admin")
-              .eq("status", "active")
-              .maybeSingle(),
-          ]);
-          const nextIsAdminEditor = viewerProfile?.account_type === "admin" && Boolean(adminMembership);
-          setIsAdminEditor(nextIsAdminEditor);
-          if (nextIsAdminEditor) {
-            const { data: teacherMemberships } = await supabase
-              .from("mosque_memberships")
-              .select("profile_id")
-              .eq("mosque_id", mosque.id)
-              .eq("role", "teacher")
-              .eq("status", "active");
-            const teacherIds = Array.from(new Set((teacherMemberships ?? []).map((membership) => membership.profile_id).filter(Boolean))) as string[];
-            if (teacherIds.length) {
-              const { data: teachers } = await supabase
-                .from("profiles")
-                .select("id, full_name, email, phone_number, teacher_credentials, teacher_whatsapp_number")
-                .in("id", teacherIds)
-                .eq("account_type", "teacher")
-                .order("full_name", { ascending: true });
-              setDirectorOptions(teachers ?? []);
-            }
-          }
-        }
-        const { data: directorProfile } = directorProfileId
-          ? await supabase.from("profiles").select("full_name, email, phone_number, teacher_credentials, teacher_whatsapp_number").eq("id", directorProfileId).maybeSingle()
-          : { data: null };
         const rows = parseProgramSchedule(programRow.schedule);
         const firstRow = rows[0];
         const parsedAge = parseAgeRangeForEdit(programRow.age_range_text);
@@ -6722,11 +6670,15 @@ export function TeacherProgramSettingsData({ slug, programId, returnHref }: { sl
         setMediaVisible(nextMediaRows.length > 0);
         setTrackRows(nextTrackRows);
         setTransferRules((transferRuleResult.data ?? []).map((row) => ({ id: row.id, fromTrackId: row.from_track_id, toTrackId: row.to_track_id })));
+      } catch (loadError) {
+        if (!cancelled) setError(friendlyErrorMessage(loadError, "Could not load this class."));
+      } finally {
+        if (!cancelled) setLoading(false);
       }
-      setLoading(false);
     }
 
     void load();
+    return () => { cancelled = true; };
   }, [programId, slug]);
 
   useEffect(() => {
@@ -13236,6 +13188,7 @@ function mosqueProgramsQueryKey(slug: string) {
  * to its schedule, tracks, pricing, or content — covers the guest/student browse list, the
  * teacher's and admin's own program lists, and every viewer-scoped program-detail snapshot. */
 function invalidateProgramCaches(slug: string, programId: string) {
+  invalidatePrivateSnapshots(`program-editor:${slug}:${programId}:`);
   invalidateQuery(mosqueProgramsQueryKey(slug));
   invalidateQueryPrefix(`teacher-programs:${slug}:`);
   invalidateQueryPrefix(`admin-programs:${slug}:`);

@@ -3,6 +3,9 @@ import { DesktopSidebar } from "@/components/layout/desktop-sidebar";
 import { NavItem } from "@/components/layout/horizontal-nav";
 import { PageTransitionFrame } from "@/components/layout/page-transition-frame";
 import { PrimaryNavPrefetch } from "@/components/layout/primary-nav-prefetch";
+import { WorkspaceNavigationProvider } from "@/components/layout/workspace-navigation";
+import { WorkspacePages } from "@/components/layout/workspace-pages";
+import { NavigationDiagnostics } from "@/components/monitoring/navigation-diagnostics";
 
 const defaultAppName = "Madrasa";
 
@@ -73,17 +76,18 @@ export function AppChrome({
     mobileNavItems ??
     (section === "portal" ? scopedPortalMobileNav : section === "teacher" ? scopedTeacherMobileNav : section === "admin" ? scopedAdminMobileNav : scopedPublicMobileNav);
   return (
-    <>
+    <WorkspaceNavigationProvider slug={slug} section={section}>
       <PrimaryNavPrefetch slug={slug} section={section} />
+      <NavigationDiagnostics />
       <AppTopBar appName={defaultAppName} mosqueSlug={slug} homeHref={`/m/${slug}`} navItems={resolvedNav} mobileNavItems={resolvedMobileNav} />
       <MobileBottomNav mosqueSlug={slug} navItems={resolvedNav} mobileNavItems={resolvedMobileNav} />
       <DesktopSidebar appName={defaultAppName} mosqueSlug={slug} homeHref={`/m/${slug}`} navItems={resolvedNav} mobileNavItems={resolvedMobileNav} section={section} />
       <div className="md:min-h-screen md:bg-[var(--workspace)] md:pl-72">
         <div className="md:min-h-screen md:overflow-hidden md:bg-transparent">
-          <PageTransitionFrame>{children}</PageTransitionFrame>
+          <PageTransitionFrame><WorkspacePages slug={slug} section={section}>{children}</WorkspacePages></PageTransitionFrame>
         </div>
       </div>
-    </>
+    </WorkspaceNavigationProvider>
   );
 }
 

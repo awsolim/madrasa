@@ -74,6 +74,9 @@ export function isStandalone() {
     return false;
   }
   const nav = window.navigator as Navigator & { standalone?: boolean };
+  // Opt-in local production-build testing of installed-app chrome, without
+  // installing a second PWA or altering the user's browser configuration.
+  if (process.env.NEXT_PUBLIC_NAVIGATION_QA === "1" && /^(localhost|.+\.localhost)$/.test(window.location.hostname)) return true;
   return window.matchMedia?.("(display-mode: standalone)").matches === true || nav.standalone === true;
 }
 

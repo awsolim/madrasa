@@ -4,7 +4,8 @@ import { useEffect, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { QuietPageLoadingState } from "@/components/data/data-loading";
-import { loadUserAccessByMosqueSlug } from "@/lib/authz";
+import { loadCachedSession, loadCachedUserAccess } from "@/lib/client-cache";
+import { emptyUserAccess } from "@/lib/authz";
 
 type GuardState = "checking" | "allowed" | "denied";
 
@@ -16,7 +17,8 @@ export function AdminRouteGuard({ children, slug }: { children: React.ReactNode;
     let cancelled = false;
 
     void (async () => {
-      const access = await loadUserAccessByMosqueSlug(slug);
+      const session = await loadCachedSession();
+      const access = session ? await loadCachedUserAccess(slug, session.user.id) : emptyUserAccess;
       if (cancelled) {
         return;
       }

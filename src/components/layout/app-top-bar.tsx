@@ -1,8 +1,9 @@
 "use client";
 
 import Image from "next/image";
-import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import Link from "@/components/layout/workspace-link";
+import { useWorkspacePathname as usePathname, useWorkspaceRouter as useRouter } from "@/components/layout/workspace-navigation";
+import { createPortal } from "react-dom";
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Session } from "@supabase/supabase-js";
 import type { NavItem } from "@/components/layout/horizontal-nav";
@@ -26,15 +27,12 @@ function BottomNav({ items, inboxBadgeCount = 0, inboxActionRequired = false }: 
   const standalone = useStandaloneMode();
   const pathname = usePathname();
   const router = useRouter();
-  const [pendingHref, setPendingHref] = useState<string | null>(null);
-  const [previewNavVisible, setPreviewNavVisible] = useState<boolean | null>(null);
   const overlayChromeHidden = useOverlayChromeHidden();
   const itemByLabel = new Map(items.map((item) => [item.label, item]));
   const visibleItems = ["Home", "Classes", "Inbox", "Members", "Masjid", "Me"]
     .map((label) => itemByLabel.get(label))
     .filter((item): item is NavItem => Boolean(item));
-  const currentIndex = visibleItems.findIndex((item) => isNavItemActive(pathname, item));
-  const shouldShow = !overlayChromeHidden && (previewNavVisible ?? isMainTabRoute(pendingHref ?? pathname, visibleItems));
+  const shouldShow = !overlayChromeHidden && isMainTabRoute(pathname, visibleItems);
 
   useEffect(() => {
     for (const item of items) {
@@ -42,66 +40,16 @@ function BottomNav({ items, inboxBadgeCount = 0, inboxActionRequired = false }: 
     }
   }, [items, router]);
 
-  useEffect(() => {
-    setPendingHref(null);
-    setPreviewNavVisible(null);
-  }, [pathname]);
-
-  useEffect(() => {
-    function handlePreview(event: Event) {
-      const detail = (event as CustomEvent<{ fromPath?: string; kind?: string }>).detail;
-      if (!detail || detail.fromPath !== pathname) {
-        return;
-      }
-      setPreviewNavVisible(detail.kind !== "subpage");
-    }
-
-    window.addEventListener("tareeqah:nav-preview", handlePreview);
-    return () => window.removeEventListener("tareeqah:nav-preview", handlePreview);
-  }, [pathname]);
-
-  function transitionDirection(targetIndex: number) {
-    if (currentIndex < 0 || targetIndex === currentIndex) {
-      return "";
-    }
-
-    return targetIndex > currentIndex ? "from-right" : "from-left";
-  }
-
-  function beginNavigation(targetIndex: number, item: NavItem) {
-    const direction = transitionDirection(targetIndex);
-    if (typeof window !== "undefined" && direction) {
-      window.dispatchEvent(
-        new CustomEvent("tareeqah:nav-preview", {
-          detail: {
-            href: item.href,
-            label: item.label,
-            direction,
-            fromPath: pathname,
-          },
-        }),
-      );
-    }
-
-    const href = item.href;
-    router.prefetch(href);
-    if (pathname !== href) {
-      setPendingHref(href);
-      router.push(href);
-    }
-  }
-
   if (standalone !== true || !shouldShow) {
     return null;
   }
 
-  return (
+  // A body portal keeps the viewport as the containing block even if a page or
+  // router wrapper acquires clipping, containment or a transform. Avoid GPU/paint
+  // containment on this fixed element: Safari can detach that layer while scrolling.
+  return createPortal(
     <nav
       className="pointer-events-auto fixed inset-x-0 bottom-0 z-[2147483647] h-[calc(74px+env(safe-area-inset-bottom))] overflow-visible bg-transparent md:hidden"
-      style={{
-        transform: "translate3d(0,0,0)",
-        contain: "layout paint style",
-      }}
       aria-label="Mobile primary navigation"
     >
       <div
@@ -111,8 +59,8 @@ function BottomNav({ items, inboxBadgeCount = 0, inboxActionRequired = false }: 
         )}
         style={{ gridTemplateColumns: `repeat(${visibleItems.length}, minmax(0, 1fr))` }}
       >
-        {visibleItems.map((item, index) => {
-          const active = pendingHref ? pendingHref === item.href : isNavItemActive(pathname, item);
+        {visibleItems.map((item) => {
+          const active = isNavItemActive(pathname, item);
           const badgeCount = item.label === "Inbox" ? inboxBadgeCount : 0;
           const actionRequired = item.label === "Inbox" ? inboxActionRequired : false;
           return (
@@ -120,14 +68,15 @@ function BottomNav({ items, inboxBadgeCount = 0, inboxActionRequired = false }: 
               key={`${item.label}-${item.href}`}
               href={item.href}
               onClick={(event) => {
-                if (pathname === item.href && !pendingHref) {
+                if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+                if (pathname === item.href) {
                   event.preventDefault();
-                  router.refresh();
+                  window.scrollTo({ top: 0, behavior: "instant" });
                   return;
                 }
 
                 event.preventDefault();
-                beginNavigation(index, item);
+                router.push(item.href);
               }}
               className={cn(
                 "relative flex h-[74px] min-w-0 flex-col items-center justify-start px-1 pt-2.5 text-[11px] font-medium text-[var(--text-subtle)]",
@@ -148,7 +97,7 @@ function BottomNav({ items, inboxBadgeCount = 0, inboxActionRequired = false }: 
           );
         })}
       </div>
-    </nav>
+    </nav>, document.body
   );
 }
 

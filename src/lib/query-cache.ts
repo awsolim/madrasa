@@ -45,13 +45,19 @@ export function loadPrivateSnapshot<T>(key: string, fetcher: () => Promise<T>, f
       if (privateSnapshotCache.size > 12) privateSnapshotCache.delete(privateSnapshotCache.keys().next().value as string);
     }
     return data;
-  }).finally(() => privateSnapshotInflight.delete(key));
+  }).finally(() => { if (privateSnapshotInflight.get(key) === request) privateSnapshotInflight.delete(key); });
   privateSnapshotInflight.set(key, request);
   return request;
 }
 
 export function prefetchPrivateSnapshot<T>(key: string, fetcher: () => Promise<T>) {
   void loadPrivateSnapshot(key, fetcher).catch(() => undefined);
+}
+
+export function invalidatePrivateSnapshots(prefix: string) {
+  for (const key of privateSnapshotCache.keys()) {
+    if (key.startsWith(prefix)) privateSnapshotCache.delete(key);
+  }
 }
 
 export function readPrivatePage<T>(key: string): T | undefined {
@@ -186,8 +192,10 @@ async function runFetch<T>(key: string, fetcher: () => Promise<T>, persist = tru
     return existing as Promise<T>;
   }
 
+  const epoch = privateCacheEpoch;
   const promise = fetcher()
     .then((data) => {
+      if (epoch !== privateCacheEpoch) return data;
       const entry = { data, updatedAt: Date.now() };
       cache.set(key, entry);
       if (persist) persistEntry(key, entry);
@@ -196,7 +204,7 @@ async function runFetch<T>(key: string, fetcher: () => Promise<T>, persist = tru
       return data;
     })
     .finally(() => {
-      inflight.delete(key);
+      if (inflight.get(key) === promise) inflight.delete(key);
     });
 
   inflight.set(key, promise);
@@ -269,7 +277,7 @@ export function useCachedQuery<T>(
       setError(null);
       // Invalidation marks visible data stale instead of removing it. Refresh while
       // the user continues reading the previous result.
-      void load(false);
+      if (cache.has(key)) void load(false);
     });
 
     // load()'s own setState calls only happen inside an awaited async continuation (the
@@ -337,6 +345,7 @@ export function clearAllQueryCache() {
   privatePageCache.clear();
   privateSnapshotCache.clear();
   privateSnapshotInflight.clear();
+  inflight.clear();
   for (const key of Array.from(cache.keys())) {
     cache.delete(key);
     notify(key);

@@ -1,11 +1,12 @@
 "use client";
 
-import Link from "next/link";
-import { usePathname, useRouter } from "next/navigation";
+import Link from "@/components/layout/workspace-link";
+import { useWorkspacePathname as usePathname, useWorkspaceRouter as useRouter } from "@/components/layout/workspace-navigation";
 import type { ComponentProps, MouseEvent, ReactNode } from "react";
 import { getCachedSessionSnapshot, loadCachedSession } from "@/lib/client-cache";
 import { operationalSnapshotKey, prefetchPrivateSnapshot } from "@/lib/query-cache";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { loadProgramEditor, loadProgramDirectorOptions } from "@/lib/program-editor-data";
 
 type TransitionDirection = "from-right" | "from-left";
 type PreviewKind = "home" | "classes" | "inbox" | "me" | "subpage";
@@ -63,6 +64,12 @@ export function TransitionLink({
     const destination = new URL(href, window.location.href).pathname;
     const match = destination.match(/^\/m\/([^/]+)\/(?:teacher\/classes|admin\/programs)\/([^/]+)\/(applications|finances)$/);
     const wizardMatch = destination.match(/^\/m\/([^/]+)\/(?:teacher\/classes|admin\/programs)\/new$/);
+    const editorMatch = destination.match(/^\/m\/([^/]+)\/(?:teacher\/classes|admin\/programs)\/([a-f0-9-]{36})$/i);
+    if (editorMatch) {
+      void loadProgramEditor(editorMatch[1], editorMatch[2]).catch(() => undefined);
+      void loadProgramDirectorOptions(editorMatch[1]).catch(() => undefined);
+      return;
+    }
     if (!match && !wizardMatch) return;
     void (getCachedSessionSnapshot() === undefined ? loadCachedSession() : Promise.resolve(getCachedSessionSnapshot())).then((session) => {
       const userId = session?.user.id;
