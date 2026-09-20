@@ -21,10 +21,10 @@ import { QuietPageLoadingState } from "@/components/data/data-loading";
 import { useHideMobileChromeWhileMounted, useModalFocusTrap } from "@/hooks/use-modal-behavior";
 import { friendlyErrorMessage } from "@/lib/errors";
 import { getCachedSessionSnapshot, loadCachedSession } from "@/lib/client-cache";
-import { readPrivatePage, writePrivatePage } from "@/lib/query-cache";
+import { invalidatePrivateSnapshots, readPrivatePage, writePrivatePage } from "@/lib/query-cache";
+import { loadStudentInboxSnapshot } from "@/lib/student-inbox-data";
 import { buildAnnouncementThreads, buildNoteThreads } from "@/lib/messages/threads";
 import {
-  fetchNotificationState,
   markNotificationsSeen,
   revertOptimisticKeys,
   studentRequestNotificationKey,
@@ -885,13 +885,9 @@ export function InboxAnnouncementsData({ slug }: { slug: string }) {
   // are now a single query each server-side; the "keep the newest N per thread" trimming that
   // used to be a per-thread SQL LIMIT happens here instead, on the RPC's full result set --
   // same output, just computed client-side rather than N round-trips.
-  async function loadInbox() {
+  async function loadInbox(force = true) {
     setError(null);
-    const supabase = createSupabaseBrowserClient();
-    const [session, inboxResult] = await Promise.all([
-      loadCachedSession(),
-      supabase.rpc("get_student_inbox_snapshot", { p_slug: slug }),
-    ]);
+    const session = await loadCachedSession();
     const userId = session?.user.id;
     if (!userId) {
       setCurrentUserId(null);
@@ -913,7 +909,14 @@ export function InboxAnnouncementsData({ slug }: { slug: string }) {
     }
 
     setCurrentUserId(userId);
-    const { seen: initialSeenRequestIds } = await fetchNotificationState(userId);
+    const result = await loadStudentInboxSnapshot(slug, userId, force).catch((error: unknown) => {
+      setLoading(false);
+      setError(friendlyErrorMessage(error, "Could not load inbox."));
+      return null;
+    });
+    if (!result) return;
+    const { inboxResult, notificationState } = result;
+    const { seen: initialSeenRequestIds } = notificationState;
     setSeenRequestIds(initialSeenRequestIds);
 
     const { data, error } = inboxResult;
@@ -1106,9 +1109,17 @@ export function InboxAnnouncementsData({ slug }: { slug: string }) {
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
-      void loadInbox();
+      void loadInbox(false);
     }, 0);
-    return () => window.clearTimeout(timeout);
+    const invalidateInbox = () => {
+      const userId = getCachedSessionSnapshot()?.user.id;
+      if (userId) invalidatePrivateSnapshots(`student-inbox-raw:${slug}:${userId}`);
+    };
+    window.addEventListener("tareeqah:notifications-changed", invalidateInbox);
+    return () => {
+      window.clearTimeout(timeout);
+      window.removeEventListener("tareeqah:notifications-changed", invalidateInbox);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slug]);
 

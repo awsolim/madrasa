@@ -94,6 +94,12 @@ function persistEntry<T>(key: string, entry: CacheEntry<T>) {
     return;
   }
   try {
+    // These snapshots contain Map/Set values and private student records. JSON
+    // would silently turn their collections into {}, breaking the next app open.
+    if (key.startsWith("teacher-roster:") || key.startsWith("teacher-inbox:")) {
+      removePersistedEntry(key);
+      return;
+    }
     const serialized = JSON.stringify({ data: entry.data, updatedAt: entry.updatedAt });
     if (serialized.length > MAX_PERSIST_BYTES) {
       return;
@@ -145,6 +151,12 @@ function hydrateFromStorage() {
     for (let i = 0; i < window.localStorage.length; i++) {
       const storageKey = window.localStorage.key(i);
       if (!storageKey || !storageKey.startsWith(PERSIST_PREFIX)) {
+        continue;
+      }
+      const queryKey = storageKey.slice(PERSIST_PREFIX.length);
+      if (queryKey.startsWith("teacher-roster:") || queryKey.startsWith("teacher-inbox:")) {
+        window.localStorage.removeItem(storageKey);
+        i -= 1;
         continue;
       }
       const raw = window.localStorage.getItem(storageKey);
@@ -327,12 +339,12 @@ export function invalidateQueryPrefix(prefix: string) {
 }
 
 /** Fire-and-forget warm the cache ahead of navigation; safe to call outside a component. */
-export function prefetchQuery<T>(key: string, fetcher: () => Promise<T>) {
+export function prefetchQuery<T>(key: string, fetcher: () => Promise<T>, options?: { persist?: boolean }) {
   const entry = cache.get(key) as CacheEntry<T> | undefined;
   if (entry && Date.now() - entry.updatedAt < 30_000) {
     return;
   }
-  void runFetch(key, fetcher).catch(() => undefined);
+  void runFetch(key, fetcher, options?.persist !== false).catch(() => undefined);
 }
 
 /** Drops every cached query — called on sign-out so the next login never renders a stale

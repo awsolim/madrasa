@@ -4964,7 +4964,7 @@ function AdminMosqueSwitcher({ slug, target = "programs" }: { slug: string; targ
 type AdminMasjidSnapshot = { mosque: Mosque | null; memberCount: number; error: string | null };
 const emptyAdminMasjidSnapshot: AdminMasjidSnapshot = { mosque: null, memberCount: 0, error: null };
 
-async function fetchAdminMasjidSnapshot(slug: string): Promise<AdminMasjidSnapshot> {
+export async function fetchAdminMasjidSnapshot(slug: string): Promise<AdminMasjidSnapshot> {
   const supabase = createSupabaseBrowserClient();
   const { data, error: mosqueError } = await supabase.from("mosques").select("*").eq("slug", slug).maybeSingle();
   if (mosqueError) {
@@ -10443,7 +10443,7 @@ export function TeacherStudentsData({ slug, programId }: { slug: string; program
     };
   }
 
-  const { data: rosterSnapshot, loading: rosterQueryLoading, refetch: refetchRoster } = useCachedQuery(programId ? `teacher-roster:${programId}` : null, () => fetchTeacherRoster());
+  const { data: rosterSnapshot, loading: rosterQueryLoading, error: rosterQueryError, refetch: refetchRoster } = useCachedQuery(programId ? `teacher-roster:${slug}:${programId}` : null, () => fetchTeacherRoster(), { persist: false });
 
   useEffect(() => {
     if (!rosterSnapshot) {
@@ -10701,8 +10701,8 @@ export function TeacherStudentsData({ slug, programId }: { slug: string; program
     return <DirectorySkeleton layout="management" />;
   }
 
-  if (error && !program) {
-    return <EmptyState title="Could not load students" text={error} onRetry={() => window.location.reload()} />;
+  if ((error || rosterQueryError) && !program) {
+    return <EmptyState title="Could not load students" text={error || rosterQueryError || "Please try again."} onRetry={() => void refetchRoster()} />;
   }
 
   if (!program) {
@@ -13820,7 +13820,7 @@ const emptyApplicantApplicationsResult: ApplicantApplicationsResult = { rows: []
 // One RPC call instead of profile+mosque -> children -> requests -> [programs+tracks+
 // subscriptions] -> extra-students as five sequential/parallel round-trips. Backs the
 // Applications tab and the Home action-required banner for both students and parents.
-async function fetchApplicantApplications(slug: string, userId: string | null): Promise<ApplicantApplicationsResult> {
+export async function fetchApplicantApplications(slug: string, userId: string | null): Promise<ApplicantApplicationsResult> {
   if (!userId) {
     return emptyApplicantApplicationsResult;
   }
@@ -20459,8 +20459,6 @@ function mockProgramDescription(title: string) {
 function mockTeacherCredentials(title: string) {
   return `Certified instructor with experience teaching ${title.toLowerCase()} in a masjid classroom setting. Credentials and ijazah details can be updated from the teacher profile in Supabase.`;
 }
-
-
 
 
 
