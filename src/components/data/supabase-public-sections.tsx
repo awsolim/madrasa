@@ -10,6 +10,7 @@ import Link from "@/components/layout/workspace-link";
 import { createPortal } from "react-dom";
 import { Upload } from "tus-js-client";
 import { ApplicationDecisionModal, ApplicationReviewOverlay, type ApplicationRow } from "@/components/data/application-review";
+import { StudentRecordActions, type StudentRecordAction } from "@/components/data/student-record-actions";
 import { ChildrenManager } from "@/components/data/children-manager";
 import { TransitionLink } from "@/components/layout/transition-link";
 import { useSearchParams } from "next/navigation";
@@ -11319,6 +11320,13 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [programId, slug, mode]);
 
+  useEffect(() => {
+    const studentId = searchParams.get("studentId");
+    if (!studentId || detailsTarget || !rows.length) return;
+    const row = rows.find((item) => item.enrollment.student_profile_id === studentId);
+    if (row) setDetailsTarget(row);
+  }, [detailsTarget, rows, searchParams]);
+
   // One RPC call instead of mosque+profile -> program -> [membership+director-assignment
   // access check] -> [5-way batch] -> parent_child_links -> profiles, as seven sequential
   // stages.
@@ -11613,6 +11621,12 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
           slug={slug}
           mode={mode}
           onClose={() => setDetailsTarget(null)}
+          onAction={(action) => {
+            const row = detailsTarget;
+            setDetailsTarget(null);
+            if (action === "add_note") setNoteTarget(row);
+            else setActionTarget({ row, action });
+          }}
         />
       ) : null}
 
@@ -11633,13 +11647,9 @@ function FinanceRowActionMenu({ row, onSelect }: { row: FinanceEnrollmentRow; on
   const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
   const studentName = row.student?.full_name || "student";
-  const menuItems = [
-    { action: "view_details" as const, label: "View details" },
-    { action: "change_price" as const, label: "Send new checkout link" },
-    { action: "waive" as const, label: "Waive future payments" },
-    hasActiveRecurringSubscription(row.subscription) ? { action: "end_subscription" as const, label: "End subscription" } : null,
-    { action: "add_note" as const, label: "Add note" },
-  ].filter((item): item is { action: FinanceRowMenuAction; label: string } => Boolean(item));
+  const menuItems: { action: FinanceRowMenuAction; label: string }[] = [
+    { action: "view_details" as const, label: "View student file" },
+  ];
 
   function updateMenuPosition() {
     const button = buttonRef.current;
@@ -11781,7 +11791,7 @@ function FinanceActionModal({
   const studentProfileId = row.enrollment.student_profile_id;
   const hasActiveSubscription = hasActiveRecurringSubscription(row.subscription);
 
-  const modalTitle = action === "waive" ? "Waive Future Payments" : action === "change_price" ? "Send New Checkout Link" : "End Subscription";
+  const modalTitle = action === "waive" ? "Waive Future Payments" : action === "change_price" ? "Manage Billing" : "End Subscription";
   const modalText =
     action === "waive"
       ? "This will stop future payment requirements for this student. Past payments will not be changed. The student will remain enrolled."
@@ -12030,12 +12040,14 @@ function FinanceDetailsDrawer({
   slug,
   mode,
   onClose,
+  onAction,
 }: {
   row: FinanceEnrollmentRow;
   program: Program;
   slug: string;
   mode: "teacher" | "admin";
   onClose: () => void;
+  onAction: (action: FinanceAction | "add_note") => void;
 }) {
   const studentProfileId = row.enrollment.student_profile_id;
   const [history, setHistory] = useState<FinanceChargeRow[] | null>(null);
@@ -12078,6 +12090,14 @@ function FinanceDetailsDrawer({
 
   const checkoutLinkStatus = row.subscription?.status === "checkout_started" ? "Checkout sent, awaiting completion" : "No pending checkout";
   const basePath = mode === "admin" ? `/m/${slug}/admin/programs` : `/m/${slug}/teacher/classes`;
+  const recordActions: StudentRecordAction[] = [
+    { id: "change_price", label: "Manage billing", description: hasActiveRecurringSubscription(row.subscription) ? "End the current subscription before starting a new plan." : "Set a new price or send a checkout link." },
+    { id: "waive", label: "Waive future payments", description: "Keep the student enrolled without future charges.", tone: "warning" },
+    { id: "add_note", label: "Add note", description: "Add an internal note to this class record." },
+  ];
+  if (hasActiveRecurringSubscription(row.subscription)) {
+    recordActions.splice(2, 0, { id: "end_subscription", label: "End subscription", description: "Stop recurring billing while preserving payment history.", tone: "danger" });
+  }
 
   return createPortal(
     <div className="fixed inset-0 z-[2147483647] flex justify-end bg-[#26323A]/35 backdrop-blur-sm">
@@ -12093,15 +12113,11 @@ function FinanceDetailsDrawer({
         </div>
 
         <div className="space-y-5 px-5 py-5">
-          <section className="grid gap-1 text-sm">
-            <div className="flex items-center justify-between">
-              <span className="text-[#6B747B]">Student type</span>
-              <span className="font-semibold">{financeStudentSubtitle(row)}</span>
-            </div>
-            <div className="flex items-center justify-between">
+          <section className="grid grid-cols-2 gap-x-5 gap-y-3 rounded-[16px] border border-[#E1E8EC] bg-[#FAFCFC] p-3 text-sm">
+            {row.parent ? <div className="col-span-2 flex items-center justify-between">
               <span className="text-[#6B747B]">Parent</span>
-              <span className="font-semibold">{row.parent?.full_name || "Self"}</span>
-            </div>
+              <span className="font-semibold">{row.parent.full_name || "—"}</span>
+            </div> : null}
             {row.parent?.email ? (
               <div className="flex items-center justify-between">
                 <span className="text-[#6B747B]">Parent email</span>
@@ -12120,23 +12136,10 @@ function FinanceDetailsDrawer({
               <span className="text-[#6B747B]">Approved price</span>
               <span className="font-semibold">{financePrice(row, program)}</span>
             </div>
-            {row.paymentTerms ? (
-              <>
-                <div className="flex items-center justify-between">
-                  <span className="text-[#6B747B]">Payment terms</span>
-                  <span className="font-semibold">{financePaymentTermsStatusLabel(row.paymentTerms, program)}</span>
-                </div>
-                <div className="flex items-center justify-between">
+            {row.paymentTerms ? <div className="flex flex-col gap-1">
                   <span className="text-[#6B747B]">Billing cycle</span>
                   <span className="font-semibold">{financeBillingCycleLabel(row.paymentTerms)}</span>
-                </div>
-              </>
-            ) : (
-              <div className="flex items-center justify-between">
-                <span className="text-[#6B747B]">Payment terms</span>
-                <span className="font-semibold">Legacy record</span>
-              </div>
-            )}
+                </div> : null}
             <div className="flex items-center justify-between">
               <span className="text-[#6B747B]">Payment status</span>
               <span className={cn("rounded-full px-2.5 py-1 text-xs font-semibold", programStatusBadgeToneClass(financeBadgeTone(financePaymentStatus(row, program))))}>{financePaymentStatus(row, program)}</span>
@@ -12159,10 +12162,6 @@ function FinanceDetailsDrawer({
             <div className="flex items-center justify-between">
               <span className="text-[#6B747B]">Checkout link</span>
               <span className="font-semibold">{checkoutLinkStatus}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-[#6B747B]">Terms history</span>
-              <span className="font-semibold">{row.paymentTermsHistory.length || 0}</span>
             </div>
           </section>
 
@@ -12233,7 +12232,7 @@ function FinanceDetailsDrawer({
           </section>
         </div>
 
-        <div className="mt-auto border-t border-[#EEF2F4] px-5 py-4">
+        <div className="border-t border-[#EEF2F4] px-5 py-4">
           {hasActiveRecurringSubscription(row.subscription) ? (
             <p className="mb-3 rounded-[12px] border border-[#F3D9A6] bg-[#FFF7E6] p-3 text-xs font-semibold leading-5 text-[#8A5A00]">
               This student has an active subscription. End or waive billing before removing them from the class.
@@ -12246,6 +12245,7 @@ function FinanceDetailsDrawer({
             Manage class enrollment →
           </Link>
         </div>
+        <StudentRecordActions actions={recordActions} onSelect={(action) => onAction(action as FinanceAction | "add_note")} />
       </div>
     </div>,
     document.body,
@@ -14850,7 +14850,11 @@ function StudentActionMenu({ busy, onKick, basePath, access, studentId }: Studen
       </button>
       {menuOpen ? (
         <span className="absolute right-0 top-11 z-30 w-40 overflow-hidden rounded-[16px] border border-[#DDE5E9] bg-white p-1 text-sm shadow-[0_18px_44px_rgba(38,50,58,0.18)]">
-          {(["applications", "finances"] as const).filter((kind) => access[kind]).map((kind) => <TransitionLink label={kind === "applications" ? "Applications" : "Finances"} key={kind} href={`${basePath}/${kind}?studentId=${encodeURIComponent(studentId)}`} onClick={(event) => event.stopPropagation()} className="block rounded-[12px] px-3 py-2.5 font-semibold text-[#26323A] hover:bg-[#EEF3F5]">View {kind === "applications" ? "application" : "finances"}</TransitionLink>)}
+          {access.finances ? (
+            <TransitionLink label="Student file" href={`${basePath}/finances?studentId=${encodeURIComponent(studentId)}`} onClick={(event) => event.stopPropagation()} className="block rounded-[12px] px-3 py-2.5 font-semibold text-[#26323A] hover:bg-[#EEF3F5]">View student file</TransitionLink>
+          ) : access.applications ? (
+            <TransitionLink label="Student file" href={`${basePath}/applications?studentId=${encodeURIComponent(studentId)}`} onClick={(event) => event.stopPropagation()} className="block rounded-[12px] px-3 py-2.5 font-semibold text-[#26323A] hover:bg-[#EEF3F5]">View student file</TransitionLink>
+          ) : null}
           <button
             type="button"
             onClick={(event) => {

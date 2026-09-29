@@ -22,6 +22,7 @@ import {
   scheduleSummary,
 } from "@/components/data/supabase-public-sections";
 import { ConfirmModal } from "@/components/ui/confirm-modal";
+import { StudentRecordActions, type StudentRecordAction } from "@/components/data/student-record-actions";
 import { useModalFocusTrap } from "@/hooks/use-modal-behavior";
 import { friendlyErrorMessage } from "@/lib/errors";
 import {
@@ -90,15 +91,6 @@ function XIcon() {
     <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" aria-hidden>
       <path d="M7 7l10 10" />
       <path d="M17 7 7 17" />
-    </svg>
-  );
-}
-
-function CopyIcon() {
-  return (
-    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-      <rect x="8" y="8" width="11" height="11" rx="2" />
-      <path d="M5 15H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1" />
     </svg>
   );
 }
@@ -387,8 +379,11 @@ function ApplicationDetailsDrawer({
   const payStatus = getApplicationPaymentStatus(row.request, program, row.subscription);
   const basePath = mode === "admin" ? `/m/${slug}/admin/programs` : `/m/${slug}/teacher/classes`;
   const availableActions = canDecide ? getApplicationRowActions(status).filter((action) => action !== "view") : [];
-  const decisionActions = availableActions.filter((action): action is "approve" | "waitlist" | "reject" => action === "approve" || action === "waitlist" || action === "reject");
-  const secondaryActions = availableActions.filter((action) => action !== "approve" && action !== "waitlist" && action !== "reject");
+  const recordActions: StudentRecordAction[] = availableActions.map((action) => ({
+    id: action,
+    label: APPLICATION_ACTION_LABELS[action],
+    tone: action === "approve" ? "positive" : action === "reject" || action === "delete_permanently" ? "danger" : action === "waitlist" || action === "cancel_approval" ? "warning" : "default",
+  }));
 
   const containerRef = useRef<HTMLDivElement>(null);
   useModalFocusTrap(containerRef, true, onClose);
@@ -417,10 +412,6 @@ function ApplicationDetailsDrawer({
             <section className="space-y-1.5">
               <h3 className="text-xs font-semibold text-[#26323A]">Applicant Information</h3>
               <div className="grid gap-1 rounded-[12px] border border-[#E1E8EC] bg-[#FAFCFC] p-2.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-[#6B747B]">Student type</span>
-                  <span className="font-semibold">{row.parent ? "Child Student" : "Adult Student"}</span>
-                </div>
                 {row.parent ? (
                   <>
                     <div className="flex items-center justify-between">
@@ -563,55 +554,7 @@ function ApplicationDetailsDrawer({
           </div>
         </div>
 
-        {availableActions.length ? (
-          <div className="shrink-0 space-y-2 border-t border-[#EEF2F4] px-4 pb-[calc(0.75rem+env(safe-area-inset-bottom))] pt-3">
-            {decisionActions.length ? (
-              <div className={cn("grid gap-2", decisionActions.length === 3 ? "grid-cols-3" : decisionActions.length === 2 ? "grid-cols-2" : "grid-cols-1")}>
-                {decisionActions.map((action) => (
-                  <button
-                    key={action}
-                    type="button"
-                    onClick={() => onAction(action)}
-                    className={cn(
-                      "min-h-9 rounded-[9px] px-2 text-xs font-semibold transition-colors",
-                      action === "approve"
-                        ? "bg-[#E2F6E8] text-[#258A43] hover:bg-[#D4F0DD]"
-                        : action === "waitlist"
-                          ? "bg-[#FFF4D6] text-[#8A6418] hover:bg-[#FFE9A8]"
-                          : "bg-[#FCE8E4] text-[#C83F31] hover:bg-[#F9D8D1]",
-                    )}
-                  >
-                    {APPLICATION_ACTION_LABELS[action]}
-                  </button>
-                ))}
-              </div>
-            ) : null}
-            {secondaryActions.length ? (
-              <div className="space-y-2">
-                {secondaryActions.map((action) => (
-                  <button
-                    key={action}
-                    type="button"
-                    onClick={() => onAction(action)}
-                    className={cn(
-                      "flex min-h-10 w-full items-center justify-center gap-2 rounded-[9px] px-3 text-xs font-semibold transition-colors",
-                      action === "change_price"
-                        ? "bg-[#E7F3F8] text-[#257B9C] hover:bg-[#DDEEF6]"
-                        : action === "cancel_approval"
-                          ? "bg-[#FFF4D6] text-[#8A6418] hover:bg-[#FFE9A8]"
-                          : action === "delete_permanently"
-                            ? "bg-[#FCE8E4] text-[#C83F31] hover:bg-[#F9D8D1]"
-                            : "border border-[#D6DCE0] bg-white text-[#26323A] hover:bg-[#F7FAFB]",
-                    )}
-                  >
-                    {action === "copy_confirmation_link" ? <CopyIcon /> : null}
-                    {APPLICATION_ACTION_LABELS[action]}
-                  </button>
-                ))}
-              </div>
-            ) : null}
-          </div>
-        ) : null}
+        <StudentRecordActions actions={recordActions} onSelect={(action) => onAction(action as ApplicationRowAction)} />
 
         {status === "completed_enrolled" ? (
           <div className="shrink-0 border-t border-[#EEF2F4] px-4 py-3">
