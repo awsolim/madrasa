@@ -139,6 +139,13 @@ async function notifyProgramManagers(
 
 export const runtime = "nodejs";
 
+function webhookErrorMessage(error: unknown) {
+  if (error instanceof Error) return error.message;
+  if (error && typeof error === "object" && "message" in error && typeof error.message === "string") return error.message;
+  if (typeof error === "string") return error;
+  return "Stripe webhook handling failed.";
+}
+
 function stripeTimestampToIso(timestamp: number | null | undefined) {
   return timestamp ? new Date(timestamp * 1000).toISOString() : null;
 }
@@ -482,7 +489,7 @@ export async function POST(request: Request) {
       await updateSubscriptionSchedule(event.data.object as Stripe.SubscriptionSchedule);
     }
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Stripe webhook handling failed.";
+    const message = webhookErrorMessage(error);
     await logServerError(createSupabaseServiceClient(), {
       source: "stripe.webhook",
       message,
