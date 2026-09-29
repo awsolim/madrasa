@@ -7,7 +7,8 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
-    "cleanup:fake-users": "node --env-file=.env.local scripts/cleanup-fake-users.mjs"
+    "cleanup:fake-users": "node --env-file=.env.local scripts/cleanup-fake-users.mjs",
+    "reconcile:stripe-billing": "node --env-file=.env.local scripts/reconcile-stripe-billing.mjs"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.106.2",

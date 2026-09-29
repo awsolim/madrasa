@@ -158,7 +158,11 @@ function getSubscriptionPeriod(subscription: Stripe.Subscription | null) {
   };
 }
 
-async function upsertPaidEnrollmentFromSession(session: Stripe.Checkout.Session, stripeAccountId: string | undefined) {
+async function upsertPaidEnrollmentFromSession(
+  session: Stripe.Checkout.Session,
+  stripeAccountId: string | undefined,
+  suppressNotifications = false,
+) {
   const metadata = session.metadata ?? {};
   const enrollmentRequestId = metadata.enrollment_request_id;
   const mosqueId = metadata.mosque_id;
@@ -254,23 +258,25 @@ async function upsertPaidEnrollmentFromSession(session: Stripe.Checkout.Session,
 
   const { data: student } = await supabase.from("profiles").select("full_name, email").eq("id", studentProfileId).maybeSingle();
   const studentLabel = student?.full_name || student?.email || "this student";
-  await recordFinanceAuditEvent(supabase, {
-    programId,
-    studentProfileId,
-    actorProfileId: null,
-    eventType: isOneTimePayment ? "payment_completed" : "subscription_started",
-    summary:
-      isOneTimePayment
-        ? `Payment completed and enrollment activated for ${studentLabel}.`
-        : `Subscription started and enrollment activated for ${studentLabel}.`,
-    metadata: { stripeSubscriptionId: subscriptionId, stripeCheckoutSessionId: session.id },
-  });
+  if (!suppressNotifications) {
+    await recordFinanceAuditEvent(supabase, {
+      programId,
+      studentProfileId,
+      actorProfileId: null,
+      eventType: isOneTimePayment ? "payment_completed" : "subscription_started",
+      summary:
+        isOneTimePayment
+          ? `Payment completed and enrollment activated for ${studentLabel}.`
+          : `Subscription started and enrollment activated for ${studentLabel}.`,
+      metadata: { stripeSubscriptionId: subscriptionId, stripeCheckoutSessionId: session.id },
+    });
 
-  await notifyProgramManagers(supabase, programId, {
-    eventKey: `stripe-checkout:${session.id}`,
-    title: "Payment received",
-    body: isOneTimePayment ? `${studentLabel} completed payment and enrollment is active.` : `${studentLabel} started a subscription and enrollment is active.`,
-  });
+    await notifyProgramManagers(supabase, programId, {
+      eventKey: `stripe-checkout:${session.id}`,
+      title: "Payment received",
+      body: isOneTimePayment ? `${studentLabel} completed payment and enrollment is active.` : `${studentLabel} started a subscription and enrollment is active.`,
+    });
+  }
 }
 
 async function updateSubscription(subscription: Stripe.Subscription, stripeAccountId: string | undefined) {
@@ -315,7 +321,7 @@ async function updateSubscription(subscription: Stripe.Subscription, stripeAccou
   }
 }
 
-async function handleInvoicePaid(invoice: Stripe.Invoice) {
+async function handleInvoicePaid(invoice: Stripe.Invoice, suppressNotifications = false) {
   const subscriptionRef = invoice.parent?.subscription_details?.subscription ?? null;
   const subscriptionId = typeof subscriptionRef === "string" ? subscriptionRef : subscriptionRef?.id ?? null;
   if (!subscriptionId) {
@@ -383,11 +389,13 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
     metadata: { stripeSubscriptionId: subscriptionId, amountPaidCents: invoice.amount_paid },
   });
 
-  await notifyProgramManagers(supabase, subscriptionRow.program_id, {
-    eventKey: `stripe-invoice-paid:${invoice.id}`,
-    title: "Payment received",
-    body: `A recurring payment from ${studentLabel} was received.`,
-  });
+  if (!suppressNotifications) {
+    await notifyProgramManagers(supabase, subscriptionRow.program_id, {
+      eventKey: `stripe-invoice-paid:${invoice.id}`,
+      title: "Payment received",
+      body: `A recurring payment from ${studentLabel} was received.`,
+    });
+  }
 }
 
 async function handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
@@ -467,10 +475,11 @@ export async function POST(request: Request) {
   }
 
   const stripeAccountId = shouldUseStripeConnect() ? event.account ?? undefined : undefined;
+  const isReconciliation = request.headers.get("x-madrasa-reconciliation") === "true";
 
   try {
     if (event.type === "checkout.session.completed") {
-      await upsertPaidEnrollmentFromSession(event.data.object as Stripe.Checkout.Session, stripeAccountId);
+      await upsertPaidEnrollmentFromSession(event.data.object as Stripe.Checkout.Session, stripeAccountId, isReconciliation);
     }
 
     if (event.type === "customer.subscription.updated" || event.type === "customer.subscription.deleted") {
@@ -478,7 +487,7 @@ export async function POST(request: Request) {
     }
 
     if (event.type === "invoice.paid") {
-      await handleInvoicePaid(event.data.object as Stripe.Invoice);
+      await handleInvoicePaid(event.data.object as Stripe.Invoice, isReconciliation);
     }
 
     if (event.type === "invoice.payment_failed") {
