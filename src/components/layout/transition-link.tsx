@@ -62,7 +62,7 @@ export function TransitionLink({
   function warmDestination() {
     router.prefetch(href);
     const destination = new URL(href, window.location.href).pathname;
-    const match = destination.match(/^\/m\/([^/]+)\/(?:teacher\/classes|admin\/programs)\/([^/]+)\/(applications|finances)$/);
+    const match = destination.match(/^\/m\/([^/]+)\/(?:teacher\/classes|admin\/programs)\/([^/]+)\/(applications|finances|students)$/);
     const wizardMatch = destination.match(/^\/m\/([^/]+)\/(?:teacher\/classes|admin\/programs)\/new$/);
     const editorMatch = destination.match(/^\/m\/([^/]+)\/(?:teacher\/classes|admin\/programs)\/([a-f0-9-]{36})$/i);
     if (editorMatch) {
@@ -85,11 +85,12 @@ export function TransitionLink({
       }
       if (!match) return;
       const [, slug, programId, kind] = match;
-      const key = operationalSnapshotKey(kind as "applications" | "finances", slug, programId, userId);
+      const key = operationalSnapshotKey(kind as "applications" | "finances" | "students", slug, programId, userId);
       prefetchPrivateSnapshot(key, async () => {
         const supabase = createSupabaseBrowserClient();
         const { data, error } = kind === "applications"
           ? await supabase.rpc("get_program_applications_snapshot", { p_slug: slug, p_program_id: programId })
+          : kind === "students" ? await supabase.rpc("get_teacher_roster_snapshot", { p_slug: slug, p_program_id: programId })
           : await supabase.rpc("get_program_finances_snapshot", { p_slug: slug, p_program_id: programId });
         if (error) throw error;
         return data;
@@ -141,6 +142,7 @@ export function TransitionBackButton({
       aria-label={ariaLabel}
       className={className}
       onClick={() => {
+        if (!window.dispatchEvent(new Event("tareeqah:before-back", { cancelable: true }))) return;
         dispatchPreview({ href: fallbackHref, label, direction: "from-left", fromPath: pathname, kind: label === "Classes" || label === "Programs" ? "classes" : "subpage" });
         if (returnToPreviousParent(pathname, fallbackHref)) {
           router.back();
@@ -179,6 +181,7 @@ export function TransitionCloseButton({
       aria-label={ariaLabel}
       className={className}
       onClick={() => {
+        if (!window.dispatchEvent(new Event("tareeqah:before-back", { cancelable: true }))) return;
         dispatchPreview({ href: closeHref, label, direction: "from-left", fromPath: pathname, kind: "subpage" });
         router.push(closeHref);
       }}

@@ -77,11 +77,12 @@ export async function createApprovedPaymentTerms(supabase: SupaClient, input: Ap
   const amountCents = paymentType === "monthly" ? approvedPriceFor(input, "monthly") : isAnnualPricing ? approvedPriceFor(input, "annual") : 0;
   const now = new Date().toISOString();
 
-  await supabase
+  const { error: supersedeError } = await supabase
     .from("program_payment_terms")
     .update({ status: "superseded", updated_at: now })
     .eq("enrollment_request_id", input.enrollmentRequest.id)
     .not("status", "in", "(superseded,cancelled,ended)");
+  if (supersedeError) throw supersedeError;
 
   const { data: terms, error } = await supabase
     .from("program_payment_terms")
@@ -114,7 +115,7 @@ export async function createApprovedPaymentTerms(supabase: SupaClient, input: Ap
     throw new Error(error?.message ?? "Could not create approved payment terms.");
   }
 
-  await supabase
+  const { error: requestUpdateError } = await supabase
     .from("enrollment_requests")
     .update({
       payment_terms_id: terms.id,
@@ -125,6 +126,7 @@ export async function createApprovedPaymentTerms(supabase: SupaClient, input: Ap
       payment_bypass_external: Boolean(input.paymentBypassedExternal),
     })
     .eq("id", input.enrollmentRequest.id);
+  if (requestUpdateError) throw requestUpdateError;
 
   return terms;
 }
@@ -199,7 +201,7 @@ export async function markPaymentTermsCheckoutStarted(
   supabase: SupaClient,
   params: { paymentTermsId: string; stripeCheckoutSessionId: string; stripePriceId: string },
 ) {
-  await supabase
+  const { error } = await supabase
     .from("program_payment_terms")
     .update({
       status: "checkout_pending",
@@ -207,13 +209,14 @@ export async function markPaymentTermsCheckoutStarted(
       updated_at: new Date().toISOString(),
     })
     .eq("id", params.paymentTermsId);
+  if (error) throw error;
 }
 
 export async function markPaymentTermsNoPaymentCompleted(
   supabase: SupaClient,
   params: { paymentTermsId: string; paymentType: string; enrollmentId?: string | null },
 ) {
-  await supabase
+  const { error } = await supabase
     .from("program_payment_terms")
     .update({
       status: params.paymentType === "waived" ? "waived" : "active",
@@ -221,4 +224,5 @@ export async function markPaymentTermsNoPaymentCompleted(
       updated_at: new Date().toISOString(),
     })
     .eq("id", params.paymentTermsId);
+  if (error) throw error;
 }

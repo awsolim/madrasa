@@ -12,6 +12,8 @@ type GuardState = "checking" | "allowed" | "denied";
 export function AdminRouteGuard({ children, slug }: { children: React.ReactNode; slug: string }) {
   const router = useRouter();
   const [state, setState] = useState<GuardState>("checking");
+  const [accessError, setAccessError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -22,6 +24,7 @@ export function AdminRouteGuard({ children, slug }: { children: React.ReactNode;
       if (cancelled) {
         return;
       }
+      if (access.resolutionError) { setAccessError(access.resolutionError); return; }
 
       if (access.isMosqueAdmin) {
         setState("allowed");
@@ -36,7 +39,9 @@ export function AdminRouteGuard({ children, slug }: { children: React.ReactNode;
     return () => {
       cancelled = true;
     };
-  }, [router, slug]);
+  }, [router, slug, attempt]);
+
+  if (accessError) return <main className="p-6 text-center"><p role="alert">{accessError}</p><button className="mt-4 rounded-lg border px-5 py-3" onClick={() => { setAccessError(null); setAttempt(value => value + 1); }}>Try again</button></main>;
 
   if (state === "allowed") {
     return <>{children}</>;

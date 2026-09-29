@@ -1,4 +1,7 @@
 "use client";
+import { loadCachedSession } from "@/lib/client-cache";
+import { loadPrivateSnapshot, operationalSnapshotKey } from "@/lib/query-cache";
+import { loadStudentActivity, type StudentActivity } from "@/lib/student-activity";
 
 import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
@@ -41,7 +44,6 @@ type Profile = Database["public"]["Tables"]["profiles"]["Row"];
 type ProgramTrack = Database["public"]["Tables"]["program_tracks"]["Row"];
 type EnrollmentRequest = Database["public"]["Tables"]["enrollment_requests"]["Row"];
 type ProgramSubscription = Database["public"]["Tables"]["program_subscriptions"]["Row"];
-type ProgramFinanceAuditEvent = Database["public"]["Tables"]["program_finance_audit_events"]["Row"];
 type StudentDisplay = Pick<Profile, "id" | "full_name" | "email" | "phone_number" | "avatar_url" | "age" | "gender" | "date_of_birth" | "account_type">;
 type ParentDisplay = Pick<Profile, "id" | "full_name" | "email" | "phone_number" | "avatar_url">;
 type PaymentType = "monthly" | "annual";
@@ -115,6 +117,7 @@ export function ApplicationReviewOverlay({
   slug,
   mode,
   requestId,
+  initialRow, initialProgram,
   canDecide = true,
   onClose,
   onChanged,
@@ -123,13 +126,15 @@ export function ApplicationReviewOverlay({
   slug: string;
   mode: "teacher" | "admin";
   requestId: string;
+  initialRow?: ApplicationRow;
+  initialProgram?: Program;
   canDecide?: boolean;
   onClose: () => void;
   onChanged: () => Promise<void> | void;
 }) {
-  const [program, setProgram] = useState<Program | null>(null);
-  const [row, setRow] = useState<ApplicationRow | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [program, setProgram] = useState<Program | null>(initialProgram ?? null);
+  const [row, setRow] = useState<ApplicationRow | null>(initialRow ?? null);
+  const [loading, setLoading] = useState(!initialRow || !initialProgram);
   const [error, setError] = useState<string | null>(null);
   const [decisionAction, setDecisionAction] = useState<"approved" | "waitlisted" | "rejected" | null>(null);
   const [decisionBusy, setDecisionBusy] = useState(false);
@@ -151,61 +156,47 @@ export function ApplicationReviewOverlay({
     let cancelled = false;
 
     async function load() {
-      setLoading(true);
-      setError(null);
-      const supabase = createSupabaseBrowserClient();
-      const [{ data: programRow }, { data: request, error: requestError }, { data: trackLinkRows }] = await Promise.all([
-        supabase.from("programs").select("*").eq("id", programId).maybeSingle(),
-        supabase.from("enrollment_requests").select("*").eq("id", requestId).maybeSingle(),
-        supabase.from("enrollment_request_tracks").select("program_track_id").eq("enrollment_request_id", requestId),
-      ]);
-      if (cancelled) {
-        return;
-      }
-      if (requestError || !request || !programRow) {
-        setError(friendlyErrorMessage(requestError, "Application not found."));
+      try {
+        const supabase = createSupabaseBrowserClient();
+        let nextProgram = initialProgram;
+        let nextRow = initialRow;
+        if (!nextProgram || !nextRow) {
+          const session = await loadCachedSession();
+          if (!session) throw new Error("Please sign in again.");
+          const snapshot = await loadPrivateSnapshot(operationalSnapshotKey("applications", slug, programId, session.user.id), async () => {
+            const result = await supabase.rpc("get_program_applications_snapshot", { p_slug: slug, p_program_id: programId });
+            if (result.error) throw result.error;
+            return result.data;
+          }) as unknown as { canView: boolean; program: Program; requests: EnrollmentRequest[]; tracks: ProgramTrack[]; subscriptions: ProgramSubscription[]; profiles: Profile[]; requestTrackLinks: { enrollment_request_id: string; program_track_id: string }[] };
+          if (!snapshot.canView) throw new Error("You do not have access to this application.");
+          const request = snapshot.requests.find((item) => item.id === requestId);
+          if (!request) throw new Error("Application not found.");
+          const trackId = request.program_track_id ?? snapshot.requestTrackLinks?.find((item) => item.enrollment_request_id === requestId)?.program_track_id;
+          nextProgram = snapshot.program;
+          nextRow = {
+            request,
+            student: snapshot.profiles.find((item) => item.id === request.student_profile_id) ?? null,
+            parent: snapshot.profiles.find((item) => item.id === request.parent_profile_id) ?? null,
+            approver: snapshot.profiles.find((item) => item.id === request.reviewed_by) ?? null,
+            subscription: snapshot.subscriptions.find((item) => item.student_profile_id === request.student_profile_id) ?? null,
+            track: snapshot.tracks.find((item) => item.id === trackId) ?? null,
+          };
+        }
+        if (cancelled) return;
+        setProgram(nextProgram);
+        setRow(nextRow);
         setLoading(false);
-        return;
+        // Capacity is supplementary; never hold the applicant file behind it.
+        if (nextRow.track) {
+          const { data: enrollments, error } = await supabase.from("enrollments").select("id").eq("program_id", programId).eq("status", "active");
+          if (error || cancelled) return;
+          if (!enrollments?.length) { setTrackEnrolledCount(0); return; }
+          const result = await supabase.from("enrollment_tracks").select("enrollment_id").eq("program_track_id", nextRow.track.id).in("enrollment_id", enrollments.map((item) => item.id));
+          if (!cancelled && !result.error) setTrackEnrolledCount(result.data?.length ?? 0);
+        }
+      } catch (error) {
+        if (!cancelled) { setError(friendlyErrorMessage(error, "Could not load application.")); setLoading(false); }
       }
-
-      const linkedTrackIds = (trackLinkRows ?? []).map((linkRow) => linkRow.program_track_id);
-      const primaryTrackId = request.program_track_id ?? linkedTrackIds[0] ?? null;
-      let trackRow: ProgramTrack | null = null;
-      let nextTrackEnrolledCount: number | null = null;
-      if (primaryTrackId) {
-        const trackResult = await supabase.from("program_tracks").select("*").eq("id", primaryTrackId).maybeSingle();
-        trackRow = trackResult.data ?? null;
-        const { data: activeEnrollments } = await supabase.from("enrollments").select("id").eq("program_id", programId).eq("status", "active");
-        const activeEnrollmentIds = (activeEnrollments ?? []).map((enrollment) => enrollment.id);
-        nextTrackEnrolledCount = activeEnrollmentIds.length
-          ? (await supabase.from("enrollment_tracks").select("enrollment_id").eq("program_track_id", primaryTrackId).in("enrollment_id", activeEnrollmentIds)).data?.length ?? 0
-          : 0;
-      }
-      const { data: subscriptionRow } = await supabase
-        .from("program_subscriptions")
-        .select("*")
-        .eq("program_id", programId)
-        .eq("student_profile_id", request.student_profile_id)
-        .maybeSingle();
-      const profileIds = Array.from(new Set([request.student_profile_id, request.parent_profile_id, request.reviewed_by].filter(Boolean))) as string[];
-      const { data: profileRows } = profileIds.length
-        ? await supabase.from("profiles").select("id, full_name, email, phone_number, avatar_url, age, gender, date_of_birth, account_type").in("id", profileIds)
-        : { data: [] as StudentDisplay[] };
-
-      if (cancelled) {
-        return;
-      }
-      setProgram(programRow);
-      setRow({
-        request,
-        student: (profileRows ?? []).find((profile) => profile.id === request.student_profile_id) as StudentDisplay | null,
-        parent: request.parent_profile_id ? ((profileRows ?? []).find((profile) => profile.id === request.parent_profile_id) as ParentDisplay | undefined) ?? null : null,
-        track: trackRow,
-        subscription: subscriptionRow ?? null,
-        approver: request.reviewed_by ? ((profileRows ?? []).find((profile) => profile.id === request.reviewed_by) as Profile | undefined) ?? null : null,
-      });
-      setTrackEnrolledCount(nextTrackEnrolledCount);
-      setLoading(false);
     }
 
     const timeout = window.setTimeout(() => {
@@ -215,7 +206,7 @@ export function ApplicationReviewOverlay({
       cancelled = true;
       window.clearTimeout(timeout);
     };
-  }, [programId, requestId]);
+  }, [programId, requestId, slug, initialRow, initialProgram]);
 
   async function handleCopyConfirmationLink() {
     const url = `${window.location.origin}/m/${slug}/registration/${requestId}`;
@@ -374,28 +365,17 @@ function ApplicationDetailsDrawer({
   onClose: () => void;
   onAction: (action: ApplicationRowAction) => void;
 }) {
-  const [studentEvents, setStudentEvents] = useState<ProgramFinanceAuditEvent[] | null>(null);
+  const [studentEvents, setStudentEvents] = useState<StudentActivity[] | null>(null);
   const [eventsLoading, setEventsLoading] = useState(true);
+  const [eventsError, setEventsError] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
     const timeout = window.setTimeout(() => {
       setEventsLoading(true);
-      const supabase = createSupabaseBrowserClient();
-      void supabase
-        .from("program_finance_audit_events")
-        .select("*")
-        .eq("program_id", program.id)
-        .eq("student_profile_id", row.request.student_profile_id)
-        .order("created_at", { ascending: false })
-        .limit(50)
-        .then(({ data }) => {
-          if (cancelled) {
-            return;
-          }
-          setStudentEvents(data ?? []);
-          setEventsLoading(false);
-        });
+      void loadStudentActivity(program.id, row.request.student_profile_id, "application").then((events) => {
+        if (!cancelled) { setStudentEvents(events); setEventsError(null); }
+      }).catch((error) => { if (!cancelled) setEventsError(error instanceof Error ? error.message : "Activity could not be loaded. Close and reopen to retry."); }).finally(() => { if (!cancelled) setEventsLoading(false); });
     }, 0);
     return () => {
       cancelled = true;
@@ -561,7 +541,7 @@ function ApplicationDetailsDrawer({
               <h3 className="text-xs font-semibold text-[#26323A]">Audit Trail</h3>
               {eventsLoading ? (
                 <div className="rounded-[12px] border border-dashed border-[#D6DCE0] bg-[#F8FAFB] p-2.5 font-semibold text-[#6B747B]">Loading activity...</div>
-              ) : !studentEvents?.length ? (
+              ) : eventsError ? <p role="alert" className="text-sm text-red-700">{eventsError}</p> : !studentEvents?.length ? (
                 <div className="rounded-[12px] border border-dashed border-[#D6DCE0] bg-[#F8FAFB] p-2.5 font-semibold text-[#6B747B]">No activity for this application yet.</div>
               ) : (
                 <div className="divide-y divide-[#EEF2F4]">
@@ -573,7 +553,8 @@ function ApplicationDetailsDrawer({
                         ) : null}
                         <p className="font-semibold text-[#26323A]">{event.summary}</p>
                       </div>
-                      <p className="mt-0.5 text-[11px] text-[#7B858C]">{formatFinanceDate(event.created_at)}</p>
+                      <p className="mt-0.5 text-[11px] text-[#7B858C]">{formatFinanceDate(event.created_at)} · {event.actor_name}</p>
+                      {event.context ? <p className="mt-0.5 text-[11px] font-medium text-[#52616A]">{event.context}</p> : null}
                     </div>
                   ))}
                 </div>

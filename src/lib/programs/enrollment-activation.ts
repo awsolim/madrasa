@@ -29,35 +29,11 @@ export async function activateEnrollmentForRequest(
   supabase: SupaClient,
   params: { enrollmentRequestId: string; programId: string; studentProfileId: string; fallbackTrackId: string | null },
 ): Promise<string[]> {
-  const trackIds = await selectedTrackIdsForRequest(supabase, params.enrollmentRequestId, params.fallbackTrackId);
-
-  const { data: enrollment } = await supabase
-    .from("enrollments")
-    .upsert(
-      {
-        program_id: params.programId,
-        student_profile_id: params.studentProfileId,
-        program_track_id: trackIds[0] ?? params.fallbackTrackId,
-        status: "active",
-        // Explicitly refreshed so a student who withdraws and later re-joins the same
-        // program gets a fresh join date instead of Postgres silently keeping the
-        // original insert's default (announcement notifications key off this).
-        created_at: new Date().toISOString(),
-      },
-      { onConflict: "program_id,student_profile_id" },
-    )
-    .select("id")
-    .single();
-
-  if (enrollment) {
-    await replaceEnrollmentTracks(supabase, enrollment.id, trackIds);
-  }
-
-  const now = new Date().toISOString();
-  await supabase
-    .from("enrollment_requests")
-    .update({ admission_completed_at: now, student_dismissed_at: now, teacher_dismissed_at: null })
-    .eq("id", params.enrollmentRequestId);
-
-  return trackIds;
+  const { data, error } = await supabase.rpc("finalize_no_payment_program_enrollment" as never, {
+    p_enrollment_request_id: params.enrollmentRequestId,
+  } as never);
+  if (error) throw error;
+  const result = data as unknown as { enrollmentId?: string; trackIds?: string[] } | null;
+  if (!result?.enrollmentId) throw new Error("Enrollment activation did not finish saving.");
+  return result.trackIds ?? [];
 }

@@ -15,7 +15,7 @@ export async function recordFinanceAuditEvent(
     metadata?: Record<string, Json>;
   },
 ) {
-  await supabase.from("program_finance_audit_events").insert({
+  const { error } = await supabase.from("program_finance_audit_events").insert({
     program_id: event.programId,
     student_profile_id: event.studentProfileId ?? null,
     actor_profile_id: event.actorProfileId,
@@ -23,4 +23,5 @@ export async function recordFinanceAuditEvent(
     summary: event.summary,
     metadata: event.metadata ?? {},
   });
+  if (error) throw error;
 }

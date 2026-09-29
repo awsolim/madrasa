@@ -130,6 +130,8 @@ export async function sendEnrollmentSubmittedEmails(requestIds: string[], userId
       });
 
       const managerDelivery = await sendProfileNotificationEmails(supabase, managerIds, {
+        includeAdmins: true,
+        adminAction: { label: "Review Request", href: `${getAppBaseUrl()}/m/${mosque.slug}/admin/programs/${program.id}/applications` },
         eventKey: `application-submitted:${request.id}:staff`,
         subject: `New enrollment request for ${program.title}`,
         title: "New Enrollment Request",

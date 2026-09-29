@@ -4,7 +4,7 @@ import { createPortal } from "react-dom";
 import { useEffect, useState } from "react";
 import { cn } from "@/lib/utils";
 
-export type EditorToastState = { tone: "success" | "error"; message: string };
+export type EditorToastState = { tone: "success" | "error" | "neutral"; message: string };
 
 export const editorToastStorageKey = "tareeqah:editor-toast";
 
@@ -30,7 +30,7 @@ export function EditorToast({ toast, onClose }: { toast: EditorToastState | null
   const isSuccess = toast.tone === "success";
   return createPortal(
     <div className="fixed left-1/2 top-4 w-[calc(100%-32px)] max-w-sm -translate-x-1/2" style={{ zIndex: 2147483647 }}>
-      <div className={cn("flex min-h-12 items-center gap-3 rounded-[10px] px-4 py-3 text-sm font-semibold text-white shadow-[0_18px_44px_rgba(38,50,58,0.20)]", isSuccess ? "bg-[#1D8B68]" : "bg-[#C83F31]")}>
+      <div className={cn("flex min-h-12 items-center gap-3 rounded-[10px] px-4 py-3 text-sm font-semibold text-white shadow-[0_18px_44px_rgba(38,50,58,0.20)]", toast.tone === "neutral" ? "bg-[#52616A]" : isSuccess ? "bg-[#1D8B68]" : "bg-[#C83F31]")}>
         <span className="min-w-0 flex-1">{toast.message}</span>
         <button type="button" onClick={onClose} className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-white/15 text-lg leading-none text-white hover:bg-white/25" aria-label="Close notification">
           ×
@@ -59,7 +59,7 @@ export function readQueuedEditorToast() {
       return null;
     }
     const parsed = JSON.parse(raw) as Partial<EditorToastState>;
-    if ((parsed.tone === "success" || parsed.tone === "error") && typeof parsed.message === "string" && parsed.message.trim()) {
+    if ((parsed.tone === "success" || parsed.tone === "error" || parsed.tone === "neutral") && typeof parsed.message === "string" && parsed.message.trim()) {
       return { tone: parsed.tone, message: parsed.message };
     }
   } catch {

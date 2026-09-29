@@ -28,7 +28,7 @@ const privateSnapshotCache = new Map<string, CacheEntry<unknown>>();
 const privateSnapshotInflight = new Map<string, Promise<unknown>>();
 let privateCacheEpoch = 0;
 
-export function operationalSnapshotKey(kind: "applications" | "finances", slug: string, programId: string, userId: string) {
+export function operationalSnapshotKey(kind: "applications" | "finances" | "students", slug: string, programId: string, userId: string) {
   return `${kind}:${slug}:${programId}:${userId}`;
 }
 

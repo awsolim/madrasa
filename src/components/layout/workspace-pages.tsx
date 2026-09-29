@@ -1,7 +1,8 @@
 "use client";
+import { useSearchParams } from "next/navigation";
 
-import { AdminDashboardPage, AdminProgramsPage, AdminMasjidPage, AdminSettingsPage, AdminProgramDetailPage, AdminProgramCreatePage, AdminProgramApplicationsPage, AdminProgramFinancesPage } from "@/components/pages/admin-pages";
-import { TeacherDashboardPage, TeacherClassesPage, TeacherInboxPage, TeacherAccountPage, TeacherProgramDetailPage, TeacherProgramCreatePage, TeacherProgramApplicationsPage, TeacherProgramFinancesPage } from "@/components/pages/teacher-pages";
+import { AdminProgramStudentsPage, AdminDashboardPage, AdminProgramsPage, AdminMasjidPage, AdminSettingsPage, AdminProgramDetailPage, AdminProgramCreatePage, AdminProgramApplicationsPage, AdminProgramFinancesPage } from "@/components/pages/admin-pages";
+import { TeacherStudentsPage, TeacherDashboardPage, TeacherClassesPage, TeacherInboxPage, TeacherAccountPage, TeacherProgramDetailPage, TeacherProgramCreatePage, TeacherProgramApplicationsPage, TeacherProgramFinancesPage } from "@/components/pages/teacher-pages";
 import { PortalDashboardPage, PortalClassesPage, PortalAnnouncementsPage, PortalAccountPage, PublicAccountPage } from "@/components/pages/portal-pages";
 import { PublicMasjidPage, PublicProgramsPage } from "@/components/pages/public-pages";
 import { useWorkspacePathname } from "@/components/layout/workspace-navigation";
@@ -9,6 +10,7 @@ import { workspaceRoute, type WorkspaceSection } from "@/lib/navigation-paths";
 
 export function WorkspacePages({ slug, section, children }: { slug: string; section: WorkspaceSection; children: React.ReactNode }) {
   const pathname = useWorkspacePathname();
+  const searchParams = useSearchParams();
   const route = workspaceRoute(pathname, slug, section);
   const [screen, programId] = route?.split(":") ?? [];
   let page: React.ReactNode = children;
@@ -20,6 +22,7 @@ export function WorkspacePages({ slug, section, children }: { slug: string; sect
     if (screen === "edit") page = <AdminProgramDetailPage slug={slug} programId={programId} />;
     if (screen === "create") page = <AdminProgramCreatePage slug={slug} />;
     if (screen === "applications") page = <AdminProgramApplicationsPage slug={slug} programId={programId} />;
+    if (screen === "students") page = <AdminProgramStudentsPage slug={slug} programId={programId} />;
     if (screen === "finances") page = <AdminProgramFinancesPage slug={slug} programId={programId} />;
   } else if (section === "teacher") {
     if (screen === "home") page = <TeacherDashboardPage slug={slug} />;
@@ -29,6 +32,7 @@ export function WorkspacePages({ slug, section, children }: { slug: string; sect
     if (screen === "edit") page = <TeacherProgramDetailPage slug={slug} programId={programId} />;
     if (screen === "create") page = <TeacherProgramCreatePage slug={slug} />;
     if (screen === "applications") page = <TeacherProgramApplicationsPage slug={slug} programId={programId} />;
+    if (screen === "students") page = <TeacherStudentsPage slug={slug} programId={programId} fromHome={searchParams.get("from") === "home"} />;
     if (screen === "finances") page = <TeacherProgramFinancesPage slug={slug} programId={programId} />;
   } else if (section === "portal") {
     if (screen === "home") page = <PortalDashboardPage slug={slug} />;

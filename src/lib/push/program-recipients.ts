@@ -31,15 +31,19 @@ export async function getProgramManagerProfileIds(
 /** Staff who can act on a new application for this class. */
 export async function getProgramApplicationReviewerProfileIds(
   supabase: SupabaseClient<Database>,
-  program: { id: string; director_profile_id: string | null; teacher_profile_id: string | null },
+  program: { id: string; mosque_id: string; director_profile_id: string | null; teacher_profile_id: string | null },
 ): Promise<string[]> {
   const { data: assignments, error } = await supabase.from("program_teachers")
     .select("teacher_profile_id, role, can_decide_applications")
     .eq("program_id", program.id)
     .not("teacher_profile_id", "is", null);
   if (error) throw new Error(error.message);
+  const { data: admins, error: adminError } = await supabase.from("mosque_memberships")
+    .select("profile_id").eq("mosque_id", program.mosque_id).eq("role", "admin").eq("status", "active");
+  if (adminError) throw new Error(adminError.message);
   const candidateIds = Array.from(new Set([
     program.director_profile_id ?? program.teacher_profile_id,
+    ...(admins ?? []).map((row) => row.profile_id),
     ...(assignments ?? []).filter((row) => row.role === "director" || (row.role === "instructor" && row.can_decide_applications)).map((row) => row.teacher_profile_id),
   ].filter((id): id is string => Boolean(id))));
   const authorized = await Promise.all(candidateIds.map(async (profileId) => {

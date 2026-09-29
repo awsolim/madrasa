@@ -2,7 +2,6 @@ import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
-import { logServerError } from "@/lib/monitoring/log-error";
 
 const taxReceiptPolicyToInitialStatus: Record<string, string> = {
   not_applicable: "not_applicable",
@@ -41,12 +40,12 @@ export async function insertProgramPayment(
     return;
   }
 
-  try {
-    const { data: program } = await supabase
+  const { data: program, error: programError } = await supabase
       .from("programs")
       .select("tax_receipt_policy")
       .eq("id", payment.programId)
       .maybeSingle();
+  if (programError) throw programError;
     const taxReceiptStatus = taxReceiptPolicyToInitialStatus[program?.tax_receipt_policy ?? "not_applicable"] ?? "not_applicable";
 
     const row = {
@@ -67,19 +66,6 @@ export async function insertProgramPayment(
     };
 
     const onConflict = payment.stripeChargeId ? "stripe_charge_id" : "stripe_invoice_id";
-    const { error } = await supabase.from("program_payments").upsert(row, { onConflict, ignoreDuplicates: true });
-    if (error) {
-      await logServerError(supabase, {
-        source: "program_payments.insert",
-        message: error.message,
-        context: { programId: payment.programId, stripeChargeId: payment.stripeChargeId ?? null, stripeInvoiceId: payment.stripeInvoiceId ?? null },
-      });
-    }
-  } catch (error) {
-    await logServerError(supabase, {
-      source: "program_payments.insert",
-      message: error instanceof Error ? error.message : "Unknown error recording program payment.",
-      context: { programId: payment.programId },
-    });
-  }
+  const { error } = await supabase.from("program_payments").upsert(row, { onConflict, ignoreDuplicates: true });
+  if (error) throw error;
 }

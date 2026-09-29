@@ -81,7 +81,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
       summary: external
         ? `Payment marked as paid externally for ${label}. Registration confirmation is still required.`
         : `Payment waived for ${label}. Registration confirmation is still required.`,
-      metadata: { external },
+      metadata: { enrollmentRequestId: requestId, external },
     });
 
     const { data: mosque } = await supabase.from("mosques").select("slug").eq("id", program.mosque_id).maybeSingle();

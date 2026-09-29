@@ -48,6 +48,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
       actorProfileId: user.id,
       eventType: "application_deleted",
       summary: `Rejected application permanently removed for ${student?.full_name || student?.email || "this student"}.`,
+      metadata: { enrollmentRequestId: requestId },
     });
 
     const { error: deleteError } = await supabase.from("enrollment_requests").delete().eq("id", requestId).eq("program_id", programId);

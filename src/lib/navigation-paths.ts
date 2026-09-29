@@ -28,7 +28,7 @@ export function workspaceRoute(pathname: string, slug: string, section: Workspac
   if (section === "portal" && suffix === "announcements") return "inbox";
   if (section === "teacher" || section === "admin") {
     if (suffix === `${classes}/new`) return "create";
-    const match = suffix?.match(new RegExp(`^${classes}/([a-f0-9-]{36})(?:/(applications|finances))?$`, "i"));
+    const match = suffix?.match(new RegExp(`^${classes}/([a-f0-9-]{36})(?:/(applications|finances|students))?$`, "i"));
     if (match) return `${match[2] ?? "edit"}:${match[1]}`;
   }
   return null;

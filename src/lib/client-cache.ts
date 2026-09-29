@@ -52,6 +52,8 @@ const sessionSubscribers = new Set<(session: Session | null) => void>();
 const mosqueChromeCache = new Map<string, MosqueChrome>();
 const mosqueChromePromises = new Map<string, Promise<MosqueChrome | null>>();
 const accessCache = new Map<string, UserAccess>();
+const accessCachedAt = new Map<string, number>();
+let userCacheEpoch = 0;
 const accessPromises = new Map<string, Promise<UserAccess>>();
 const profileNameCache = new Map<string, string | null>();
 const profileNamePromises = new Map<string, Promise<string | null>>();
@@ -98,7 +100,9 @@ export async function loadCachedSession() {
 }
 
 export function clearUserScopedCaches() {
+  userCacheEpoch += 1;
   accessCache.clear();
+  accessCachedAt.clear();
   accessPromises.clear();
   profileNameCache.clear();
   profileNamePromises.clear();
@@ -161,12 +165,13 @@ function titleFromSlug(slug: string) {
 }
 
 export function getCachedUserAccess(slug: string, userId: string) {
+  if (Date.now() - (accessCachedAt.get(accessKey(slug, userId)) ?? 0) > 60_000) return null;
   return accessCache.get(accessKey(slug, userId)) ?? null;
 }
 
 export async function loadCachedUserAccess(slug: string, userId: string) {
   const key = accessKey(slug, userId);
-  const cached = accessCache.get(key);
+  const cached = getCachedUserAccess(slug, userId);
   if (cached) {
     return cached;
   }
@@ -176,14 +181,18 @@ export async function loadCachedUserAccess(slug: string, userId: string) {
     return existing;
   }
 
+  const epoch = userCacheEpoch;
   const promise = loadUserAccessByMosqueSlug(slug)
+    .catch(() => loadUserAccessByMosqueSlug(slug))
     .then((access) => {
+      if (epoch !== userCacheEpoch || access.profileId !== userId) throw new Error("Account changed during loading.");
       accessCache.set(key, access);
+      accessCachedAt.set(key, Date.now());
       return access;
     })
-    .catch(() => emptyUserAccess)
+    .catch(() => ({ ...emptyUserAccess, profileId: userId, resolutionError: "We couldn't load your account access. Please try again." }))
     .finally(() => {
-      accessPromises.delete(key);
+      if (accessPromises.get(key) === promise) accessPromises.delete(key);
     });
 
   accessPromises.set(key, promise);
@@ -334,7 +343,6 @@ function startAuthListener() {
 
   authListenerStarted = true;
   createSupabaseBrowserClient().auth.onAuthStateChange((_event, session) => {
-    setCachedSessionSnapshot(session);
     const nextUserId = session?.user.id ?? null;
     // Clear on sign-out (nextUserId null) AND on a direct switch to a different signed-in
     // user (nextUserId changed but non-null) — the known account-switch flow already calls
@@ -349,6 +357,7 @@ function startAuthListener() {
     }
     hasSeenFirstAuthEvent = true;
     lastSeenUserId = nextUserId;
+    setCachedSessionSnapshot(session);
   });
 }
 

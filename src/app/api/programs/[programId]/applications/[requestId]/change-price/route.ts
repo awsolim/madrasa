@@ -98,7 +98,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
       actorProfileId: user.id,
       eventType: "approved_price_changed",
       summary: `Approved price changed to $${(priceCents / 100).toFixed(2)} ${paymentType === "annual" ? (programForTerms.is_ongoing ? "/year (annual subscription)" : "(Pay in Full)") : "/month"} for ${student?.full_name || student?.email || "this student"}.`,
-      metadata: { paymentType, priceCents },
+      metadata: { enrollmentRequestId: requestId, paymentType, priceCents },
     });
 
     const { data: program } = await supabase.from("programs").select("title, mosque_id").eq("id", programId).maybeSingle();

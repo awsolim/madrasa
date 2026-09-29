@@ -54,6 +54,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
       actorProfileId: user.id,
       eventType: "application_reopened",
       summary: `Application reopened for ${student?.full_name || student?.email || "this student"} — back to pending review.`,
+      metadata: { enrollmentRequestId: requestId },
     });
 
     const { data: program } = await supabase.from("programs").select("title, mosque_id").eq("id", programId).maybeSingle();

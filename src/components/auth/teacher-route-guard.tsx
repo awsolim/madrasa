@@ -9,6 +9,8 @@ export function TeacherRouteGuard({ children, slug }: { children: React.ReactNod
   const pathname = usePathname();
   const router = useRouter();
   const [isAllowed, setIsAllowed] = useState(false);
+  const [accessError, setAccessError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
 
   useEffect(() => {
     let active = true;
@@ -29,6 +31,8 @@ export function TeacherRouteGuard({ children, slug }: { children: React.ReactNod
         return;
       }
 
+      if (access.resolutionError) { setAccessError(access.resolutionError); return; }
+
       if (access.isTeacher || access.isMosqueAdmin) {
         setIsAllowed(true);
         return;
@@ -42,7 +46,9 @@ export function TeacherRouteGuard({ children, slug }: { children: React.ReactNod
     return () => {
       active = false;
     };
-  }, [pathname, router, slug]);
+  }, [pathname, router, slug, attempt]);
+
+  if (accessError) return <main className="p-6 text-center"><p role="alert">{accessError}</p><button className="mt-4 rounded-lg border px-5 py-3" onClick={() => { setAccessError(null); setAttempt(value => value + 1); }}>Try again</button></main>;
 
   if (!isAllowed) {
     return <QuietPageLoadingState />;

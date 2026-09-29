@@ -68,7 +68,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
       actorProfileId: user.id,
       eventType: "registration_cancelled_by_family",
       summary: `Registration cancelled by family for ${student?.full_name || student?.email || "this student"}.${reason ? ` Reason: ${reason}` : ""}`,
-      metadata: { reason: reason || null },
+      metadata: { enrollmentRequestId: requestId, reason: reason || null },
     });
 
     return Response.json({ ok: true });

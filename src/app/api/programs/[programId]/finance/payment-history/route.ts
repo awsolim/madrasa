@@ -36,13 +36,15 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
       return Response.json({ error: access.error }, { status: access.status });
     }
 
-    const { data: payments } = await supabase
+    const { data: payments, error: paymentsError } = await supabase
       .from("program_payments")
       .select("id, amount_cents, currency, paid_at, receipt_url, tax_receipt_status, tax_receipt_eligible_amount_cents, tax_receipt_number")
       .eq("program_id", programId)
       .eq("student_profile_id", body.studentProfileId)
       .order("paid_at", { ascending: false })
       .limit(50);
+
+    if (paymentsError) throw paymentsError;
 
     return Response.json({
       charges: (payments ?? []).map((payment) => ({
@@ -63,6 +65,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
       message,
       context: { ...(await params) },
     });
-    return Response.json({ error: message }, { status: 500 });
+    return Response.json({ error: "Payment history could not be loaded. Please try again." }, { status: 500 });
   }
 }

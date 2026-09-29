@@ -1,4 +1,9 @@
 "use client";
+import { selectCurrentPaymentTerms } from "@/lib/current-payment-terms";
+import { loadStudentActivity, type StudentActivity } from "@/lib/student-activity";
+
+import { programMediaType, validateProgramMediaFile } from "@/lib/program-media";
+import { useWizardExit } from "@/components/data/use-wizard-exit";
 
 import Image from "next/image";
 import Link from "@/components/layout/workspace-link";
@@ -136,27 +141,9 @@ type ProgramWithTeacher = Program & {
 
 type TeacherProgramRole = "director" | "instructor";
 type PaymentType = "monthly" | "annual";
-type ProgramEditorMediaRow = { id: string; url: string; title: string; mediaType: string; file?: File | null; previewUrl?: string };
+type ProgramEditorMediaRow = { id: string; url: string; title: string; mediaType: string; file?: File | null; previewUrl?: string; progress?: number; uploadError?: string };
 
-const MAX_PROGRAM_IMAGE_BYTES = 10 * 1024 * 1024;
-const MAX_PROGRAM_VIDEO_BYTES = 75 * 1024 * 1024;
-
-function programMediaType(file: Pick<File, "name" | "type">): "photo" | "video" | null {
-  const extension = file.name.split(".").pop()?.toLowerCase() ?? "";
-  if (file.type.startsWith("video/") || ["mp4", "webm", "mov", "m4v"].includes(extension)) return "video";
-  if (file.type.startsWith("image/") || ["jpg", "jpeg", "png", "webp", "gif"].includes(extension)) return "photo";
-  return null;
-}
-
-function validateProgramMediaFile(file: File) {
-  const mediaType = programMediaType(file);
-  if (!mediaType) return "Use a JPEG, PNG, WebP, GIF, MP4, WebM, or MOV file.";
-  const maxBytes = mediaType === "video" ? MAX_PROGRAM_VIDEO_BYTES : MAX_PROGRAM_IMAGE_BYTES;
-  if (file.size > maxBytes) return `${mediaType === "video" ? "Video" : "Image"} is too large (max ${mediaType === "video" ? "75" : "10"} MB).`;
-  return null;
-}
-
-async function uploadProgramMediaFile(programId: string, file: File) {
+async function uploadProgramMediaFile(programId: string, file: File, onProgress?: (value: number) => void) {
   const validationError = validateProgramMediaFile(file);
   if (validationError) throw new Error(validationError);
   const accessToken = await getCurrentAccessToken();
@@ -169,7 +156,7 @@ async function uploadProgramMediaFile(programId: string, file: File) {
   });
   const result = (await response.json().catch(() => ({}))) as { path?: string; token?: string; url?: string; mediaType?: "photo" | "video"; error?: string };
   if (!response.ok || !result.path || !result.token || !result.url || !result.mediaType) {
-    throw new Error(result.error ?? "Could not prepare media upload.");
+    throw new Error(response.status === 403 ? "You don’t have permission to upload media for this class." : "Could not start the upload. Please try again.");
   }
 
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -192,13 +179,12 @@ async function uploadProgramMediaFile(programId: string, file: File) {
         contentType: file.type || (result.mediaType === "video" ? "video/mp4" : "image/jpeg"),
         cacheControl: "3600",
       },
-      onError: (error) => reject(error),
+      onError: () => reject(new Error("Upload interrupted. Check your connection and try again.")),
+      onProgress: (uploaded, total) => onProgress?.(Math.round(uploaded / total * 100)),
       onSuccess: () => resolve(),
     });
-    void upload.findPreviousUploads().then((previousUploads) => {
-      if (previousUploads.length) upload.resumeFromPreviousUpload(previousUploads[0]);
-      upload.start();
-    }).catch(reject);
+    // Each signed URL names a new object; never resume another object’s saved upload.
+    upload.start();
   });
   return { url: result.url, mediaType: result.mediaType };
 }
@@ -658,6 +644,9 @@ export async function callApplicationAction<T = Record<string, unknown>>(
   if (!response.ok) {
     return { ok: false, error: result.error ?? "Something went wrong." };
   }
+  invalidatePrivateSnapshots(`student-activity:${programId}:`);
+  invalidatePrivateSnapshots("students:");
+  invalidateQueryPrefix("teacher-roster:");
   return { ok: true, data: result };
 }
 
@@ -907,6 +896,7 @@ export function StudentHomeData({ slug }: { slug: string }) {
 export function PublicProgramsData({ slug, detailReturnTo }: { slug: string; detailReturnTo?: string }) {
   const router = useRouter();
   const { mosque, programs, loading, error } = useMosquePrograms(slug);
+  const [redirectError, setRedirectError] = useState<string | null>(null);
   const [checkingSignedInRedirect, setCheckingSignedInRedirect] = useState(true);
 
   useEffect(() => {
@@ -949,11 +939,13 @@ export function PublicProgramsData({ slug, detailReturnTo }: { slug: string; det
       router.replace(access.accountType?.toLowerCase() === "teacher" ? `${landing}/classes` : access.accountType?.toLowerCase() === "admin" ? `${landing}/programs` : `${landing}/classes`);
     }
 
-    void redirectSignedInAccounts();
+    void redirectSignedInAccounts().catch(() => { if (active) { setRedirectError("We could not load your account. Please try again."); setCheckingSignedInRedirect(false); } });
     return () => {
       active = false;
     };
   }, [router, slug]);
+
+  if (redirectError) return <EmptyState title="Account unavailable" text={redirectError} onRetry={() => window.location.reload()} />;
 
   if (checkingSignedInRedirect || loading) {
     return <QuietPageLoadingState />;
@@ -5533,6 +5525,7 @@ export function TeacherProgramCreateData({ slug }: { slug: string }) {
   const [busy, setBusy] = useState(false);
   const thumbnailInputRef = useRef<HTMLInputElement | null>(null);
   const [thumbnailCropFile, setThumbnailCropFile] = useState<File | null>(null);
+  const wizardExit = useWizardExit(slug, { tagRows, builderStatus, title, description, thumbnailUrl, allAges, ageStart, ageEnd, noRegistrationDeadline, audienceGender, price, offersMonthlyPayment, offersAnnualPayment, annualPrice, eventDate, learningVisible, learningTitle, learningIntro, topicsIntro, requirementsText, policiesText, outcomeRows, faqVisible, faqRows, contentSectionsVisible, contentSectionRows, mediaVisible, mediaRows, trackRows, transferRules, trackSelectionMode, trackSelectionCount, selectedDirectorId, instructorDisplayName, instructorCredentials, instructorContactPhone, coverDirectorVisibility, contactPhoneOmitted, contactEmailOmitted });
   // Annual pricing is compared against one year of monthly payments: 12 months for an
   // ongoing program (which bills annually, not for a known total length), or the program's
   // actual fixed duration for a fixed-length program (its annual price is a one-time lump
@@ -6081,6 +6074,7 @@ export function TeacherProgramCreateData({ slug }: { slug: string }) {
   }
 
   function goToPreviousStep() {
+    if (builderStep === "basics") { wizardExit.requestExit(); return; }
     const index = programBuilderSteps.findIndex((step) => step.id === builderStep);
     setBuilderStep(programBuilderSteps[Math.max(0, index - 1)]?.id ?? "basics");
     scrollBuilderToTop();
@@ -6155,7 +6149,8 @@ export function TeacherProgramCreateData({ slug }: { slug: string }) {
   }
 
   return (
-    <div className="space-y-5 bg-[var(--workspace)] p-4 pb-40">
+    <div className="space-y-5 bg-[var(--workspace)] p-4 pb-40" onPointerDownCapture={wizardExit.capture} onKeyDownCapture={wizardExit.capture} onChangeCapture={wizardExit.capture}>
+      {wizardExit.dialog}
       <EditorToast toast={toast} onClose={() => setToast(null)} />
       {missingFieldsModal ? (
         <MissingFieldsModal
@@ -6166,7 +6161,6 @@ export function TeacherProgramCreateData({ slug }: { slug: string }) {
         />
       ) : null}
       <ProgramBuilderStepper activeStep={builderStep} />
-      <ProgramBuilderActionBar busy={busy} builderStep={builderStep} onBack={goToPreviousStep} onContinueOrPublish={handleContinueOrPublishClick} />
 
       <h1 className="px-1 text-2xl font-semibold text-[#26323A]">{programBuilderSteps.find((step) => step.id === builderStep)?.label}</h1>
 
@@ -6245,12 +6239,14 @@ export function TeacherProgramCreateData({ slug }: { slug: string }) {
             <input
               ref={thumbnailInputRef}
               type="file"
-              accept="image/*"
+              accept="image/jpeg,image/png,image/webp,image/gif"
               className="hidden"
               onChange={(event) => {
                 const file = event.target.files?.[0] ?? null;
                 event.target.value = "";
                 if (file) {
+                  const validationError = validateProgramMediaFile(file);
+                  if (validationError || programMediaType(file) !== "photo") { setToast({ tone: "error", message: validationError || "Choose a photo for the class cover." }); return; }
                   setThumbnailCropFile(file);
                 }
               }}
@@ -6516,6 +6512,7 @@ export function TeacherProgramSettingsData({ slug, programId, returnHref }: { sl
   const [error, setError] = useState<string | null>(null);
   const thumbnailInputRef = useRef<HTMLInputElement | null>(null);
   const [thumbnailCropFile, setThumbnailCropFile] = useState<File | null>(null);
+  const wizardExit = useWizardExit(slug, { builderStatus, title, description, thumbnailUrl, allAges, ageStart, ageEnd, noRegistrationDeadline, audienceGender, price, offersMonthlyPayment, offersAnnualPayment, annualPrice, eventDate, learningVisible, learningTitle, learningIntro, topicsIntro, requirementsText, policiesText, outcomeRows, faqVisible, faqRows, contentSectionsVisible, contentSectionRows, mediaVisible, mediaRows, trackRows, transferRules, trackSelectionMode, trackSelectionCount, selectedDirectorId, instructorDisplayName, instructorCredentials, instructorContactPhone, coverDirectorVisibility, contactPhoneOmitted, contactEmailOmitted });
   const loadedDirectorRef = useRef<string | null>(null);
   const startDateChangeModalRef = useRef<HTMLDivElement>(null);
   useModalFocusTrap(startDateChangeModalRef, startDateChangeConfirmOpen, () => setStartDateChangeConfirmOpen(false));
@@ -6754,22 +6751,21 @@ export function TeacherProgramSettingsData({ slug, programId, returnHref }: { sl
       setMessage(validationError);
       return;
     }
-    const selectedMediaType = programMediaType(file) ?? "photo";
-    setMediaRows((current) => current.map((row) => row.id === rowId ? {
-      ...row,
-      mediaType: selectedMediaType,
-      previewUrl: URL.createObjectURL(file),
-    } : row));
-
+    const previous = mediaRows.find((row) => row.id === rowId);
+    const previewUrl = URL.createObjectURL(file);
+    setMediaRows((current) => current.map((row) => row.id === rowId ? { ...row, mediaType: programMediaType(file) ?? "photo", previewUrl, progress: 0, uploadError: undefined } : row));
     setBusy(true);
-    setMessage(`Uploading ${selectedMediaType === "video" ? "video" : "photo"}…`);
+    setMessage(null);
     try {
-      const result = await uploadProgramMediaFile(program.id, file);
-      setMediaRows((current) => current.map((row) => row.id === rowId ? { ...row, url: result.url, mediaType: result.mediaType } : row));
-      setMessage(`${result.mediaType === "video" ? "Video" : "Photo"} uploaded. Save changes to publish it.`);
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "Could not upload media.");
+      const result = await uploadProgramMediaFile(program.id, file, (progress) => {
+        setMediaRows((current) => current.map((row) => row.id === rowId ? { ...row, progress } : row));
+      });
+      setMediaRows((current) => current.map((row) => row.id === rowId ? { ...row, url: result.url, mediaType: result.mediaType, previewUrl: undefined, progress: undefined } : row));
+      setToast({ tone: "success", message: "Media uploaded. Save the class to publish it." });
+    } catch {
+      setMediaRows((current) => current.map((row) => row.id === rowId ? { ...(previous ?? row), progress: undefined, uploadError: "Upload didn’t finish. Check your connection and select the file again." } : row));
     } finally {
+      URL.revokeObjectURL(previewUrl);
       setBusy(false);
     }
   }
@@ -7133,6 +7129,7 @@ export function TeacherProgramSettingsData({ slug, programId, returnHref }: { sl
   const startDateLocked = programAlreadyStarted(program);
 
   function goToPreviousStep() {
+    if (builderStep === "basics") { wizardExit.requestExit(); return; }
     const index = programBuilderSteps.findIndex((step) => step.id === builderStep);
     setBuilderStep(programBuilderSteps[Math.max(0, index - 1)]?.id ?? "basics");
     scrollBuilderToTop();
@@ -7228,7 +7225,6 @@ export function TeacherProgramSettingsData({ slug, programId, returnHref }: { sl
   const editWizardContent = (
     <>
       <ProgramBuilderStepper activeStep={builderStep} />
-      <ProgramBuilderActionBar busy={busy} builderStep={builderStep} onBack={goToPreviousStep} onContinueOrPublish={handleContinueOrPublishClick} />
       <h1 className="px-1 text-2xl font-semibold text-[#26323A]">{programBuilderSteps.find((step) => step.id === builderStep)?.label}</h1>
 
       {builderStep === "schedule" ? (
@@ -7304,7 +7300,8 @@ export function TeacherProgramSettingsData({ slug, programId, returnHref }: { sl
   );
 
   return (
-    <div className="space-y-5 bg-[var(--workspace)] p-4 pb-40">
+    <div className="space-y-5 bg-[var(--workspace)] p-4 pb-40" onPointerDownCapture={wizardExit.capture} onKeyDownCapture={wizardExit.capture} onChangeCapture={wizardExit.capture}>
+      {wizardExit.dialog}
       <EditorToast toast={toast} onClose={() => setToast(null)} />
       {missingFieldsModal ? (
         <MissingFieldsModal
@@ -7361,12 +7358,14 @@ export function TeacherProgramSettingsData({ slug, programId, returnHref }: { sl
             <input
               ref={thumbnailInputRef}
               type="file"
-              accept="image/*"
+              accept="image/jpeg,image/png,image/webp,image/gif"
               className="hidden"
               onChange={(event) => {
                 const file = event.target.files?.[0] ?? null;
                 event.target.value = "";
                 if (file) {
+                  const validationError = validateProgramMediaFile(file);
+                  if (validationError || programMediaType(file) !== "photo") { setToast({ tone: "error", message: validationError || "Choose a photo for the class cover." }); return; }
                   setThumbnailCropFile(file);
                 }
               }}
@@ -7975,10 +7974,10 @@ function ProgramBuilderActionBar({
     <div className={cn("z-10 space-y-2 bg-white py-2 md:max-w-[420px]", sticky ? "sticky bottom-[92px] md:bottom-4" : "")}>
       {message ? <p className="text-sm font-medium text-[#52616A]">{message}</p> : null}
       <div className="flex items-center gap-2">
-        <button type="button" disabled={busy || builderStep === "basics"} onClick={onBack} className="min-h-11 shrink-0 rounded-[10px] border border-[#C9D3D8] bg-white px-4 text-sm font-semibold text-[#26323A] transition active:scale-95 active:bg-[#F2F4F5] disabled:opacity-40">
+        <button type="button" disabled={busy} onClick={onBack} className="min-h-11 shrink-0 rounded-md border border-[#C9D3D8] bg-white px-6 text-sm font-semibold text-[#17624F] transition active:scale-95 active:bg-[#F2F4F5] disabled:opacity-40">
           Back
         </button>
-        <button type="button" disabled={busy} onClick={onContinueOrPublish} className="min-h-11 flex-[1.4] rounded-[10px] bg-[#17624F] px-5 text-sm font-semibold text-white disabled:opacity-60">
+        <button type="button" disabled={busy} onClick={onContinueOrPublish} className="min-h-11 shrink-0 rounded-md bg-[#17624F] px-6 text-sm font-semibold text-white disabled:opacity-60">
           {busy ? "Saving..." : builderStep === "review" ? "Publish" : "Continue"}
         </button>
       </div>
@@ -9150,7 +9149,7 @@ function ProgramEditorFields({
             <div className="flex items-center justify-between gap-3 px-1">
               <div>
                 <h2 className="text-base font-semibold text-[#26323A]">Class Media</h2>
-                <p className="mt-0.5 text-xs text-[#6B747B]">Images up to 10 MB · videos up to 75 MB</p>
+                <p className="mt-0.5 text-xs text-[#6B747B]">Images up to 10 MB · videos up to 50 MB</p>
               </div>
               <RemoveSectionButton onClick={removeMediaSection} />
             </div>
@@ -9167,10 +9166,12 @@ function ProgramEditorFields({
                         </div>
                       ) : <div className="flex h-28 items-center justify-center rounded-[8px] bg-[#F2F6F7] text-[#7B858C]"><PhotoIcon /></div>}
                       <div className="flex flex-col gap-2">
-                        <label className="flex h-10 cursor-pointer items-center justify-center rounded-[8px] border border-[#D6DCE0] text-[#52616A]" aria-label="Replace media"><PhotoIcon /><input type="file" accept="image/jpeg,image/png,image/webp,image/gif,video/*" className="hidden" onChange={(event) => { const file = event.target.files?.[0] ?? null; event.target.value = ""; onMediaFile(row.id, file); }} /></label>
+                        <ProgramMediaPicker disabled={row.progress !== undefined} onConfirm={(file) => onMediaFile(row.id, file)} />
                         <RowIconButton onClick={() => setMediaRows((current) => current.filter((item) => item.id !== row.id))} aria-label="Remove media item"><TrashIcon /></RowIconButton>
                       </div>
                     </div>
+                    {row.progress !== undefined ? <p role="status" className="text-xs text-[#52616A]">Uploading… {row.progress}%</p> : null}
+                    {row.uploadError ? <p role="alert" className="text-xs text-[#B4352B]">{row.uploadError}</p> : null}
                     <input value={row.title} onChange={(event) => setMediaRows((current) => current.map((item) => item.id === row.id ? { ...item, title: event.target.value } : item))} placeholder="Optional title" className="h-10 rounded-[8px] border border-[#B9C3C8] px-3 text-sm" />
                   </div>
                 );
@@ -10244,6 +10245,8 @@ type TeacherRosterSnapshot = {
   waitlist: RequestWithContext[];
   currentUserId: string | null;
   canDecideApplications: boolean;
+  canViewApplications: boolean;
+  canManageFinances: boolean;
   error: string | null;
 };
 
@@ -10258,6 +10261,8 @@ const emptyTeacherRosterSnapshot: TeacherRosterSnapshot = {
   waitlist: [],
   currentUserId: null,
   canDecideApplications: false,
+  canViewApplications: false,
+  canManageFinances: false,
   error: null,
 };
 
@@ -10282,6 +10287,8 @@ export function TeacherStudentsData({ slug, programId }: { slug: string; program
   const [sessionFilterActive, setSessionFilterActive] = useState(Boolean(sessionTrackIdParam || sessionDayParam));
   const [waitlist, setWaitlist] = useState<RequestWithContext[]>([]);
   const [canDecideApplications, setCanDecideApplications] = useState(false);
+  const [studentAccess, setStudentAccess] = useState({ applications: false, finances: false });
+  const studentBasePath = `/m/${slug}/${typeof window !== "undefined" && /\/admin\//.test(window.location.pathname) ? "admin/programs" : "teacher/classes"}/${programId}`;
   const [studentSearch, setStudentSearch] = useState(originStudentId ?? "");
   const [genderFilter, setGenderFilter] = useState("all");
   const [studentSort, setStudentSort] = useState<"first" | "last" | "age">("first");
@@ -10309,7 +10316,7 @@ export function TeacherStudentsData({ slug, programId }: { slug: string; program
   }, [originStudentId, cameFrom]);
 
   function notesHref(studentId: string) {
-    const isAdminRoute = typeof window !== "undefined" && window.location.pathname.startsWith(`/m/${slug}/admin/`);
+    const isAdminRoute = typeof window !== "undefined" && (window.location.pathname.startsWith(`/m/${slug}/admin/`) || window.location.pathname.startsWith("/admin/"));
     const basePath = isAdminRoute ? `/m/${slug}/admin/programs` : `/m/${slug}/teacher/classes`;
     return `${basePath}/${programId}/students/${studentId}/notes`;
   }
@@ -10323,10 +10330,11 @@ export function TeacherStudentsData({ slug, programId }: { slug: string; program
     const { data: sessionData } = await supabase.auth.getSession();
     const userId = sessionData.session?.user.id ?? null;
 
-    const { data, error } = await supabase.rpc("get_teacher_roster_snapshot", { p_slug: slug, p_program_id: programId });
-    if (error) {
-      return { ...emptyTeacherRosterSnapshot, currentUserId: userId, error: friendlyErrorMessage(error, "Could not load students.") };
-    }
+    const data = await loadPrivateSnapshot(operationalSnapshotKey("students", slug, programId, userId ?? "anonymous"), async () => {
+      const result = await supabase.rpc("get_teacher_roster_snapshot", { p_slug: slug, p_program_id: programId });
+      if (result.error) throw result.error;
+      return result.data;
+    });
 
     const snapshot = data as unknown as {
       error: string | null;
@@ -10345,6 +10353,8 @@ export function TeacherStudentsData({ slug, programId }: { slug: string; program
       links: Array<{ child_profile_id: string; parent_profile_id: string }>;
       parents: ParentDisplay[];
       canDecideApplications: boolean;
+  canViewApplications: boolean;
+  canManageFinances: boolean;
     } | null;
 
     if (!snapshot || !snapshot.mosque) {
@@ -10439,6 +10449,8 @@ export function TeacherStudentsData({ slug, programId }: { slug: string; program
         track: request.program_track_id ? activeTrackRows.find((track) => track.id === request.program_track_id) ?? null : null,
       })),
       canDecideApplications: Boolean(snapshot.canDecideApplications),
+      canViewApplications: Boolean(snapshot.canViewApplications),
+      canManageFinances: Boolean(snapshot.canManageFinances),
       error: null,
     };
   }
@@ -10456,6 +10468,7 @@ export function TeacherStudentsData({ slug, programId }: { slug: string; program
     setTrackSessionKeysById(rosterSnapshot.trackSessionKeysById);
     setCurrentUserId(rosterSnapshot.currentUserId);
     setCanDecideApplications(rosterSnapshot.canDecideApplications);
+    setStudentAccess({ applications: rosterSnapshot.canViewApplications || rosterSnapshot.canDecideApplications, finances: rosterSnapshot.canManageFinances });
     setStudents(rosterSnapshot.students);
     setWaitlist(rosterSnapshot.waitlist);
     setError(rosterSnapshot.error);
@@ -10543,6 +10556,7 @@ export function TeacherStudentsData({ slug, programId }: { slug: string; program
 
     window.dispatchEvent(new Event("tareeqah:notifications-changed"));
     const refreshedRoster = await fetchTeacherRoster();
+    invalidatePrivateSnapshots(`students:${slug}:${programId}:`);
     await refetchRoster();
     const stillVisible = refreshedRoster.students.some((student) => student.enrollment.student_profile_id === studentId);
     setBusyStudentId(null);
@@ -10584,6 +10598,7 @@ export function TeacherStudentsData({ slug, programId }: { slug: string; program
 
     queueEnrollmentRequestReviewedEmail(request.id);
     window.dispatchEvent(new Event("tareeqah:notifications-changed"));
+    invalidatePrivateSnapshots(`students:${slug}:${programId}:`);
     await refetchRoster();
     setReviewBusy(false);
     setReviewTarget(null);
@@ -10717,7 +10732,7 @@ export function TeacherStudentsData({ slug, programId }: { slug: string; program
           <button
             type="button"
             onClick={() => {
-              const basePath = typeof window !== "undefined" && window.location.pathname.startsWith(`/m/${slug}/admin/`) ? `/m/${slug}/admin/programs` : `/m/${slug}/teacher/classes`;
+              const basePath = typeof window !== "undefined" && (window.location.pathname.startsWith(`/m/${slug}/admin/`) || window.location.pathname.startsWith("/admin/")) ? `/m/${slug}/admin/programs` : `/m/${slug}/teacher/classes`;
               router.push(`${basePath}/${programId}/${cameFrom}`);
             }}
             className="min-h-10 rounded-full bg-[#17624F] px-4 text-sm font-semibold text-white shadow-[0_10px_24px_rgba(23,98,79,0.22)]"
@@ -10827,6 +10842,7 @@ export function TeacherStudentsData({ slug, programId }: { slug: string; program
               {studentView === "parents" ? (
               familyGroups.map((group) => (
                 <TeacherFamilyRow
+                  basePath={studentBasePath} access={studentAccess}
                   key={group.parent?.id ?? group.children[0]?.enrollment.id}
                   group={group}
                   busyStudentId={busyStudentId}
@@ -10851,6 +10867,7 @@ export function TeacherStudentsData({ slug, programId }: { slug: string; program
               ) : (
               filteredStudents.map((student) => (
                 <TeacherStudentRow
+                  basePath={studentBasePath} access={studentAccess}
                   key={student.enrollment.id}
                   item={student}
                   busy={busyStudentId === student.enrollment.student_profile_id}
@@ -10925,7 +10942,7 @@ export function TeacherStudentsData({ slug, programId }: { slug: string; program
                   </button>
                   <button
                     type="button"
-                    onClick={() => router.push(`${typeof window !== "undefined" && window.location.pathname.startsWith(`/m/${slug}/admin/`) ? `/m/${slug}/admin/programs` : `/m/${slug}/teacher/classes`}/${programId}/finances`)}
+                    onClick={() => router.push(`${typeof window !== "undefined" && (window.location.pathname.startsWith(`/m/${slug}/admin/`) || window.location.pathname.startsWith("/admin/")) ? `/m/${slug}/admin/programs` : `/m/${slug}/teacher/classes`}/${programId}/finances`)}
                     className="rounded-full bg-[#17624F] px-5 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-[#104C3E]"
                   >
                     Go to Finances
@@ -11158,16 +11175,26 @@ async function callFinanceAction<T = Record<string, unknown>>(
     return { ok: false, error: "Please sign in again to continue." };
   }
 
-  const response = await fetch(`/api/programs/${programId}/finance/${endpoint}`, {
-    method: "POST",
-    headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
-    body: JSON.stringify(payload),
-  });
-  const result = (await response.json().catch(() => ({}))) as T & { error?: string };
-  if (!response.ok) {
-    return { ok: false, error: result.error ?? "Something went wrong." };
+  const run = async () => {
+    const response = await fetch(`/api/programs/${programId}/finance/${endpoint}`, {
+      method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${token}` }, body: JSON.stringify(payload),
+    });
+    const result = (await response.json().catch(() => ({}))) as T & { error?: string };
+    if (!response.ok) throw new Error(result.error ?? "Could not complete this request.");
+    return result;
+  };
+  try {
+    const data = endpoint === "payment-history"
+      ? await loadPrivateSnapshot(`payment-history:${programId}:${payload.studentProfileId}:${sessionData.session!.user.id}`, run)
+      : await run();
+    if (endpoint !== "payment-history") {
+      invalidatePrivateSnapshots(`payment-history:${programId}:`);
+      invalidatePrivateSnapshots(`student-activity:${programId}:`);
+    }
+    return { ok: true, data };
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : "Could not load or update this record. Please try again." };
   }
-  return { ok: true, data: result };
 }
 
 async function updateTaxReceiptStatus(
@@ -11263,13 +11290,14 @@ type CachedFinancesPage = {
 };
 
 export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slug: string; programId: string; mode?: "teacher" | "admin" }) {
+  const searchParams = useSearchParams();
   const cacheKey = `finances:${slug}:${programId}:${mode}:${getCachedSessionSnapshot()?.user.id ?? "unresolved"}`;
   const [initialPage] = useState(() => readPrivatePage<CachedFinancesPage>(cacheKey));
   const [program, setProgram] = useState<Program | null>(initialPage?.program ?? null);
   const [rows, setRows] = useState<FinanceEnrollmentRow[]>(initialPage?.rows ?? []);
   const [auditEvents, setAuditEvents] = useState<ProgramFinanceAuditEvent[]>(initialPage?.auditEvents ?? []);
   const [auditActorsById, setAuditActorsById] = useState<Record<string, Profile>>(initialPage?.auditActorsById ?? {});
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(searchParams.get("studentId") ?? "");
   const [statusFilter, setStatusFilter] = useState("all");
   const [paymentFilter, setPaymentFilter] = useState("all");
   const [typeFilter, setTypeFilter] = useState("all");
@@ -11365,8 +11393,8 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
 
     setProgram(programRow);
     const mappedRows = enrollmentRows.map((enrollment) => {
-        const request = requestRows.find((item) => item.student_profile_id === enrollment.student_profile_id) ?? null;
         const subscription = subscriptionRows.find((item) => item.student_profile_id === enrollment.student_profile_id) ?? null;
+        const request = requestRows.find((item) => item.id === subscription?.enrollment_request_id) ?? requestRows.find((item) => item.student_profile_id === enrollment.student_profile_id && item.status === "approved") ?? requestRows.find((item) => item.student_profile_id === enrollment.student_profile_id) ?? null;
         const paymentTermsHistory = paymentTermsRows.filter((terms) => terms.student_profile_id === enrollment.student_profile_id);
         const paymentTerms = selectCurrentPaymentTerms(paymentTermsHistory, request, subscription);
         const parentId =
@@ -11426,7 +11454,7 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
       if (!query) {
         return true;
       }
-      return [row.student?.full_name, row.parent?.full_name, row.student?.email, row.parent?.email, payment, status, payStatus, subStatus]
+      return [row.enrollment.student_profile_id, row.student?.full_name, row.parent?.full_name, row.student?.email, row.parent?.email, payment, status, payStatus, subStatus]
         .filter(Boolean)
         .join(" ")
         .toLowerCase()
@@ -11473,6 +11501,7 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
         <label className="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-[14px] border border-[#D6DCE0] bg-[#F8FAFB] px-3 text-[#6B747B] md:max-w-xl">
           <SearchIcon />
           <input aria-label="Search finance records" value={search} onChange={(event) => setSearch(event.target.value)} className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-[#26323A] outline-none" />
+          {search ? <button type="button" aria-label="Clear search" onClick={() => setSearch("")} className="h-8 w-8 shrink-0 rounded-full text-lg hover:bg-black/5">×</button> : null}
         </label>
         <button type="button" onClick={() => setFiltersOpen((open) => !open)} className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[#52616A] transition-colors", filtersOpen && "bg-[#DDF2EB] text-[#17624F]")} aria-label={filtersOpen ? "Close finance filters" : "Open finance filters"} aria-expanded={filtersOpen}>
           <FilterSlidersIcon />
@@ -11505,7 +11534,7 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
             </thead>
             <tbody className="divide-y divide-[#EEF2F4]">
               {filteredRows.map((row) => (
-                <tr key={row.enrollment.id} className="align-middle">
+                <tr onPointerEnter={() => { void loadStudentActivity(programId, row.enrollment.student_profile_id, "finance").catch(() => undefined); void callFinanceAction(programId, "payment-history", { studentProfileId: row.enrollment.student_profile_id }); }} key={row.enrollment.id} className="cursor-pointer align-middle hover:bg-[#F8FAFB]" tabIndex={0} aria-label={`Open finance file for ${row.student?.full_name ?? "student"}`} onClick={() => setDetailsTarget(row)} onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); setDetailsTarget(row); } }}>
                   <td className="px-4 py-4">
                     <p className="font-semibold text-[#26323A]">{row.student?.full_name || "Student"}</p>
                     <p className="mt-0.5 text-xs text-[#7B858C]">{financeStudentSubtitle(row)}</p>
@@ -11535,7 +11564,7 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
                   <td className="px-4 py-4 text-[#52616A]">{financeNextBillingLabel(row)}</td>
                   <td className="px-4 py-4 text-[#52616A]">{formatFinanceDate(row.enrollment.created_at)}</td>
                   <td className="px-4 py-4 text-[#52616A]">{row.approver?.full_name ?? row.approver?.email ?? "---"}</td>
-                  <td className="px-4 py-4">
+                  <td className="px-4 py-4" onClick={(event) => event.stopPropagation()}>
                     <FinanceRowActionMenu
                       row={row}
                       onSelect={(action) => {
@@ -12012,8 +12041,9 @@ function FinanceDetailsDrawer({
   const [history, setHistory] = useState<FinanceChargeRow[] | null>(null);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [historyError, setHistoryError] = useState<string | null>(null);
-  const [studentEvents, setStudentEvents] = useState<ProgramFinanceAuditEvent[] | null>(null);
+  const [studentEvents, setStudentEvents] = useState<StudentActivity[] | null>(null);
   const [eventsLoading, setEventsLoading] = useState(true);
+  const [eventsError, setEventsError] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   useModalFocusTrap(containerRef, true, onClose);
   useHideMobileChromeWhileMounted();
@@ -12036,21 +12066,9 @@ function FinanceDetailsDrawer({
       });
 
       setEventsLoading(true);
-      const supabase = createSupabaseBrowserClient();
-      void supabase
-        .from("program_finance_audit_events")
-        .select("*")
-        .eq("program_id", program.id)
-        .eq("student_profile_id", studentProfileId)
-        .order("created_at", { ascending: false })
-        .limit(50)
-        .then(({ data }) => {
-          if (cancelled) {
-            return;
-          }
-          setStudentEvents(data ?? []);
-          setEventsLoading(false);
-        });
+      void loadStudentActivity(program.id, studentProfileId, "finance").then((events) => {
+        if (!cancelled) { setStudentEvents(events); setEventsError(null); }
+      }).catch(() => { if (!cancelled) setEventsError("Activity could not be loaded. Close and reopen to retry."); }).finally(() => { if (!cancelled) setEventsLoading(false); });
     }, 0);
     return () => {
       cancelled = true;
@@ -12106,7 +12124,7 @@ function FinanceDetailsDrawer({
               <>
                 <div className="flex items-center justify-between">
                   <span className="text-[#6B747B]">Payment terms</span>
-                  <span className="font-semibold">{financePaymentTermsStatusLabel(row.paymentTerms)}</span>
+                  <span className="font-semibold">{financePaymentTermsStatusLabel(row.paymentTerms, program)}</span>
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-[#6B747B]">Billing cycle</span>
@@ -12194,7 +12212,7 @@ function FinanceDetailsDrawer({
             <h3 className="text-sm font-semibold text-[#26323A]">Audit Trail</h3>
             {eventsLoading ? (
               <div className="rounded-[14px] border border-dashed border-[#D6DCE0] bg-[#F8FAFB] p-3 text-sm font-semibold text-[#6B747B]">Loading activity...</div>
-            ) : !studentEvents?.length ? (
+            ) : eventsError ? <p role="alert" className="text-sm text-red-700">{eventsError}</p> : !studentEvents?.length ? (
               <div className="rounded-[14px] border border-dashed border-[#D6DCE0] bg-[#F8FAFB] p-3 text-sm font-semibold text-[#6B747B]">No finance activity for this student yet.</div>
             ) : (
               <div className="divide-y divide-[#EEF2F4]">
@@ -12206,7 +12224,8 @@ function FinanceDetailsDrawer({
                       ) : null}
                       <p className="text-sm font-semibold text-[#26323A]">{event.summary}</p>
                     </div>
-                    <p className="mt-0.5 text-xs text-[#7B858C]">{formatFinanceDate(event.created_at)}</p>
+                    <p className="mt-0.5 text-xs text-[#7B858C]">{formatFinanceDate(event.created_at)} · {event.actor_name}</p>
+                    {event.context ? <p className="mt-0.5 text-xs font-medium text-[#52616A]">{event.context}</p> : null}
                   </div>
                 ))}
               </div>
@@ -12331,7 +12350,10 @@ function FinanceWorkflowBlock({ title, text, children }: { title: string; text: 
   );
 }
 
-export function applicationPaymentPlanLabel(row: { request: EnrollmentRequest; track: ProgramTrack | null }, program: Program | null) {
+export function applicationPaymentPlanLabel(row: { request: EnrollmentRequest; track: ProgramTrack | null; subscription?: ProgramSubscription | null }, program: Program | null) {
+  const current = row.request.status === "approved" ? row.subscription : null;
+  if (current?.payment_waived) return "Waived";
+  if (current?.payment_type && current.amount_cents != null && current.amount_cents > 0) return current.payment_type === "monthly" ? "Monthly subscription" : program?.is_ongoing ? "Annual subscription" : "Pay in Full";
   if (!program?.is_paid) {
     return "Free";
   }
@@ -12341,7 +12363,10 @@ export function applicationPaymentPlanLabel(row: { request: EnrollmentRequest; t
   return row.request.payment_type === "annual" ? (program.is_ongoing ? "Annual subscription" : "Pay in Full") : "Monthly subscription";
 }
 
-export function applicationListedPrice(row: { request: EnrollmentRequest; track: ProgramTrack | null }, program: Program | null) {
+export function applicationListedPrice(row: { request: EnrollmentRequest; track: ProgramTrack | null; subscription?: ProgramSubscription | null }, program: Program | null) {
+  const current = row.request.status === "approved" ? row.subscription : null;
+  if (current?.payment_waived) return "Waived";
+  if (current?.amount_cents != null) return formatPrice(current.amount_cents);
   if (row.request.payment_bypassed) {
     return row.request.payment_bypass_external ? "Paid externally" : "Waived";
   }
@@ -12371,7 +12396,7 @@ export function ProgramApplicationsData({ slug, programId, mode = "teacher" }: {
   const [program, setProgram] = useState<Program | null>(initialPage?.program ?? null);
   const [rows, setRows] = useState<ApplicationRow[]>(initialPage?.rows ?? []);
   const [auditEvents, setAuditEvents] = useState<ProgramFinanceAuditEvent[]>(initialPage?.auditEvents ?? []);
-  const [search, setSearch] = useState("");
+  const [search, setSearch] = useState(searchParams.get("studentId") ?? "");
   const [statusFilter, setStatusFilter] = useState("all");
   const [payStatusFilter, setPayStatusFilter] = useState("all");
   const [trackFilter, setTrackFilter] = useState("all");
@@ -12539,7 +12564,7 @@ export function ProgramApplicationsData({ slug, programId, mode = "teacher" }: {
       if (!query) {
         return true;
       }
-      return [row.student?.full_name, row.parent?.full_name, row.student?.email, row.parent?.email]
+      return [row.request.student_profile_id, row.student?.full_name, row.parent?.full_name, row.student?.email, row.parent?.email]
         .filter(Boolean)
         .join(" ")
         .toLowerCase()
@@ -12609,6 +12634,7 @@ export function ProgramApplicationsData({ slug, programId, mode = "teacher" }: {
           <label className="flex h-11 min-w-0 flex-1 items-center gap-2 rounded-[14px] border border-[#D6DCE0] bg-[#F8FAFB] px-3 text-[#6B747B] sm:min-w-[220px]">
             <SearchIcon />
             <input aria-label="Search applications" value={search} onChange={(event) => setSearch(event.target.value)} className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-[#26323A] outline-none" />
+          {search ? <button type="button" aria-label="Clear search" onClick={() => setSearch("")} className="h-8 w-8 shrink-0 rounded-full text-lg hover:bg-black/5">×</button> : null}
           </label>
           <button
             type="button"
@@ -12700,6 +12726,9 @@ export function ProgramApplicationsData({ slug, programId, mode = "teacher" }: {
                 return (
                   <tr
                     key={row.request.id}
+                    tabIndex={0}
+                    onPointerEnter={() => { void loadStudentActivity(programId, row.request.student_profile_id, "application").catch(() => undefined); }}
+                    onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); setDetailsTarget(row); } }}
                     onClick={() => setDetailsTarget(row)}
                     className={cn("cursor-pointer align-middle transition-colors hover:bg-[#F7FAFB]", needsAction ? "bg-[#EEF7FA]" : "")}
                   >
@@ -12776,6 +12805,8 @@ export function ProgramApplicationsData({ slug, programId, mode = "teacher" }: {
           slug={slug}
           mode={mode}
           requestId={detailsTarget.request.id}
+          initialRow={detailsTarget}
+          initialProgram={program ?? undefined}
           canDecide={canDecide}
           onClose={() => setDetailsTarget(null)}
           onChanged={loadApplications}
@@ -12787,33 +12818,25 @@ export function ProgramApplicationsData({ slug, programId, mode = "teacher" }: {
 
 const TERMINAL_PAYMENT_TERM_STATUSES = new Set(["superseded", "cancelled", "ended"]);
 
-function selectCurrentPaymentTerms(
-  termsRows: ProgramPaymentTerms[],
-  request: EnrollmentRequest | null,
-  subscription: ProgramSubscription | null,
-) {
-  if (!termsRows.length) {
-    return null;
-  }
-  const directMatch = termsRows.find((terms) => terms.id === request?.payment_terms_id || terms.id === subscription?.payment_terms_id);
-  if (directMatch && !TERMINAL_PAYMENT_TERM_STATUSES.has(directMatch.status)) {
-    return directMatch;
-  }
-  return termsRows.find((terms) => !TERMINAL_PAYMENT_TERM_STATUSES.has(terms.status)) ?? directMatch ?? termsRows[0] ?? null;
+function hasCurrentPaymentBypass(row: FinanceEnrollmentRow) {
+  if (!row.request?.payment_bypassed) return false;
+  // A later billing decision supersedes the original waiver, while legacy waivers
+  // made after old paid terms continue to take effect.
+  return !row.paymentTerms || !row.request.reviewed_at || (row.paymentTerms.approved_at ?? row.paymentTerms.created_at) <= row.request.reviewed_at;
 }
 
 function financePaymentType(row: FinanceEnrollmentRow, program: Program | null) {
   // Legacy waivers updated the reviewed application but did not supersede its
   // earlier paid terms. The explicit final review decision wins in that case.
-  if (row.request?.payment_bypassed) {
-    return row.request.payment_bypass_external ? "Paid Externally" : "Waived";
+  if (hasCurrentPaymentBypass(row)) {
+    return row.request?.payment_bypass_external ? "Paid Externally" : "Waived";
   }
   if (row.subscription?.payment_waived) {
     return "Waived";
   }
   if (row.paymentTerms) {
     if (row.paymentTerms.payment_type === "pay_in_full" || row.paymentTerms.payment_type === "annual") {
-      return row.paymentTerms.payment_type === "annual" ? "Annual Subscription" : "Pay in Full";
+      return row.paymentTerms.payment_type === "annual" && program?.is_ongoing ? "Annual Subscription" : "Pay in Full";
     }
     if (row.paymentTerms.payment_type === "monthly") {
       return "Monthly";
@@ -12846,8 +12869,8 @@ function FilterSlidersIcon() {
 }
 
 function financePrice(row: FinanceEnrollmentRow, program: Program | null) {
-  if (row.request?.payment_bypassed) {
-    return row.request.payment_bypass_external ? "Paid Externally" : "Waived";
+  if (hasCurrentPaymentBypass(row)) {
+    return row.request?.payment_bypass_external ? "Paid Externally" : "Waived";
   }
   if (row.subscription?.payment_waived) {
     return "Waived";
@@ -12884,11 +12907,14 @@ function financeStudentType(row: FinanceEnrollmentRow) {
 }
 
 function financeSubscriptionStatus(row: FinanceEnrollmentRow) {
-  if (row.request?.payment_bypassed && !row.subscription?.stripe_subscription_id) {
+  if (hasCurrentPaymentBypass(row) && !row.subscription?.stripe_subscription_id) {
     return "N/A";
   }
   if (row.subscription?.stripe_subscription_id) {
     const stripeStatus = row.subscription.status?.toLowerCase();
+    if (stripeStatus === "incomplete" || stripeStatus === "checkout_started") return "Setup pending";
+    if (stripeStatus === "trialing") return "Trial";
+    if (stripeStatus === "paused") return "Paused";
     if (stripeStatus === "past_due" || stripeStatus === "unpaid") {
       return "Past due";
     }
@@ -12906,6 +12932,13 @@ function financeSubscriptionStatus(row: FinanceEnrollmentRow) {
     }
   }
   if (!row.subscription?.stripe_subscription_id) {
+    const localStatus = row.subscription?.status?.toLowerCase();
+    if (localStatus === "active") return "Active";
+    if (localStatus === "trialing") return "Trial";
+    if (localStatus === "past_due") return "Past due";
+    if (localStatus === "unpaid") return "Unpaid";
+    if (localStatus === "paid") return "Completed";
+    if (localStatus === "checkout_started") return "Setup pending";
     if (row.paymentTerms?.status === "checkout_pending" || row.paymentTerms?.status === "payment_required") {
       return "Setup pending";
     }
@@ -12918,21 +12951,26 @@ function financeSubscriptionStatus(row: FinanceEnrollmentRow) {
     if (row.paymentTerms && ["ended", "cancelled", "superseded"].includes(row.paymentTerms.status)) {
       return "Ended";
     }
+    if (financeStatus(row) === "Active" && ["monthly", "annual"].includes(row.paymentTerms?.payment_type ?? "")) return "Active";
     return "N/A";
   }
   return "N/A";
 }
 
 function financePaymentStatus(row: FinanceEnrollmentRow, program: Program | null) {
-  if (row.request?.payment_bypassed) {
-    return row.request.payment_bypass_external ? "Paid Externally" : "Waived";
+  if (hasCurrentPaymentBypass(row)) {
+    return row.request?.payment_bypass_external ? "Paid Externally" : "Waived";
   }
-  if (row.subscription?.payment_waived || row.subscription?.payment_paused) {
+  if (row.subscription?.payment_paused || row.subscription?.status === "paused") return "Paused";
+  if (row.subscription?.status === "trialing") return "Trial — not charged";
+  if (row.subscription?.status === "incomplete") return "Awaiting payment";
+  if (row.subscription?.status === "checkout_started") return "Checkout sent";
+  if (row.subscription?.payment_waived) {
     return "Waived";
   }
   if (row.paymentTerms) {
     const stripeStatus = row.subscription?.status?.toLowerCase();
-    if (row.paymentTerms.payment_type === "monthly" && row.subscription?.stripe_subscription_id && hasActiveRecurringSubscription(row.subscription)) {
+    if (["monthly", "annual"].includes(row.paymentTerms.payment_type) && row.subscription?.stripe_subscription_id && hasActiveRecurringSubscription(row.subscription)) {
       if (stripeStatus === "past_due") {
         return "Past due";
       }
@@ -12947,7 +12985,10 @@ function financePaymentStatus(row: FinanceEnrollmentRow, program: Program | null
       case "checkout_pending":
         return "Checkout sent";
       case "active":
-        return row.paymentTerms.payment_type === "monthly" ? "Paid" : "No payment required";
+        if (row.paymentTerms.payment_type === "waived") return "Waived";
+        if (row.subscription?.status === "trialing") return "Trial";
+        if (row.subscription?.status === "active") return "Current";
+        return ["monthly", "annual", "pay_in_full"].includes(row.paymentTerms.payment_type) ? "Registration completed" : "No payment required";
       case "paid":
         return "Paid";
       case "waived":
@@ -12989,14 +13030,14 @@ function financePaymentStatus(row: FinanceEnrollmentRow, program: Program | null
   return "Needs billing decision";
 }
 
-function financePaymentTermsStatusLabel(terms: ProgramPaymentTerms) {
+function financePaymentTermsStatusLabel(terms: ProgramPaymentTerms, program: Program | null) {
   const status = terms.status.replace(/_/g, " ");
-  return `${financePaymentTypeFromTerms(terms)} - ${titleCase(status)}`;
+  return `${financePaymentTypeFromTerms(terms, program)} - ${titleCase(status)}`;
 }
 
-function financePaymentTypeFromTerms(terms: ProgramPaymentTerms) {
+function financePaymentTypeFromTerms(terms: ProgramPaymentTerms, program: Program | null) {
   if (terms.payment_type === "pay_in_full" || terms.payment_type === "annual") {
-    return terms.payment_type === "annual" ? "Annual Subscription" : "Pay in Full";
+    return terms.payment_type === "annual" && program?.is_ongoing ? "Annual Subscription" : "Pay in Full";
   }
   if (terms.payment_type === "monthly") {
     return "Monthly";
@@ -13032,13 +13073,13 @@ function financeBadgeTone(label: string): "neutral" | "positive" | "warning" | "
 }
 
 function financeCurrentPeriodLabel(row: FinanceEnrollmentRow) {
-  if (row.paymentTerms?.current_period_start && row.paymentTerms.current_period_end) {
-    return `${formatFinanceShortDate(row.paymentTerms.current_period_start)} – ${formatFinanceShortDate(row.paymentTerms.current_period_end)}`;
+  if (!row.subscription?.stripe_subscription_id && row.paymentTerms?.current_period_start && row.paymentTerms.current_period_end) {
+    return `${formatFinanceDate(row.paymentTerms.current_period_start)} – ${formatFinanceDate(row.paymentTerms.current_period_end)}`;
   }
   if (!row.subscription?.current_period_start || !row.subscription.current_period_end) {
     return "—";
   }
-  return `${formatFinanceShortDate(row.subscription.current_period_start)} – ${formatFinanceShortDate(row.subscription.current_period_end)}`;
+  return `${formatFinanceDate(row.subscription.current_period_start)} – ${formatFinanceDate(row.subscription.current_period_end)}`;
 }
 
 function financeNextBillingLabel(row: FinanceEnrollmentRow) {
@@ -14630,6 +14671,7 @@ function TeacherStudentListControls({
             placeholder="Search"
             className="min-w-0 flex-1 bg-transparent text-sm font-medium text-[#26323A] outline-none placeholder:text-[#9AA4AA]"
           />
+          {search ? <button type="button" aria-label="Clear search" onClick={() => onSearchChange("")} className="h-8 w-8 shrink-0 rounded-full text-lg hover:bg-black/5">×</button> : null}
         </span>
       </label>
       <div className="flex items-center justify-between gap-3">
@@ -14788,7 +14830,9 @@ function TeacherStudentListControls({
   );
 }
 
-function StudentActionMenu({ busy, onKick }: { busy: boolean; onKick: () => void }) {
+type StudentLinks = { basePath: string; access: { applications: boolean; finances: boolean } };
+
+function StudentActionMenu({ busy, onKick, basePath, access, studentId }: StudentLinks & { studentId: string; busy: boolean; onKick: () => void }) {
   const [menuOpen, setMenuOpen] = useState(false);
 
   return (
@@ -14806,6 +14850,7 @@ function StudentActionMenu({ busy, onKick }: { busy: boolean; onKick: () => void
       </button>
       {menuOpen ? (
         <span className="absolute right-0 top-11 z-30 w-40 overflow-hidden rounded-[16px] border border-[#DDE5E9] bg-white p-1 text-sm shadow-[0_18px_44px_rgba(38,50,58,0.18)]">
+          {(["applications", "finances"] as const).filter((kind) => access[kind]).map((kind) => <TransitionLink label={kind === "applications" ? "Applications" : "Finances"} key={kind} href={`${basePath}/${kind}?studentId=${encodeURIComponent(studentId)}`} onClick={(event) => event.stopPropagation()} className="block rounded-[12px] px-3 py-2.5 font-semibold text-[#26323A] hover:bg-[#EEF3F5]">View {kind === "applications" ? "application" : "finances"}</TransitionLink>)}
           <button
             type="button"
             onClick={(event) => {
@@ -14832,7 +14877,8 @@ function TeacherStudentRow({
   busy,
   onKick,
   onNote,
-}: {
+  basePath, access,
+}: StudentLinks & {
   item: TeacherStudentItem;
   busy: boolean;
   onKick: () => void;
@@ -14862,7 +14908,7 @@ function TeacherStudentRow({
         <button type="button" onClick={onNote} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[#52616A] hover:bg-[#EEF3F5]" aria-label={`Add note for ${studentName}`}>
           <NoteAddIcon />
         </button>
-        <StudentActionMenu busy={busy} onKick={onKick} />
+        <StudentActionMenu basePath={basePath} access={access} studentId={item.enrollment.student_profile_id} busy={busy} onKick={onKick} />
       </div>
       <div className={cn("grid transition-[grid-template-rows] duration-200 ease-out", expanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]")}>
         <div className="overflow-hidden">
@@ -14892,7 +14938,8 @@ function TeacherFamilyRow({
   busyStudentId,
   onKick,
   onNote,
-}: {
+  basePath, access,
+}: StudentLinks & {
   group: { parent: ParentDisplay | null; children: TeacherStudentItem[] };
   busyStudentId: string | null;
   onKick: (student: TeacherStudentItem) => void;
@@ -14939,7 +14986,7 @@ function TeacherFamilyRow({
                   <button type="button" onClick={() => onNote(student)} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[#52616A] hover:bg-[#EEF3F5]" aria-label={`Add note for ${student.profile?.full_name ?? "student"}`}>
                     <NoteAddIcon />
                   </button>
-                  <StudentActionMenu
+                  <StudentActionMenu basePath={basePath} access={access} studentId={student.enrollment.student_profile_id}
                     busy={busyStudentId === student.enrollment.student_profile_id}
                     onKick={() => onKick(student)}
                   />
@@ -19699,7 +19746,7 @@ function EditProfilePhotoPanel({
   );
 }
 
-const imageCropWorkspaceSize = 340;
+const imageCropWorkspaceSize = 280;
 
 function cropImageToFile(
   source: string,
@@ -19758,6 +19805,43 @@ function cropImageToFile(
  * exact interaction (CSS bg-contain workspace, pointer drag, wheel/± zoom) and canvas math to a
  * centered rectangular frame instead of a fixed circle.
  */
+function ProgramMediaPicker({ onConfirm, disabled }: { onConfirm: (file: File) => void; disabled?: boolean }) {
+  const [selection, setSelection] = useState<File | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  return <>
+    <label className={cn("flex h-10 cursor-pointer items-center justify-center rounded-lg border border-[#D6DCE0] text-[#52616A]", disabled && "opacity-40")} aria-label="Choose or replace media">
+      <PhotoIcon />
+      <input type="file" disabled={disabled} accept="image/jpeg,image/png,image/webp,image/gif,video/mp4,video/webm,video/quicktime,video/x-m4v" className="hidden" onChange={(event) => {
+        const file = event.target.files?.[0]; event.target.value = "";
+        if (!file) return;
+        const issue = validateProgramMediaFile(file);
+        setError(issue);
+        if (!issue) setSelection(file);
+      }} />
+    </label>
+    {error ? <p role="alert" className="text-xs text-[#B4352B]">{error}</p> : null}
+    {selection && programMediaType(selection) === "photo" ? <ImageCropModal file={selection} title="Crop class photo" aspectRatio={16 / 9} outputWidth={1600} outputHeight={900} onCancel={() => setSelection(null)} onConfirm={(file) => { setSelection(null); onConfirm(file); }} /> : null}
+    {selection && programMediaType(selection) === "video" ? <VideoSelectionModal file={selection} onCancel={() => setSelection(null)} onConfirm={() => { onConfirm(selection); setSelection(null); }} /> : null}
+  </>;
+}
+
+function VideoSelectionModal({ file, onCancel, onConfirm }: { file: File; onCancel: () => void; onConfirm: () => void }) {
+  const [url] = useState(() => URL.createObjectURL(file));
+  const [failed, setFailed] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  useModalFocusTrap(ref, true, onCancel);
+  useEffect(() => () => URL.revokeObjectURL(url), [url]);
+  return createPortal(<div className="fixed inset-0 z-[2147483647] flex items-center justify-center bg-black/50 p-5">
+    <div ref={ref} role="dialog" aria-modal="true" aria-labelledby="video-selection-title" className="w-full max-w-lg rounded-2xl bg-white p-5">
+      <h2 id="video-selection-title" className="text-lg font-semibold">Use this video?</h2>
+      <video src={url} controls playsInline preload="metadata" onError={() => setFailed(true)} className="mt-4 max-h-[50vh] w-full rounded-lg bg-black" />
+      <p className="mt-3 break-words text-sm text-[#52616A]">{file.name} · {(file.size / 1024 / 1024).toFixed(1)} MB</p>
+      {failed ? <p role="alert" className="mt-2 text-sm text-[#B4352B]">This browser can’t preview this video. Please choose an MP4 encoded with H.264.</p> : null}
+      <div className="mt-5 flex gap-3"><button onClick={onCancel} className="min-h-11 rounded-md border px-5 text-sm font-semibold text-[#17624F]">Cancel</button><button disabled={failed} onClick={onConfirm} className="min-h-11 rounded-md bg-[#17624F] px-5 text-sm font-semibold text-white disabled:opacity-40">Use video</button></div>
+    </div>
+  </div>, document.body);
+}
+
 function ImageCropModal({
   file,
   aspectRatio,
@@ -19780,6 +19864,9 @@ function ImageCropModal({
   const [offset, setOffset] = useState({ x: 0, y: 0 });
   const [dragState, setDragState] = useState<{ pointerId: number; startX: number; startY: number; originX: number; originY: number } | null>(null);
   const [saving, setSaving] = useState(false);
+  const [cropError, setCropError] = useState<string | null>(null);
+  const cropModalRef = useRef<HTMLDivElement>(null);
+  useModalFocusTrap(cropModalRef, true, onCancel);
 
   useEffect(() => () => URL.revokeObjectURL(objectUrl), [objectUrl]);
 
@@ -19820,6 +19907,7 @@ function ImageCropModal({
 
   async function handleConfirm() {
     setSaving(true);
+    setCropError(null);
     try {
       const cropped = await cropImageToFile(objectUrl, scale, offset, {
         frameWidth,
@@ -19831,12 +19919,14 @@ function ImageCropModal({
       onConfirm(cropped);
     } catch {
       setSaving(false);
+      setCropError("This photo couldn’t be prepared. Try another JPEG, PNG or WebP photo.");
     }
   }
 
   return createPortal(
     <div className="fixed inset-0 z-[2147483647] flex items-center justify-center bg-[#26323A]/60 px-5 backdrop-blur-sm">
-      <div role="dialog" aria-modal="true" aria-labelledby="image-crop-title" className="w-full max-w-sm rounded-[28px] bg-white px-5 py-5 shadow-[0_24px_70px_rgba(38,50,58,0.28)]">
+      <div ref={cropModalRef} role="dialog" aria-modal="true" aria-labelledby="image-crop-title" className="w-full max-w-sm rounded-[28px] bg-white px-5 py-5 shadow-[0_24px_70px_rgba(38,50,58,0.28)]">
+        {cropError ? <p role="alert" className="mb-3 text-sm text-[#B4352B]">{cropError}</p> : null}
         <h2 id="image-crop-title" className="text-base font-semibold text-[#26323A]">
           {title}
         </h2>

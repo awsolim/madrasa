@@ -1,6 +1,6 @@
 import Stripe from "stripe";
 import { getStripe } from "@/lib/stripe/server";
-import { activateEnrollmentForRequest, selectedTrackIdsForRequest } from "@/lib/programs/enrollment-activation";
+import { finalizePaidEnrollment } from "@/lib/finance/finalize-paid-enrollment";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
 import { logServerError } from "@/lib/monitoring/log-error";
 
@@ -9,13 +9,6 @@ export const runtime = "nodejs";
 type ConfirmCheckoutBody = {
   checkoutSessionId?: string;
 };
-
-async function replaceSubscriptionTracks(supabase: ReturnType<typeof createSupabaseServiceClient>, subscriptionRowId: string, trackIds: string[]) {
-  await supabase.from("program_subscription_tracks").delete().eq("program_subscription_id", subscriptionRowId);
-  if (trackIds.length) {
-    await supabase.from("program_subscription_tracks").insert(trackIds.map((trackId) => ({ program_subscription_id: subscriptionRowId, program_track_id: trackId })));
-  }
-}
 
 function stripeTimestampToIso(timestamp: number | null | undefined) {
   return timestamp ? new Date(timestamp * 1000).toISOString() : null;
@@ -87,48 +80,43 @@ export async function POST(request: Request) {
       return Response.json({ error: "You cannot confirm this payment." }, { status: 403 });
     }
 
-    const subscription = typeof session.subscription === "string" ? null : session.subscription;
+    const subscription = typeof session.subscription === "string"
+      ? await getStripe().subscriptions.retrieve(session.subscription)
+      : session.subscription;
     const subscriptionId = typeof session.subscription === "string" ? session.subscription : session.subscription?.id ?? null;
-    const period = getSubscriptionPeriod(subscription);
-    const now = new Date().toISOString();
-    const trackIds = await selectedTrackIdsForRequest(supabase, enrollmentRequest.id, enrollmentRequest.program_track_id);
-
-    const { data: subscriptionRow } = await supabase.from("program_subscriptions").upsert(
-      {
-        mosque_id: mosqueId,
-        program_id: programId,
-        student_profile_id: studentProfileId,
-        parent_profile_id: parentProfileId,
-        program_track_id: trackIds[0] ?? enrollmentRequest.program_track_id,
-        enrollment_request_id: enrollmentRequestId,
-        stripe_account_id: metadata.stripe_account_id ?? null,
-        stripe_customer_id: typeof session.customer === "string" ? session.customer : session.customer?.id ?? null,
-        stripe_subscription_id: subscriptionId,
-        stripe_checkout_session_id: session.id,
-        stripe_price_id: subscription?.items.data[0]?.price.id ?? metadata.stripe_price_id ?? null,
-        payment_type: paymentType,
-        status: subscription?.status ?? (paymentType === "annual" ? "paid" : "active"),
-        current_period_start: period.start,
-        current_period_end: period.end,
-        cancel_at_period_end: subscription?.cancel_at_period_end ?? false,
-        updated_at: now,
-      },
-      { onConflict: "program_id,student_profile_id" },
-    ).select("id").single();
-
-    if (subscriptionRow) {
-      await replaceSubscriptionTracks(supabase, subscriptionRow.id, trackIds);
+    const isRecurring = Boolean(subscriptionId);
+    const paymentIntentId = typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id ?? null;
+    if (isRecurring && (!subscription || !["active", "trialing", "past_due"].includes(subscription.status))) {
+      return Response.json({ error: "The Stripe subscription is not active yet." }, { status: 409 });
     }
+    if (!isRecurring && (session.payment_status !== "paid" || !paymentIntentId)) {
+      return Response.json({ error: "The one-time payment has not completed." }, { status: 409 });
+    }
+    const period = getSubscriptionPeriod(subscription);
+    const { data: paymentTerms, error: paymentTermsError } = metadata.payment_terms_id
+      ? await supabase.from("program_payment_terms").select("id, amount_cents, billing_months, currency").eq("id", metadata.payment_terms_id).maybeSingle()
+      : { data: null, error: null };
+    if (paymentTermsError) throw paymentTermsError;
 
-    // Enrollment activation itself is idempotent (upsert on program_id+student_profile_id),
-    // so it's safe for this client-triggered fast path and the webhook to both call it for
-    // the same payment. The audit trail entry is intentionally only recorded by the
-    // webhook (the true source of truth) to avoid a duplicate entry per payment.
-    await activateEnrollmentForRequest(supabase, {
-      enrollmentRequestId,
-      programId,
-      studentProfileId,
-      fallbackTrackId: enrollmentRequest.program_track_id,
+    await finalizePaidEnrollment(supabase, {
+      enrollmentRequestId, mosqueId, programId, studentProfileId, parentProfileId,
+      paymentTermsId: paymentTerms?.id ?? null,
+      stripeAccountId: metadata.stripe_account_id ?? null,
+      stripeCustomerId: typeof session.customer === "string" ? session.customer : session.customer?.id ?? null,
+      stripeSubscriptionId: subscriptionId,
+      stripeSubscriptionScheduleId: typeof subscription?.schedule === "string" ? subscription.schedule : subscription?.schedule?.id ?? null,
+      stripeCheckoutSessionId: session.id,
+      stripePaymentIntentId: paymentIntentId,
+      stripePriceId: subscription?.items.data[0]?.price.id ?? metadata.stripe_price_id ?? null,
+      paymentType,
+      amountCents: paymentTerms?.amount_cents ?? session.amount_total,
+      billingMonths: paymentTerms?.billing_months ?? null,
+      currency: paymentTerms?.currency ?? session.currency ?? "cad",
+      status: subscription?.status ?? "paid",
+      currentPeriodStart: period.start,
+      currentPeriodEnd: period.end,
+      cancelAtPeriodEnd: subscription?.cancel_at_period_end ?? false,
+      isRecurring,
     });
 
     return Response.json({ ok: true });

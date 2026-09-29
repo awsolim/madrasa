@@ -100,7 +100,7 @@ export function PublicProgramDetailPage({ programId, slug, returnTo }: { program
       if (!cancelled) {
         setSignedInBackHref(getClassesLandingHref(slug, access));
       }
-    });
+    }).catch(() => undefined);
     return () => {
       cancelled = true;
     };

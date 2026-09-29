@@ -1,6 +1,6 @@
 import Stripe from "stripe";
 import { getStripe, getStripeWebhookSecret, shouldUseStripeConnect } from "@/lib/stripe/server";
-import { activateEnrollmentForRequest, selectedTrackIdsForRequest } from "@/lib/programs/enrollment-activation";
+import { finalizePaidEnrollment } from "@/lib/finance/finalize-paid-enrollment";
 import { recordFinanceAuditEvent } from "@/lib/finance/audit";
 import { getProgramManagerProfileIds } from "@/lib/push/program-recipients";
 import { sendPushNotification } from "@/lib/push/send-push";
@@ -40,15 +40,7 @@ async function ensureFixedDurationSchedule(
   const schedule = existingSchedule
     ? await stripe.subscriptionSchedules.retrieve(existingSchedule, undefined, stripeRequestOptions)
     : await stripe.subscriptionSchedules.create(
-        {
-          from_subscription: subscription.id,
-          metadata: {
-            payment_terms_id: terms.id,
-            enrollment_request_id: terms.enrollment_request_id ?? "",
-            program_id: terms.program_id,
-            student_profile_id: terms.student_profile_id,
-          },
-        },
+        { from_subscription: subscription.id },
         stripeRequestOptions,
       );
 
@@ -86,13 +78,14 @@ async function ensureFixedDurationSchedule(
     stripeRequestOptions,
   );
 
-  await supabase
+  const { error: scheduleTermsError } = await supabase
     .from("program_payment_terms")
     .update({
       stripe_subscription_schedule_id: updatedSchedule.id,
       updated_at: new Date().toISOString(),
     })
     .eq("id", terms.id);
+  if (scheduleTermsError) throw scheduleTermsError;
 
   await recordFinanceAuditEvent(supabase, {
     programId: terms.program_id,
@@ -158,13 +151,6 @@ function getSubscriptionPeriod(subscription: Stripe.Subscription | null) {
   };
 }
 
-async function replaceSubscriptionTracks(supabase: ReturnType<typeof createSupabaseServiceClient>, subscriptionRowId: string, trackIds: string[]) {
-  await supabase.from("program_subscription_tracks").delete().eq("program_subscription_id", subscriptionRowId);
-  if (trackIds.length) {
-    await supabase.from("program_subscription_tracks").insert(trackIds.map((trackId) => ({ program_subscription_id: subscriptionRowId, program_track_id: trackId })));
-  }
-}
-
 async function upsertPaidEnrollmentFromSession(session: Stripe.Checkout.Session, stripeAccountId: string | undefined) {
   const metadata = session.metadata ?? {};
   const enrollmentRequestId = metadata.enrollment_request_id;
@@ -176,13 +162,18 @@ async function upsertPaidEnrollmentFromSession(session: Stripe.Checkout.Session,
   const paymentType = metadata.payment_type === "annual" ? "annual" : "monthly";
 
   if (!enrollmentRequestId || !mosqueId || !programId || !studentProfileId) {
-    return;
+    throw new Error("Completed checkout is missing enrollment metadata.");
+  }
+
+  if (session.payment_status !== "paid" && session.payment_status !== "no_payment_required") {
+    throw new Error(`Checkout ${session.id} completed without a valid payment status.`);
   }
 
   const supabase = createSupabaseServiceClient();
-  const { data: paymentTerms } = paymentTermsId
+  const { data: paymentTerms, error: paymentTermsError } = paymentTermsId
     ? await supabase.from("program_payment_terms").select("*").eq("id", paymentTermsId).maybeSingle()
-    : { data: null };
+    : { data: null, error: null };
+  if (paymentTermsError) throw paymentTermsError;
   const subscriptionId = typeof session.subscription === "string" ? session.subscription : session.subscription?.id ?? null;
   // "annual" payment_type is ambiguous on its own — it can be a one-time pay_in_full charge
   // (fixed-duration program) or a genuine recurring yearly subscription (ongoing program).
@@ -196,51 +187,41 @@ async function upsertPaidEnrollmentFromSession(session: Stripe.Checkout.Session,
   const scheduleId = await ensureFixedDurationSchedule(supabase, paymentTerms, subscription, stripeAccountId);
   const period = getSubscriptionPeriod(subscription);
 
-  const { data: enrollmentRequest } = await supabase
+  const { data: enrollmentRequest, error: enrollmentRequestError } = await supabase
     .from("enrollment_requests")
-    .select("program_track_id")
+    .select("program_track_id, status")
     .eq("id", enrollmentRequestId)
     .maybeSingle();
-  const trackIds = await selectedTrackIdsForRequest(supabase, enrollmentRequestId, enrollmentRequest?.program_track_id ?? null);
+  if (enrollmentRequestError) throw enrollmentRequestError;
+  if (!enrollmentRequest || enrollmentRequest.status !== "approved") throw new Error("Checkout does not belong to an approved enrollment request.");
 
-  const { data: subscriptionRow } = await supabase.from("program_subscriptions").upsert(
-    {
-      mosque_id: mosqueId,
-      program_id: programId,
-      student_profile_id: studentProfileId,
-      parent_profile_id: parentProfileId,
-      program_track_id: trackIds[0] ?? enrollmentRequest?.program_track_id ?? null,
-      enrollment_request_id: enrollmentRequestId,
-      payment_terms_id: paymentTerms?.id ?? null,
-      stripe_account_id: stripeAccountId ?? metadata.stripe_account_id ?? null,
-      stripe_customer_id: typeof session.customer === "string" ? session.customer : session.customer?.id ?? null,
-      stripe_subscription_id: subscriptionId,
-      stripe_subscription_schedule_id: scheduleId,
-      stripe_checkout_session_id: session.id,
-      stripe_price_id: subscription?.items.data[0]?.price.id ?? metadata.stripe_price_id ?? null,
-      payment_type: paymentType,
-      amount_cents: paymentTerms?.amount_cents ?? null,
-      billing_months: paymentTerms?.billing_months ?? null,
-      currency: paymentTerms?.currency ?? session.currency ?? "cad",
-      status: subscription?.status ?? (isOneTimePayment ? "paid" : "active"),
-      current_period_start: period.start,
-      current_period_end: period.end,
-      cancel_at_period_end: subscription?.cancel_at_period_end ?? false,
-      updated_at: new Date().toISOString(),
-    },
-    { onConflict: "program_id,student_profile_id" },
-  ).select("id").single();
-
-  if (subscriptionRow) {
-    await replaceSubscriptionTracks(supabase, subscriptionRow.id, trackIds);
-  }
+  const paymentIntentId = typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id ?? null;
+  const finalized = await finalizePaidEnrollment(supabase, {
+    enrollmentRequestId, mosqueId, programId, studentProfileId, parentProfileId,
+    paymentTermsId: paymentTerms?.id ?? null,
+    stripeAccountId: stripeAccountId ?? metadata.stripe_account_id ?? null,
+    stripeCustomerId: typeof session.customer === "string" ? session.customer : session.customer?.id ?? null,
+    stripeSubscriptionId: subscriptionId,
+    stripeSubscriptionScheduleId: scheduleId,
+    stripeCheckoutSessionId: session.id,
+    stripePaymentIntentId: paymentIntentId,
+    stripePriceId: subscription?.items.data[0]?.price.id ?? metadata.stripe_price_id ?? null,
+    paymentType,
+    amountCents: paymentTerms?.amount_cents ?? session.amount_total,
+    billingMonths: paymentTerms?.billing_months ?? null,
+    currency: paymentTerms?.currency ?? session.currency ?? "cad",
+    status: subscription?.status ?? "paid",
+    currentPeriodStart: period.start,
+    currentPeriodEnd: period.end,
+    cancelAtPeriodEnd: subscription?.cancel_at_period_end ?? false,
+    isRecurring: !isOneTimePayment,
+  });
 
   if (!subscriptionId) {
     // One-time payment (e.g. "Pay in Full" or a one-time change-price checkout) — no
     // subscription/invoice will follow, so this is the only place the charge is ever
     // visible to record it. Recurring payments are instead captured in handleInvoicePaid,
     // since Stripe also fires invoice.paid for a new subscription's first invoice.
-    const paymentIntentId = typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id ?? null;
     if (paymentIntentId) {
       const stripeRequestOptions = shouldUseStripeConnect() && stripeAccountId ? { stripeAccount: stripeAccountId } : undefined;
       const paymentIntent = await getStripe().paymentIntents.retrieve(paymentIntentId, { expand: ["latest_charge"] }, stripeRequestOptions);
@@ -249,7 +230,7 @@ async function upsertPaidEnrollmentFromSession(session: Stripe.Checkout.Session,
         await insertProgramPayment(supabase, {
           mosqueId,
           programId,
-          programSubscriptionId: subscriptionRow?.id ?? null,
+          programSubscriptionId: finalized.subscriptionId,
           studentProfileId,
           parentProfileId,
           stripeChargeId: charge.id,
@@ -262,30 +243,6 @@ async function upsertPaidEnrollmentFromSession(session: Stripe.Checkout.Session,
         });
       }
     }
-  }
-
-  await activateEnrollmentForRequest(supabase, {
-    enrollmentRequestId,
-    programId,
-    studentProfileId,
-    fallbackTrackId: enrollmentRequest?.program_track_id ?? null,
-  });
-
-  if (paymentTerms) {
-    await supabase
-      .from("program_payment_terms")
-      .update({
-        status: isOneTimePayment ? "paid" : "active",
-        stripe_customer_id: typeof session.customer === "string" ? session.customer : session.customer?.id ?? null,
-        stripe_checkout_session_id: session.id,
-        stripe_subscription_id: subscriptionId,
-        stripe_subscription_schedule_id: scheduleId,
-        stripe_payment_intent_id: typeof session.payment_intent === "string" ? session.payment_intent : session.payment_intent?.id ?? null,
-        current_period_start: period.start,
-        current_period_end: period.end,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", paymentTerms.id);
   }
 
   const { data: student } = await supabase.from("profiles").select("full_name, email").eq("id", studentProfileId).maybeSingle();
@@ -315,7 +272,7 @@ async function updateSubscription(subscription: Stripe.Subscription, stripeAccou
   const period = getSubscriptionPeriod(subscription);
   const scheduleId = typeof subscription.schedule === "string" ? subscription.schedule : subscription.schedule?.id ?? null;
 
-  await supabase
+  const { error: subscriptionUpdateError } = await supabase
     .from("program_subscriptions")
     .update({
       status: subscription.status,
@@ -331,10 +288,11 @@ async function updateSubscription(subscription: Stripe.Subscription, stripeAccou
       updated_at: new Date().toISOString(),
     })
     .eq("stripe_subscription_id", subscription.id);
+  if (subscriptionUpdateError) throw subscriptionUpdateError;
 
   const termsId = metadata.payment_terms_id;
   if (termsId) {
-    await supabase
+    const { error: termsUpdateError } = await supabase
       .from("program_payment_terms")
       .update({
         status: subscription.status === "past_due" ? "past_due" : subscription.status === "canceled" ? "ended" : "active",
@@ -346,6 +304,7 @@ async function updateSubscription(subscription: Stripe.Subscription, stripeAccou
         updated_at: new Date().toISOString(),
       })
       .eq("id", termsId);
+    if (termsUpdateError) throw termsUpdateError;
   }
 }
 
@@ -356,16 +315,17 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
     return;
   }
   const supabase = createSupabaseServiceClient();
-  const { data: subscriptionRow } = await supabase
+  const { data: subscriptionRow, error: subscriptionLookupError } = await supabase
     .from("program_subscriptions")
     .select("id, mosque_id, program_id, student_profile_id, parent_profile_id, payment_terms_id")
     .eq("stripe_subscription_id", subscriptionId)
     .maybeSingle();
+  if (subscriptionLookupError) throw subscriptionLookupError;
   if (!subscriptionRow?.program_id || !subscriptionRow.student_profile_id) {
     return;
   }
 
-  await supabase
+  const { error: periodUpdateError } = await supabase
     .from("program_subscriptions")
     .update({
       current_period_start: stripeTimestampToIso(invoice.period_start),
@@ -373,6 +333,7 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
       updated_at: new Date().toISOString(),
     })
     .eq("id", subscriptionRow.id);
+  if (periodUpdateError) throw periodUpdateError;
 
   if (subscriptionRow.mosque_id) {
     await insertProgramPayment(supabase, {
@@ -391,7 +352,7 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
   }
 
   if (subscriptionRow.payment_terms_id) {
-    await supabase
+    const { error: termsUpdateError } = await supabase
       .from("program_payment_terms")
       .update({
         status: "active",
@@ -401,6 +362,7 @@ async function handleInvoicePaid(invoice: Stripe.Invoice) {
         updated_at: new Date().toISOString(),
       })
       .eq("id", subscriptionRow.payment_terms_id);
+    if (termsUpdateError) throw termsUpdateError;
   }
 
   const { data: student } = await supabase.from("profiles").select("full_name, email").eq("id", subscriptionRow.student_profile_id).maybeSingle();
@@ -428,11 +390,12 @@ async function handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
     return;
   }
   const supabase = createSupabaseServiceClient();
-  const { data: subscriptionRow } = await supabase
+  const { data: subscriptionRow, error: subscriptionLookupError } = await supabase
     .from("program_subscriptions")
     .select("id, program_id, student_profile_id, payment_terms_id")
     .eq("stripe_subscription_id", subscriptionId)
     .maybeSingle();
+  if (subscriptionLookupError) throw subscriptionLookupError;
   if (!subscriptionRow?.program_id || !subscriptionRow.student_profile_id) {
     return;
   }
@@ -455,10 +418,11 @@ async function handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
   });
 
   if (subscriptionRow.payment_terms_id) {
-    await supabase
+    const { error: termsUpdateError } = await supabase
       .from("program_payment_terms")
       .update({ status: "past_due", updated_at: new Date().toISOString() })
       .eq("id", subscriptionRow.payment_terms_id);
+    if (termsUpdateError) throw termsUpdateError;
   }
 }
 
@@ -469,7 +433,7 @@ async function updateSubscriptionSchedule(schedule: Stripe.SubscriptionSchedule)
   }
   const supabase = createSupabaseServiceClient();
   const nextStatus = schedule.status === "completed" ? "ended" : schedule.status === "canceled" ? "cancelled" : null;
-  await supabase
+  const { error: scheduleUpdateError } = await supabase
     .from("program_payment_terms")
     .update({
       stripe_subscription_schedule_id: schedule.id,
@@ -477,6 +441,7 @@ async function updateSubscriptionSchedule(schedule: Stripe.SubscriptionSchedule)
       updated_at: new Date().toISOString(),
     })
     .eq("id", termsId);
+  if (scheduleUpdateError) throw scheduleUpdateError;
 }
 
 export async function POST(request: Request) {

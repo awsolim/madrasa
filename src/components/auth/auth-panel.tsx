@@ -132,7 +132,8 @@ export function AuthPanel({ mode, slug, returnTo }: { mode: AuthMode; slug: stri
       }
 
       if (data.session) {
-        const access = await loadUserAccessByMosqueSlug(activeSlug);
+        const access = await loadUserAccessByMosqueSlug(activeSlug).catch(() => null);
+        if (!access) { setError("Signed in, but your account details could not load. Please try again."); return; }
         const landingHref = returnTo ?? getDefaultLandingHref(activeSlug, access);
         if (accountType === "parent") {
           router.push(`/m/${activeSlug}/onboarding/family?returnTo=${encodeURIComponent(landingHref)}`);
@@ -165,7 +166,8 @@ export function AuthPanel({ mode, slug, returnTo }: { mode: AuthMode; slug: stri
       return;
     }
 
-    const access = await loadUserAccessByMosqueSlug(activeSlug);
+    const access = await loadUserAccessByMosqueSlug(activeSlug).catch(() => null);
+        if (!access) { setError("Signed in, but your account details could not load. Please try again."); return; }
     router.replace(getDefaultLandingHref(activeSlug, access));
     router.refresh();
   }

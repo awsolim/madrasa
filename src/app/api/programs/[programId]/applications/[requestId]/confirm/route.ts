@@ -1,6 +1,6 @@
 import { activateEnrollmentForRequest } from "@/lib/programs/enrollment-activation";
 import { recordFinanceAuditEvent } from "@/lib/finance/audit";
-import { ensurePaymentTermsForRequest, markPaymentTermsNoPaymentCompleted } from "@/lib/finance/payment-terms";
+import { ensurePaymentTermsForRequest } from "@/lib/finance/payment-terms";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
 import { logServerError } from "@/lib/monitoring/log-error";
 
@@ -68,11 +68,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
       fallbackTrackId: enrollmentRequest.program_track_id,
     });
 
-    await markPaymentTermsNoPaymentCompleted(supabase, {
-      paymentTermsId: terms.id,
-      paymentType: terms.payment_type,
-    });
-
     const { data: student } = await supabase.from("profiles").select("full_name, email").eq("id", enrollmentRequest.student_profile_id).maybeSingle();
     await recordFinanceAuditEvent(supabase, {
       programId,
@@ -80,6 +75,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
       actorProfileId: user.id,
       eventType: "registration_confirmed_no_payment",
       summary: `${student?.full_name || student?.email || "This student"}'s registration was confirmed. No payment was required.`,
+      metadata: { enrollmentRequestId: requestId },
     });
 
     return Response.json({ ok: true });

@@ -4,25 +4,13 @@ import { createSupabaseServiceClient } from "@/lib/supabase/service";
 import { getAppBaseUrl } from "@/lib/email/resend";
 import { sendProfileNotificationEmails } from "@/lib/email/notifications";
 import { logServerError } from "@/lib/monitoring/log-error";
+import { activateEnrollmentForRequest } from "@/lib/programs/enrollment-activation";
 
 export const runtime = "nodejs";
 
 type CompleteAdmissionBody = {
   enrollmentRequestId?: string;
 };
-
-async function selectedTrackIdsForRequest(supabase: ReturnType<typeof createSupabaseServiceClient>, enrollmentRequestId: string, fallbackTrackId: string | null) {
-  const { data } = await supabase.from("enrollment_request_tracks").select("program_track_id").eq("enrollment_request_id", enrollmentRequestId);
-  const trackIds = (data ?? []).map((row) => row.program_track_id).filter((trackId): trackId is string => Boolean(trackId));
-  return trackIds.length ? trackIds : fallbackTrackId ? [fallbackTrackId] : [];
-}
-
-async function replaceEnrollmentTracks(supabase: ReturnType<typeof createSupabaseServiceClient>, enrollmentId: string, trackIds: string[]) {
-  await supabase.from("enrollment_tracks").delete().eq("enrollment_id", enrollmentId);
-  if (trackIds.length) {
-    await supabase.from("enrollment_tracks").insert(trackIds.map((trackId) => ({ enrollment_id: enrollmentId, program_track_id: trackId })));
-  }
-}
 
 export async function POST(request: Request) {
   try {
@@ -66,31 +54,12 @@ export async function POST(request: Request) {
       return Response.json({ error: "This admission is not approved for payment bypass." }, { status: 409 });
     }
 
-    const now = new Date().toISOString();
-    const trackIds = await selectedTrackIdsForRequest(supabase, enrollmentRequest.id, enrollmentRequest.program_track_id);
-    const { data: enrollment, error: enrollmentError } = await supabase.from("enrollments").upsert(
-      {
-        program_id: enrollmentRequest.program_id,
-        student_profile_id: enrollmentRequest.student_profile_id,
-        program_track_id: trackIds[0] ?? enrollmentRequest.program_track_id,
-        status: "active",
-        // Explicitly refreshed so a student who withdraws and later re-joins the same
-        // program gets a fresh join date instead of Postgres silently keeping the
-        // original insert's default (announcement notifications key off this).
-        created_at: now,
-      },
-      { onConflict: "program_id,student_profile_id" },
-    ).select("id").single();
-
-    if (enrollmentError || !enrollment) {
-      return Response.json({ error: enrollmentError?.message ?? "Could not create enrollment." }, { status: 500 });
-    }
-    await replaceEnrollmentTracks(supabase, enrollment.id, trackIds);
-
-    await supabase
-      .from("enrollment_requests")
-      .update({ admission_completed_at: now, student_dismissed_at: now, teacher_dismissed_at: null })
-      .eq("id", enrollmentRequest.id);
+    await activateEnrollmentForRequest(supabase, {
+      enrollmentRequestId: enrollmentRequest.id,
+      programId: enrollmentRequest.program_id,
+      studentProfileId: enrollmentRequest.student_profile_id,
+      fallbackTrackId: enrollmentRequest.program_track_id,
+    });
 
     const { data: program } = await supabase
       .from("programs")

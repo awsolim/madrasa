@@ -3,6 +3,7 @@ import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 export type MosqueRole = "admin" | "teacher" | "parent" | "student";
 
 export type UserAccess = {
+  resolutionError?: string;
   profileId: string | null;
   accountType: string | null;
   mosqueRoles: MosqueRole[];
@@ -27,17 +28,20 @@ export const emptyUserAccess: UserAccess = {
 export async function loadUserAccessByMosqueSlug(slug: string): Promise<UserAccess> {
   const supabase = createSupabaseBrowserClient();
   const {
-    data: { session },
+    data: { session }, error: sessionError,
   } = await supabase.auth.getSession();
+  if (sessionError) throw sessionError;
 
   if (!session?.user.id) {
     return emptyUserAccess;
   }
 
-  const [{ data: mosque }, { data: profile }] = await Promise.all([
+  const [{ data: mosque, error: mosqueError }, { data: profile, error: profileError }] = await Promise.all([
     supabase.from("mosques").select("id").eq("slug", slug).maybeSingle(),
     supabase.from("profiles").select("id, account_type").eq("id", session.user.id).maybeSingle(),
   ]);
+  if (mosqueError || profileError) throw mosqueError || profileError;
+  if (!mosque) throw new Error("Account details are not available yet.");
 
   const accountType = profile?.account_type ?? readMetadataAccountType(session.user.user_metadata);
 
@@ -47,7 +51,8 @@ export async function loadUserAccessByMosqueSlug(slug: string): Promise<UserAcce
         .select("role, status, teacher_approval_status")
         .eq("mosque_id", mosque.id)
         .eq("profile_id", session.user.id)
-    : { data: [] };
+    : { data: [], error: null };
+  if (membershipRows.error) throw membershipRows.error;
 
   const activeVerifiedRows = (membershipRows.data ?? []).filter((row) => row.status === "active");
   const mosqueRoles = activeVerifiedRows.map((row) => row.role).filter(isMosqueRole);

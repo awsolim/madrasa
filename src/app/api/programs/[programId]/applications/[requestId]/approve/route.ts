@@ -122,7 +122,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
       actorProfileId: user.id,
       eventType: "application_approved",
       summary,
-      metadata: { paymentType: approvalPaymentType, paymentBypassed, paymentBypassedExternal },
+      metadata: { enrollmentRequestId: requestId, paymentType: approvalPaymentType, paymentBypassed, paymentBypassedExternal },
     });
 
     const { data: mosque } = await supabase.from("mosques").select("slug").eq("id", program.mosque_id).maybeSingle();

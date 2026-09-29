@@ -12,6 +12,8 @@ type NotificationEmail = {
   action?: { label: string; href: string };
   replyTo?: string | null;
   eyebrow?: string;
+  includeAdmins?: boolean;
+  adminAction?: { label: string; href: string };
 };
 
 export async function sendProfileNotificationEmails(
@@ -27,22 +29,24 @@ export async function sendProfileNotificationEmails(
 
   const recipients = Array.from(new Map(
     (profiles ?? [])
-      .filter((profile) => profile.email?.trim() && profile.account_type?.toLowerCase() !== "admin")
+      .filter((profile) => profile.email?.trim() && (email.includeAdmins || profile.account_type?.toLowerCase() !== "admin"))
       .map((profile) => [profile.email!.trim().toLowerCase(), profile]),
   ).values());
-  const results = await Promise.allSettled(recipients.map((profile) => sendEmail({
+  const results = await Promise.allSettled(recipients.map((profile) => {
+    const action = profile.account_type?.toLowerCase() === "admin" ? email.adminAction ?? email.action : email.action;
+    return sendEmail({
     to: profile.email as string,
     subject: email.subject,
     html: renderEmailShell({
       eyebrow: email.eyebrow,
       title: email.title,
       body: `<p style="margin:0;">${escapeHtml(email.message)}</p>`,
-      action: email.action,
+      action,
     }),
-    text: `${email.title}\n\n${email.message}${email.action ? `\n\n${email.action.label}: ${email.action.href}` : ""}`,
+    text: `${email.title}\n\n${email.message}${action ? `\n\n${action.label}: ${action.href}` : ""}`,
     replyTo: email.replyTo,
     idempotencyKey: `${email.eventKey}:${profile.id}`,
-  })));
+  }); }));
 
   return {
     sent: results.filter((result) => result.status === "fulfilled" && !result.value.skipped).length,

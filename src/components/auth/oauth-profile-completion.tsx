@@ -105,7 +105,8 @@ export function OAuthProfileCompletion({ slug, returnTo }: { slug: string; retur
       return;
     }
 
-    const access = await loadUserAccessByMosqueSlug(slug);
+    const access = await loadUserAccessByMosqueSlug(slug).catch(() => null);
+    if (!access) { setSaving(false); setError("Your profile was saved, but account access could not load. Please try again."); return; }
     const destination = returnTo ?? getDefaultLandingHref(slug, access);
     if (accountType === "parent") {
       router.replace(`/m/${slug}/onboarding/family?returnTo=${encodeURIComponent(destination)}`);

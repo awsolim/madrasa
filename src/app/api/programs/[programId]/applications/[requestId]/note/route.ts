@@ -54,6 +54,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
       actorProfileId: user.id,
       eventType: "manual_note",
       summary: note,
+      metadata: { enrollmentRequestId: requestId },
     });
 
     return Response.json({ ok: true });
