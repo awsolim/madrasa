@@ -11,10 +11,15 @@ export type StudentRecordAction = {
   tone?: "default" | "positive" | "warning" | "danger";
 };
 
-export function StudentRecordActions({ actions, onSelect }: { actions: StudentRecordAction[]; onSelect: (id: string) => void }) {
-  const [open, setOpen] = useState(false);
+export function StudentRecordActions({ actions, onSelect, open, onOpenChange }: { actions: StudentRecordAction[]; onSelect: (id: string) => void; open?: boolean; onOpenChange?: (open: boolean) => void }) {
+  const [internalOpen, setInternalOpen] = useState(false);
+  const resolvedOpen = open ?? internalOpen;
+  const setOpen = (nextOpen: boolean) => {
+    setInternalOpen(nextOpen);
+    onOpenChange?.(nextOpen);
+  };
   const panelRef = useRef<HTMLDivElement>(null);
-  useModalFocusTrap(panelRef, open, () => setOpen(false));
+  useModalFocusTrap(panelRef, resolvedOpen, () => setOpen(false));
 
   if (!actions.length) return null;
   return (
@@ -24,7 +29,7 @@ export function StudentRecordActions({ actions, onSelect }: { actions: StudentRe
           Actions
         </button>
       </div>
-      {open ? (
+      {resolvedOpen ? (
         <div className="absolute inset-0 z-50 flex items-end bg-[#26323A]/20" onMouseDown={(event) => { if (event.target === event.currentTarget) setOpen(false); }}>
           <div ref={panelRef} role="dialog" aria-modal="true" tabIndex={-1} className="max-h-[58%] min-h-[46%] w-full overflow-y-auto rounded-t-[24px] bg-white px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-3 text-[#26323A] shadow-[0_-18px_48px_rgba(38,50,58,0.16)] outline-none">
             <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-[#D6DCE0]" />

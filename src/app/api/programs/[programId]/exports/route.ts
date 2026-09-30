@@ -1,5 +1,7 @@
 import { requireProgramFinanceAccess } from "@/lib/finance/auth";
-import { requireProgramManageAccess } from "@/lib/programs/auth";
+import ExcelJS from "exceljs";
+import { Readable } from "node:stream";
+import { requireProgramStudentRecordAccess } from "@/lib/programs/auth";
 import { recordFinanceAuditEvent } from "@/lib/finance/audit";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
 import type { Database } from "@/lib/supabase/types";
@@ -7,7 +9,7 @@ import { logServerError } from "@/lib/monitoring/log-error";
 
 export const runtime = "nodejs";
 
-type ExportType = "students" | "applications" | "finance_summary" | "payment_history";
+type ExportType = "students" | "applications" | "finance_summary" | "payment_history" | "finance_exceptions";
 type Profile = Database["public"]["Tables"]["profiles"]["Row"];
 type Enrollment = Database["public"]["Tables"]["enrollments"]["Row"];
 type EnrollmentRequest = Database["public"]["Tables"]["enrollment_requests"]["Row"];
@@ -17,13 +19,14 @@ type ProgramPaymentTerms = Database["public"]["Tables"]["program_payment_terms"]
 type ProgramSubscription = Database["public"]["Tables"]["program_subscriptions"]["Row"];
 type ProgramTrack = Database["public"]["Tables"]["program_tracks"]["Row"];
 
-const exportTypes = new Set<ExportType>(["students", "applications", "finance_summary", "payment_history"]);
-const financeExportTypes = new Set<ExportType>(["finance_summary", "payment_history"]);
+const exportTypes = new Set<ExportType>(["students", "applications", "finance_summary", "payment_history", "finance_exceptions"]);
+const financeExportTypes = new Set<ExportType>(["finance_summary", "payment_history", "finance_exceptions"]);
 const exportTypeLabels: Record<ExportType, string> = {
   students: "students",
   applications: "applications",
   finance_summary: "finance summary",
   payment_history: "payment history",
+  finance_exceptions: "billing exceptions",
 };
 
 function csvEscape(value: unknown) {
@@ -184,7 +187,7 @@ async function loadProgramRows(supabase: ReturnType<typeof createSupabaseService
 }
 
 async function exportStudents(supabase: ReturnType<typeof createSupabaseServiceClient>, programId: string) {
-  const { enrollments, requests, subscriptions } = await loadProgramRows(supabase, programId);
+  const { enrollments, requests } = await loadProgramRows(supabase, programId);
   const { tracksById, trackDaysById } = await loadTracksContext(supabase, programId);
   const { trackIdsByEnrollmentId } = await loadEnrollmentTrackIds(supabase, programId, enrollments, requests);
   const studentIds = enrollments.map((enrollment) => enrollment.student_profile_id);
@@ -194,13 +197,12 @@ async function exportStudents(supabase: ReturnType<typeof createSupabaseServiceC
   const profiles = await loadProfiles(supabase, [...studentIds, ...(links ?? []).map((link) => link.parent_profile_id)]);
 
   return buildCsv(
-    ["Student name", "Student email", "Student phone", "Student type", "Age", "Gender", "Enrollment status", "Track(s)", "Session day(s)", "Date joined", "Parent name", "Parent email", "Parent phone", "Subscription status"],
+    ["Student name", "Student email", "Student phone", "Student type", "Age", "Gender", "Enrollment status", "Track(s)", "Session day(s)", "Date joined", "Parent name", "Parent email", "Parent phone"],
     enrollments.map((enrollment) => {
       const student = profiles.get(enrollment.student_profile_id);
       const parentId = (links ?? []).find((link) => link.child_profile_id === enrollment.student_profile_id)?.parent_profile_id;
       const parent = parentId ? profiles.get(parentId) : null;
       const trackIds = trackIdsByEnrollmentId.get(enrollment.id) ?? [];
-      const subscription = subscriptions.find((row) => row.student_profile_id === enrollment.student_profile_id);
       return [
         formatProfile(student),
         student?.email,
@@ -215,7 +217,6 @@ async function exportStudents(supabase: ReturnType<typeof createSupabaseServiceC
         formatProfile(parent),
         parent?.email,
         parent?.phone_number,
-        normalizeStatus(subscription?.status),
       ];
     }),
   );
@@ -314,21 +315,92 @@ async function exportPaymentHistory(supabase: ReturnType<typeof createSupabaseSe
     ...payments.map((row) => row.parent_profile_id),
   ]);
   return buildCsv(
-    ["Date", "Student", "Parent", "Amount", "Currency", "Stripe invoice", "Stripe payment intent", "Tax receipt status", "Tax receipt eligible amount", "Tax receipt number", "Receipt URL"],
+    ["Date", "Student", "Parent", "Amount", "Currency", "Tax receipt status", "Tax receipt eligible amount", "Tax receipt number", "Receipt URL"],
     payments.map((payment) => [
       dateTime(payment.paid_at),
       formatProfile(payment.student_profile_id ? profiles.get(payment.student_profile_id) : null),
       formatProfile(payment.parent_profile_id ? profiles.get(payment.parent_profile_id) : null),
       money(payment.amount_cents),
       payment.currency,
-      payment.stripe_invoice_id,
-      payment.stripe_payment_intent_id,
       normalizeStatus(payment.tax_receipt_status),
       money(payment.tax_receipt_eligible_amount_cents),
       payment.tax_receipt_number,
       payment.receipt_url,
     ]),
   );
+}
+
+async function exportFinanceExceptions(supabase: ReturnType<typeof createSupabaseServiceClient>, programId: string) {
+  const { enrollments, requests, subscriptions, paymentTerms, payments } = await loadProgramRows(supabase, programId);
+  const profiles = await loadProfiles(supabase, enrollments.map((row) => row.student_profile_id));
+  const rows: unknown[][] = [];
+  for (const enrollment of enrollments.filter((row) => ["active", "enrolled"].includes(row.status))) {
+    const request = latestRequestForStudent(requests, enrollment.student_profile_id);
+    const terms = currentPaymentTerms(paymentTerms.filter((row) => row.student_profile_id === enrollment.student_profile_id));
+    const subscription = subscriptions.find((row) => row.student_profile_id === enrollment.student_profile_id);
+    const latestPayment = payments.find((row) => row.student_profile_id === enrollment.student_profile_id);
+    const issues: string[] = [];
+    if (subscription && ["past_due", "unpaid", "incomplete", "incomplete_expired"].includes(subscription.status)) issues.push(`Subscription is ${normalizeStatus(subscription.status)}`);
+    if (terms && ["pending", "past_due", "failed"].includes(terms.status)) issues.push(`Payment terms are ${normalizeStatus(terms.status)}`);
+    const paidOutside = Boolean(request?.payment_bypass_external);
+    const waived = Boolean(request?.payment_bypassed && !request?.payment_bypass_external) || Boolean(subscription?.payment_waived);
+    const free = (terms?.payment_type ?? subscription?.payment_type ?? request?.payment_type) === "free";
+    if (!subscription && !paidOutside && !waived && !free) issues.push("No linked subscription, waiver, or external-payment record");
+    if (!issues.length) continue;
+    rows.push([
+      formatProfile(profiles.get(enrollment.student_profile_id)),
+      normalizeStatus(enrollment.status),
+      issues.join("; "),
+      normalizeStatus(terms?.payment_type ?? subscription?.payment_type ?? request?.payment_type),
+      normalizeStatus(terms?.status),
+      normalizeStatus(subscription?.status),
+      dateTime(latestPayment?.paid_at),
+      dateTime(subscription?.current_period_end),
+    ]);
+  }
+  return buildCsv(["Student", "Enrollment status", "Needs attention", "Payment type", "Payment terms status", "Subscription status", "Last payment", "Next billing / period end"], rows);
+}
+
+async function buildWorkbook(csv: string, programTitle: string, reportTitle: string) {
+  const workbook = new ExcelJS.Workbook();
+  workbook.creator = "Tareeqah";
+  workbook.created = new Date();
+  const worksheet = await workbook.csv.read(Readable.from([csv]));
+  worksheet.name = "Report";
+  worksheet.spliceRows(1, 0, [programTitle], [reportTitle], [`Prepared ${new Date().toLocaleString("en-CA")}`], []);
+  const columnCount = Math.max(1, worksheet.columnCount);
+  worksheet.mergeCells(1, 1, 1, columnCount);
+  worksheet.mergeCells(2, 1, 2, columnCount);
+  worksheet.mergeCells(3, 1, 3, columnCount);
+  worksheet.getRow(1).height = 28;
+  worksheet.getCell("A1").font = { bold: true, size: 18, color: { argb: "FFFFFFFF" } };
+  worksheet.getCell("A2").font = { bold: true, size: 12, color: { argb: "FFFFFFFF" } };
+  worksheet.getCell("A3").font = { italic: true, size: 10, color: { argb: "FFDDEBE7" } };
+  for (let row = 1; row <= 3; row += 1) {
+    worksheet.getRow(row).fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FF17624F" } };
+    worksheet.getRow(row).alignment = { vertical: "middle", horizontal: "left" };
+  }
+  const headerRow = worksheet.getRow(5);
+  headerRow.height = 24;
+  headerRow.eachCell((cell) => {
+    cell.font = { bold: true, color: { argb: "FF26323A" } };
+    cell.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFE7F1EE" } };
+    cell.alignment = { vertical: "middle", horizontal: "left", wrapText: false };
+    cell.border = { bottom: { style: "thin", color: { argb: "FFB9CBC5" } } };
+  });
+  worksheet.autoFilter = { from: { row: 5, column: 1 }, to: { row: 5, column: columnCount } };
+  worksheet.views = [{ state: "frozen", ySplit: 5 }];
+  worksheet.eachRow((row, rowNumber) => {
+    if (rowNumber <= 5) return;
+    row.alignment = { vertical: "top", horizontal: "left" };
+    if (rowNumber % 2 === 0) row.fill = { type: "pattern", pattern: "solid", fgColor: { argb: "FFF7FAF9" } };
+  });
+  worksheet.columns.forEach((column) => {
+    let width = 12;
+    column.eachCell?.({ includeEmpty: false }, (cell) => { width = Math.max(width, Math.min(34, String(cell.value ?? "").length + 2)); });
+    column.width = width;
+  });
+  return workbook.xlsx.writeBuffer();
 }
 
 export async function GET(request: Request, { params }: { params: Promise<{ programId: string }> }) {
@@ -360,11 +432,7 @@ export async function GET(request: Request, { params }: { params: Promise<{ prog
       ? await requireProgramFinanceAccess(supabase, programId, user.id)
       : type === "applications"
         ? await supabase.rpc("can_view_program_applications", { check_program_id: programId, check_profile_id: user.id }).then(({ data, error }) => error ? { ok: false as const, status: 500, error: error.message } : data ? { ok: true as const } : { ok: false as const, status: 403, error: "Application access required." })
-        : await requireProgramManageAccess(supabase, programId, user.id).then(async (result) => {
-            if (result.ok) return result;
-            const { data, error } = await supabase.rpc("is_program_teacher", { check_program_id: programId, check_profile_id: user.id });
-            return error ? { ok: false as const, status: 500, error: error.message } : data ? { ok: true as const } : result;
-          });
+        : await requireProgramStudentRecordAccess(supabase, programId, user.id);
     if (!access.ok) {
       return Response.json({ error: access.error }, { status: access.status });
     }
@@ -381,20 +449,25 @@ export async function GET(request: Request, { params }: { params: Promise<{ prog
             ? await exportApplications(supabase, programId, program)
             : type === "finance_summary"
               ? await exportFinanceSummary(supabase, programId, program)
-              : await exportPaymentHistory(supabase, programId);
+              : type === "payment_history"
+                ? await exportPaymentHistory(supabase, programId)
+                : await exportFinanceExceptions(supabase, programId);
+
+    const reportTitle = exportTypeLabels[type].replace(/\b\w/g, (letter) => letter.toUpperCase());
+    const workbook = await buildWorkbook(csv, program.title, reportTitle);
 
     await recordFinanceAuditEvent(supabase, {
       programId,
       actorProfileId: user.id,
       eventType: `export_${type}`,
-      summary: `Exported the ${exportTypeLabels[type]} CSV.`,
+      summary: `Exported the ${exportTypeLabels[type]} Excel report.`,
       metadata: { exportType: type },
     });
 
-    return new Response(csv, {
+    return new Response(new Uint8Array(workbook), {
       headers: {
-        "content-type": "text/csv; charset=utf-8",
-        "content-disposition": `attachment; filename="${filenamePart(program.title)}-${type}.csv"`,
+        "content-type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        "content-disposition": `attachment; filename="${filenamePart(program.title)}-${type}.xlsx"`,
       },
     });
   } catch (error) {

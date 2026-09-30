@@ -3,7 +3,7 @@ import { loadCachedSession } from "@/lib/client-cache";
 import { loadPrivateSnapshot, operationalSnapshotKey } from "@/lib/query-cache";
 import { loadStudentActivity, type StudentActivity } from "@/lib/student-activity";
 
-import Link from "next/link";
+import Link from "@/components/layout/workspace-link";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { EditorToast, type EditorToastState } from "@/components/data/editor-toast";
@@ -22,7 +22,7 @@ import {
   scheduleSummary,
 } from "@/components/data/supabase-public-sections";
 import { ConfirmModal } from "@/components/ui/confirm-modal";
-import { StudentRecordActions, type StudentRecordAction } from "@/components/data/student-record-actions";
+import type { StudentRecordAction } from "@/components/data/student-record-actions";
 import { useModalFocusTrap } from "@/hooks/use-modal-behavior";
 import { friendlyErrorMessage } from "@/lib/errors";
 import {
@@ -357,6 +357,7 @@ function ApplicationDetailsDrawer({
   onClose: () => void;
   onAction: (action: ApplicationRowAction) => void;
 }) {
+  const [activeTab, setActiveTab] = useState<"application" | "actions">("application");
   const [studentEvents, setStudentEvents] = useState<StudentActivity[] | null>(null);
   const [eventsLoading, setEventsLoading] = useState(true);
   const [eventsError, setEventsError] = useState<string | null>(null);
@@ -379,11 +380,11 @@ function ApplicationDetailsDrawer({
   const payStatus = getApplicationPaymentStatus(row.request, program, row.subscription);
   const basePath = mode === "admin" ? `/m/${slug}/admin/programs` : `/m/${slug}/teacher/classes`;
   const availableActions = canDecide ? getApplicationRowActions(status).filter((action) => action !== "view") : [];
-  const recordActions: StudentRecordAction[] = availableActions.map((action) => ({
+  const recordActions: StudentRecordAction[] = [...availableActions.map((action): StudentRecordAction => ({
     id: action,
     label: APPLICATION_ACTION_LABELS[action],
     tone: action === "approve" ? "positive" : action === "reject" || action === "delete_permanently" ? "danger" : action === "waitlist" || action === "cancel_approval" ? "warning" : "default",
-  }));
+  })), ...(status === "completed_enrolled" ? [{ id: "manage_enrollment", label: "Manage student enrollment" } satisfies StudentRecordAction] : [])];
 
   const containerRef = useRef<HTMLDivElement>(null);
   useModalFocusTrap(containerRef, true, onClose);
@@ -400,8 +401,15 @@ function ApplicationDetailsDrawer({
           </button>
         </div>
 
+        <div className="shrink-0 border-b border-[#EEF2F4] px-4 py-2">
+          <div className="grid grid-cols-2 rounded-[11px] bg-[#F1F5F6] p-1" role="tablist" aria-label="Application file sections">
+            <button type="button" role="tab" aria-selected={activeTab === "application"} onClick={() => setActiveTab("application")} className={cn("min-h-9 rounded-[8px] px-3 text-xs font-semibold transition-colors", activeTab === "application" ? "bg-white text-[#26323A] shadow-sm" : "text-[#6B747B]")}>Application</button>
+            <button type="button" role="tab" aria-selected={activeTab === "actions"} onClick={() => setActiveTab("actions")} className={cn("min-h-9 rounded-[8px] px-3 text-xs font-semibold transition-colors", activeTab === "actions" ? "bg-white text-[#26323A] shadow-sm" : "text-[#6B747B]")}>Actions</button>
+          </div>
+        </div>
+
         <div className="min-h-0 flex-1 overflow-y-auto px-4 py-3">
-          <div className="space-y-3 text-xs">
+          {activeTab === "application" ? <div className="space-y-3 text-xs">
             <div className="flex items-center justify-between">
               <span className="text-[#6B747B]">Application status</span>
               <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-semibold", programStatusBadgeToneClass(applicationStatusTone(status)))}>
@@ -551,18 +559,18 @@ function ApplicationDetailsDrawer({
                 </div>
               )}
             </section>
-          </div>
+          </div> : <div className="divide-y divide-[#E7ECEF]">
+            {recordActions.length ? recordActions.map((action) => action.id === "manage_enrollment" ? (
+              <Link key={action.id} href={`${basePath}/${program.id}/students?from=applications&studentSearch=${row.request.student_profile_id}`} className="group flex min-h-14 w-full items-center justify-between gap-4 rounded-[10px] px-2 text-left text-[#26323A] transition-colors hover:bg-[#F4F7F8] active:bg-[#EAF0F2]">
+                <span className="text-sm font-semibold">{action.label}</span><span aria-hidden="true" className="text-lg text-[#9AA6AC]">›</span>
+              </Link>
+            ) : (
+              <button key={action.id} type="button" onClick={() => onAction(action.id as ApplicationRowAction)} className={cn("group flex min-h-14 w-full items-center justify-between gap-4 rounded-[10px] px-2 text-left transition-colors hover:bg-[#F4F7F8] active:bg-[#EAF0F2]", action.tone === "danger" ? "text-[#B42318]" : action.tone === "warning" ? "text-[#8A5A12]" : action.tone === "positive" ? "text-[#17624F]" : "text-[#26323A]")}>
+                <span className="text-sm font-semibold">{action.label}</span><span aria-hidden="true" className="text-lg text-[#9AA6AC]">›</span>
+              </button>
+            )) : <p className="py-6 text-center text-sm text-[#6B747B]">No actions are available for this application.</p>}
+          </div>}
         </div>
-
-        <StudentRecordActions actions={recordActions} onSelect={(action) => onAction(action as ApplicationRowAction)} />
-
-        {status === "completed_enrolled" ? (
-          <div className="shrink-0 border-t border-[#EEF2F4] px-4 py-3">
-            <Link href={`${basePath}/${program.id}/students?from=applications&studentId=${row.request.student_profile_id}`} className="text-xs font-semibold text-[#17624F] hover:underline">
-              View student in class list →
-            </Link>
-          </div>
-        ) : null}
       </div>
     </div>,
     document.body,

@@ -1,5 +1,5 @@
 import { getStripe, shouldUseStripeConnect } from "@/lib/stripe/server";
-import { cancelProgramSubscription, isActiveStripeSubscriptionStatus } from "@/lib/stripe/subscriptions";
+import { isActiveStripeSubscriptionStatus } from "@/lib/stripe/subscriptions";
 import { requireProgramFinanceAccess } from "@/lib/finance/auth";
 import { recordFinanceAuditEvent } from "@/lib/finance/audit";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
@@ -9,7 +9,6 @@ export const runtime = "nodejs";
 
 type WaiveRequestBody = {
   studentProfileId?: string;
-  timing?: "period_end" | "immediate";
   reason?: string;
   note?: string;
 };
@@ -27,11 +26,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
     if (!body.studentProfileId) {
       return Response.json({ error: "Missing student." }, { status: 400 });
     }
-    const timing = body.timing === "immediate" ? "immediate" : "period_end";
-    const reason = body.reason?.trim() ?? "";
-    if (!reason) {
-      return Response.json({ error: "A reason is required to waive future payments." }, { status: 400 });
-    }
+    const timing = "period_end" as const;
+    const reason = body.reason?.trim() || null;
     const note = body.note?.trim() || null;
 
     const supabase = createSupabaseServiceClient();
@@ -66,13 +62,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
     const now = new Date().toISOString();
 
     if (hasActiveSubscription && subscription) {
-      if (timing === "immediate") {
-        await cancelProgramSubscription(supabase, subscription);
-      } else {
-        const stripeOptions = shouldUseStripeConnect() && subscription.stripe_account_id ? { stripeAccount: subscription.stripe_account_id } : undefined;
-        await getStripe().subscriptions.update(subscription.stripe_subscription_id!, { cancel_at_period_end: true }, stripeOptions);
-        await supabase.from("program_subscriptions").update({ cancel_at_period_end: true, updated_at: now }).eq("id", subscription.id);
-      }
+      const stripeOptions = shouldUseStripeConnect() && subscription.stripe_account_id ? { stripeAccount: subscription.stripe_account_id } : undefined;
+      await getStripe().subscriptions.update(subscription.stripe_subscription_id!, { cancel_at_period_end: true }, stripeOptions);
+      await supabase.from("program_subscriptions").update({ cancel_at_period_end: true, updated_at: now }).eq("id", subscription.id);
     }
 
     const { data: link } = await supabase
@@ -124,7 +116,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
         status: "waived",
         approved_by: user.id,
         approved_at: now,
-        internal_note: note ? `${reason} - ${note}` : reason,
+        internal_note: note,
         updated_at: now,
       })
       .select("id")
@@ -166,8 +158,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
     );
 
     const summary = hasActiveSubscription
-      ? `Future payments waived for ${studentLabel}. Subscription ${timing === "immediate" ? "ended immediately" : "will end at the current period's close"}. Reason: ${reason}`
-      : `Future payments waived for ${studentLabel}. Reason: ${reason}`;
+      ? `Future payments waived for ${studentLabel}. The current paid period remains available and the subscription will not renew.`
+      : `Future payments waived for ${studentLabel}.`;
     await recordFinanceAuditEvent(supabase, {
       programId,
       studentProfileId: body.studentProfileId,

@@ -149,6 +149,8 @@ export type Database = {
           teacher_profile_id: string | null;
           role: string;
           can_manage_finances: boolean;
+          can_view_student_records: boolean;
+          can_manage_enrollments: boolean;
           can_view_applications: boolean;
           can_decide_applications: boolean;
           can_edit_class: boolean;
@@ -804,6 +806,14 @@ export type Database = {
         Returns: boolean;
       };
       can_manage_program_finances: {
+        Args: { check_program_id: string; check_profile_id?: string };
+        Returns: boolean;
+      };
+      can_view_program_student_records: {
+        Args: { check_program_id: string; check_profile_id?: string };
+        Returns: boolean;
+      };
+      can_manage_program_enrollments: {
         Args: { check_program_id: string; check_profile_id?: string };
         Returns: boolean;
       };

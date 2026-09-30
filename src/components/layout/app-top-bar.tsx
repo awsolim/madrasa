@@ -49,13 +49,13 @@ function BottomNav({ items, inboxBadgeCount = 0, inboxActionRequired = false }: 
   // containment on this fixed element: Safari can detach that layer while scrolling.
   return createPortal(
     <nav
-      className="pointer-events-auto fixed inset-x-0 bottom-0 z-[2147483647] h-[calc(74px+env(safe-area-inset-bottom))] overflow-visible bg-transparent md:hidden"
+      className="pointer-events-auto fixed inset-x-0 bottom-0 z-[2147483647] h-[calc(88px+env(safe-area-inset-bottom))] overflow-visible bg-transparent md:hidden"
       aria-label="Mobile primary navigation"
     >
       <div
         className={cn(
-          "mx-auto grid h-full w-full max-w-md rounded-t-[34px] border-x border-t border-[var(--border-default)] pb-[env(safe-area-inset-bottom)]",
-          "bg-white",
+          "absolute inset-x-3 bottom-[calc(10px+env(safe-area-inset-bottom))] mx-auto grid h-[68px] max-w-[420px] overflow-hidden rounded-[24px] border border-white/70",
+          "bg-[#F1F4F5]/90 shadow-[0_10px_34px_rgba(38,50,58,0.18)] backdrop-blur-xl backdrop-saturate-150",
         )}
         style={{ gridTemplateColumns: `repeat(${visibleItems.length}, minmax(0, 1fr))` }}
       >
@@ -79,7 +79,7 @@ function BottomNav({ items, inboxBadgeCount = 0, inboxActionRequired = false }: 
                 router.push(item.href);
               }}
               className={cn(
-                "relative flex h-[74px] min-w-0 flex-col items-center justify-start px-1 pt-2.5 text-[11px] font-medium text-[var(--text-subtle)]",
+                "relative flex h-[68px] min-w-0 flex-col items-center justify-start px-1 pt-1.5 text-[11px] font-medium text-[var(--text-subtle)] transition-colors active:bg-white/55",
                 active && "text-[var(--brand-green)]",
               )}
             >

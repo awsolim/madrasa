@@ -10,20 +10,21 @@ import type { Database } from "@/lib/supabase/types";
 import { cn } from "@/lib/utils";
 
 type Program = Database["public"]["Tables"]["programs"]["Row"];
-type ProgramExportType = "students" | "applications" | "finance_summary" | "payment_history";
+type ProgramExportType = "students" | "applications" | "finance_summary" | "payment_history" | "finance_exceptions";
+type ReportAccess = "student_records" | "applications" | "finance";
 
-const programExportOptions: Array<{ id: ProgramExportType; title: string; description: string; access: "program" | "finance" }> = [
+const programExportOptions: Array<{ id: ProgramExportType; title: string; description: string; access: ReportAccess }> = [
   {
     id: "students",
     title: "Student roster",
     description: "Student details, enrollment status, selected tracks, family contact, and session days.",
-    access: "program",
+    access: "student_records",
   },
   {
     id: "applications",
     title: "Applications",
     description: "Application status, selected tracks, payment decisions, review notes, and reviewers.",
-    access: "program",
+    access: "applications",
   },
   {
     id: "finance_summary",
@@ -33,8 +34,14 @@ const programExportOptions: Array<{ id: ProgramExportType; title: string; descri
   },
   {
     id: "payment_history",
-    title: "Payment history",
-    description: "Individual payment records, Stripe references, and tax receipt tracking fields.",
+    title: "Payment ledger",
+    description: "A clean record of received payments, receipt links, and tax receipt status.",
+    access: "finance",
+  },
+  {
+    id: "finance_exceptions",
+    title: "Billing exceptions",
+    description: "Only students whose billing record needs attention, with a clear reason for each one.",
     access: "finance",
   },
 ];
@@ -60,7 +67,9 @@ async function downloadProgramExport(programId: string, type: ProgramExportType,
   const url = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = url;
-  anchor.download = `${fallbackName.replace(/[^a-z0-9]+/gi, "-").toLowerCase() || "class"}-${type}.csv`;
+  const disposition = response.headers.get("content-disposition");
+  const serverFilename = disposition?.match(/filename="([^"]+)"/)?.[1];
+  anchor.download = serverFilename ?? `${fallbackName.replace(/[^a-z0-9]+/gi, "-").toLowerCase() || "class"}-${type}.xlsx`;
   document.body.appendChild(anchor);
   anchor.click();
   anchor.remove();
@@ -94,6 +103,7 @@ function ProgramExportsData({ slug, programId }: { slug: string; programId: stri
   const searchParams = useSearchParams();
   const initialType = searchParams.get("type");
   const [program, setProgram] = useState<Program | null>(null);
+  const [access, setAccess] = useState<Record<ReportAccess, boolean>>({ student_records: false, applications: false, finance: false });
   const [selectedType, setSelectedType] = useState<ProgramExportType>(
     programExportOptions.some((option) => option.id === initialType) ? (initialType as ProgramExportType) : "students",
   );
@@ -116,7 +126,12 @@ function ProgramExportsData({ slug, programId }: { slug: string; programId: stri
         return;
       }
 
-      const { data: programRow, error: programError } = await supabase.from("programs").select("*").eq("id", programId).eq("mosque_id", mosque.id).maybeSingle();
+      const [{ data: programRow, error: programError }, studentAccess, applicationAccess, financeAccess] = await Promise.all([
+        supabase.from("programs").select("*").eq("id", programId).eq("mosque_id", mosque.id).maybeSingle(),
+        supabase.rpc("can_view_program_student_records", { check_program_id: programId }),
+        supabase.rpc("can_view_program_applications", { check_program_id: programId }),
+        supabase.rpc("can_manage_program_finances", { check_program_id: programId }),
+      ]);
       if (!active) {
         return;
       }
@@ -125,6 +140,10 @@ function ProgramExportsData({ slug, programId }: { slug: string; programId: stri
         setProgram(null);
       } else {
         setProgram(programRow);
+        const nextAccess = { student_records: Boolean(studentAccess.data), applications: Boolean(applicationAccess.data), finance: Boolean(financeAccess.data) };
+        setAccess(nextAccess);
+        const available = programExportOptions.filter((option) => nextAccess[option.access]);
+        setSelectedType((current) => available.some((option) => option.id === current) ? current : (available[0]?.id ?? current));
         setError(null);
       }
       setLoading(false);
@@ -137,12 +156,14 @@ function ProgramExportsData({ slug, programId }: { slug: string; programId: stri
     };
   }, [programId, slug]);
 
-  const selectedOption = programExportOptions.find((option) => option.id === selectedType) ?? programExportOptions[0];
+  const availableOptions = programExportOptions.filter((option) => access[option.access]);
+  const selectedOption = availableOptions.find((option) => option.id === selectedType) ?? availableOptions[0];
 
   async function handleDownload() {
     setBusy(true);
     setError(null);
     try {
+      if (!selectedOption) return;
       const result = await downloadProgramExport(programId, selectedType, program?.title ?? selectedOption.title);
       if (!result.ok) {
         setError(result.error);
@@ -165,14 +186,14 @@ function ProgramExportsData({ slug, programId }: { slug: string; programId: stri
   return (
     <section className="space-y-6 bg-white px-4 pb-28 pt-5 text-[#26323A]">
       <div className="space-y-2">
-        <h2 className="text-2xl font-semibold leading-7">{program?.title ?? "Class data"}</h2>
+        <h2 className="text-2xl font-semibold leading-7">{program?.title ?? "Class reports"}</h2>
         <p className="max-w-2xl text-sm font-medium leading-6 text-[#6B747B]">
-          Download class records as CSV files.
+          Choose a focused, ready-to-use Excel report. Each report only contains information you are allowed to view.
         </p>
       </div>
 
-      <div className="grid gap-3 md:grid-cols-4">
-        {programExportOptions.map((option) => {
+      {availableOptions.length ? <div className="grid gap-3 md:grid-cols-2">
+        {availableOptions.map((option) => {
           const selected = selectedType === option.id;
           return (
             <button
@@ -189,9 +210,9 @@ function ProgramExportsData({ slug, programId }: { slug: string; programId: stri
             </button>
           );
         })}
-      </div>
+      </div> : <EmptyState title="No reports available" text="This class has not granted you access to student, application, or finance reports." />}
 
-      <div className="border-t border-[#E1E8EC] pt-5">
+      {selectedOption ? <div className="border-t border-[#E1E8EC] pt-5">
         <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
           <div>
             <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-[#7B858C]">Selected export</p>
@@ -204,11 +225,11 @@ function ProgramExportsData({ slug, programId }: { slug: string; programId: stri
             disabled={busy}
             className="inline-flex min-h-11 items-center justify-center rounded-full bg-[#17624F] px-5 text-sm font-semibold text-white disabled:opacity-60"
           >
-            {busy ? "Preparing CSV..." : "Download CSV"}
+            {busy ? "Preparing report…" : "Download Excel report"}
           </button>
         </div>
         {error ? <p className="mt-3 text-sm font-semibold text-[#C0392B]">{error}</p> : null}
-      </div>
+      </div> : null}
     </section>
   );
 }
@@ -226,7 +247,7 @@ export function ProgramExportsPage({
 
   return (
     <>
-      <PageTitleBar title="Export Center" backHref={backHref} backLabel="Classes" tone="teal" />
+      <PageTitleBar title="Report Center" backHref={backHref} backLabel="Classes" tone="teal" />
       <ExportWorkspace>
         <ProgramExportsData slug={slug} programId={programId} />
       </ExportWorkspace>

@@ -10,7 +10,7 @@ import Link from "@/components/layout/workspace-link";
 import { createPortal } from "react-dom";
 import { Upload } from "tus-js-client";
 import { ApplicationDecisionModal, ApplicationReviewOverlay, type ApplicationRow } from "@/components/data/application-review";
-import { StudentRecordActions, type StudentRecordAction } from "@/components/data/student-record-actions";
+import type { StudentRecordAction } from "@/components/data/student-record-actions";
 import { ChildrenManager } from "@/components/data/children-manager";
 import { TransitionLink } from "@/components/layout/transition-link";
 import { useSearchParams } from "next/navigation";
@@ -37,6 +37,7 @@ import { loadProgramEditor, loadProgramDirectorOptions } from "@/lib/program-edi
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { Database, Json } from "@/lib/supabase/types";
 import { cn } from "@/lib/utils";
+import { downloadStudentHistory } from "@/lib/student-history-export";
 import { deriveLifecycleStatus, getApplicationButtonState, getProgramPrimaryCta, getProgramStatusBadges, isPubliclyListed, toProgramStatusFields, validateProgramStatusCombination, type ApplicationStatus as ProgramApplicationStatus, type LifecycleStatus as ProgramLifecycleStatus, type PublicationStatus as ProgramPublicationStatus, type ProgramStatusFields } from "@/lib/programs/status";
 import {
   dayFromSessionDate,
@@ -3716,7 +3717,7 @@ function ReportProblemModal({
   useHideMobileChromeWhileMounted();
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#26323A]/35 px-5 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[2147483647] flex items-center justify-center bg-[#26323A]/35 px-5 backdrop-blur-sm">
       <div ref={containerRef} role="dialog" aria-modal="true" tabIndex={-1} className="w-full max-w-sm rounded-[28px] bg-white p-6 text-[#26323A] shadow-[0_24px_60px_rgba(38,50,58,0.22)] outline-none">
         <h2 className="text-xl font-semibold">Report a problem</h2>
         <p className="mt-2 text-sm leading-6 text-[#6B747B]">Tell us what happened. We&apos;ll get your account and current page automatically.</p>
@@ -3766,7 +3767,7 @@ function ConfirmDeleteAccountModal({
   const canConfirm = confirmText.trim().toUpperCase() === "DELETE";
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#26323A]/35 px-5 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[2147483647] flex items-center justify-center bg-[#26323A]/35 px-5 backdrop-blur-sm">
       <div ref={containerRef} role="dialog" aria-modal="true" tabIndex={-1} className="w-full max-w-sm rounded-[28px] bg-white p-6 text-[#26323A] shadow-[0_24px_60px_rgba(38,50,58,0.22)] outline-none">
         <h2 className="text-xl font-semibold text-[#C83F31]">Delete account?</h2>
         <p className="mt-2 text-sm leading-6 text-[#6B747B]">
@@ -3822,7 +3823,7 @@ function ConfirmStudentRescindModal({
   useHideMobileChromeWhileMounted();
   const isCancelRegistration = mode === "cancel_registration";
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#26323A]/35 px-5 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[2147483647] flex items-center justify-center bg-[#26323A]/35 px-5 backdrop-blur-sm">
       <div ref={containerRef} role="dialog" aria-modal="true" tabIndex={-1} className="w-full max-w-sm rounded-[28px] bg-white p-6 text-[#26323A] shadow-[0_24px_60px_rgba(38,50,58,0.22)] outline-none">
         <h2 className="text-xl font-semibold">{isCancelRegistration ? "Cancel registration?" : "Rescind application?"}</h2>
         <p className="mt-2 text-sm leading-6 text-[#6B747B]">
@@ -4888,7 +4889,7 @@ export function AdminClassesData({ slug }: { slug: string }) {
               role="director"
               basePath={`/m/${slug}/admin/programs`}
               controlLabel="Admin Control"
-              permissions={{ can_view_applications: true, can_decide_applications: true, can_edit_class: true, can_manage_finances: true, can_announce: true }}
+              permissions={{ can_view_student_records: true, can_manage_enrollments: true, can_view_applications: true, can_decide_applications: true, can_edit_class: true, can_manage_finances: true, can_announce: true }}
               counts={programCounts[program.id]}
               onDeleted={() => {
                 setHiddenProgramIds((current) => new Set([...current, program.id]));
@@ -7924,7 +7925,7 @@ function MissingFieldsModal({
   const containerRef = useRef<HTMLDivElement>(null);
   useModalFocusTrap(containerRef, true, onClose);
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#26323A]/35 px-5 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[2147483647] flex items-center justify-center bg-[#26323A]/35 px-5 backdrop-blur-sm">
       <div ref={containerRef} role="dialog" aria-modal="true" tabIndex={-1} className="max-h-[80vh] w-full max-w-md overflow-y-auto rounded-[24px] bg-white p-5 text-[#26323A] shadow-[0_24px_60px_rgba(38,50,58,0.22)] outline-none">
         <h2 className="text-lg font-semibold">Required fields missing</h2>
         <p className="mt-1 text-sm leading-6 text-[#6B747B]">
@@ -10248,6 +10249,8 @@ type TeacherRosterSnapshot = {
   canDecideApplications: boolean;
   canViewApplications: boolean;
   canManageFinances: boolean;
+  canViewStudentRecords: boolean;
+  canManageEnrollments: boolean;
   error: string | null;
 };
 
@@ -10264,6 +10267,8 @@ const emptyTeacherRosterSnapshot: TeacherRosterSnapshot = {
   canDecideApplications: false,
   canViewApplications: false,
   canManageFinances: false,
+  canViewStudentRecords: false,
+  canManageEnrollments: false,
   error: null,
 };
 
@@ -10272,7 +10277,7 @@ export function TeacherStudentsData({ slug, programId }: { slug: string; program
   const searchParams = useSearchParams();
   const cameFromParam = searchParams.get("from");
   const cameFrom = cameFromParam === "finances" || cameFromParam === "applications" ? cameFromParam : null;
-  const originStudentId = searchParams.get("studentId");
+  const originStudentId = searchParams.get("studentSearch") ?? searchParams.get("studentId");
   const sessionTrackIdParam = searchParams.get("trackId");
   const sessionDayParam = searchParams.get("day");
   const sessionStartParam = searchParams.get("start");
@@ -10288,16 +10293,19 @@ export function TeacherStudentsData({ slug, programId }: { slug: string; program
   const [sessionFilterActive, setSessionFilterActive] = useState(Boolean(sessionTrackIdParam || sessionDayParam));
   const [waitlist, setWaitlist] = useState<RequestWithContext[]>([]);
   const [canDecideApplications, setCanDecideApplications] = useState(false);
-  const [studentAccess, setStudentAccess] = useState({ applications: false, finances: false });
+  const [studentAccess, setStudentAccess] = useState({ applications: false, finances: false, records: false, enrollments: false });
   const studentBasePath = `/m/${slug}/${typeof window !== "undefined" && /\/admin\//.test(window.location.pathname) ? "admin/programs" : "teacher/classes"}/${programId}`;
   const [studentSearch, setStudentSearch] = useState(originStudentId ?? "");
   const [genderFilter, setGenderFilter] = useState("all");
   const [studentSort, setStudentSort] = useState<"first" | "last" | "age">("first");
   const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
-  const [studentView, setStudentView] = useState<"students" | "parents">("students");
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [busyStudentId, setBusyStudentId] = useState<string | null>(null);
+  const [studentFileRow, setStudentFileRow] = useState<FinanceEnrollmentRow | null>(null);
+  const [studentFileProgram, setStudentFileProgram] = useState<Program | null>(null);
+  const [studentFileAction, setStudentFileAction] = useState<{ row: FinanceEnrollmentRow; action: FinanceAction } | null>(null);
+  const [studentFileNote, setStudentFileNote] = useState<FinanceEnrollmentRow | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [kickTarget, setKickTarget] = useState<{ studentId: string; studentName: string; subscription?: ProgramSubscription | null } | null>(null);
   const kickModalRef = useRef<HTMLDivElement>(null);
@@ -10336,7 +10344,6 @@ export function TeacherStudentsData({ slug, programId }: { slug: string; program
       if (result.error) throw result.error;
       return result.data;
     });
-
     const snapshot = data as unknown as {
       error: string | null;
       mosque: Mosque | null;
@@ -10355,7 +10362,9 @@ export function TeacherStudentsData({ slug, programId }: { slug: string; program
       parents: ParentDisplay[];
       canDecideApplications: boolean;
   canViewApplications: boolean;
-  canManageFinances: boolean;
+      canManageFinances: boolean;
+      canViewStudentRecords: boolean;
+      canManageEnrollments: boolean;
     } | null;
 
     if (!snapshot || !snapshot.mosque) {
@@ -10452,6 +10461,8 @@ export function TeacherStudentsData({ slug, programId }: { slug: string; program
       canDecideApplications: Boolean(snapshot.canDecideApplications),
       canViewApplications: Boolean(snapshot.canViewApplications),
       canManageFinances: Boolean(snapshot.canManageFinances),
+      canViewStudentRecords: Boolean(snapshot.canViewStudentRecords),
+      canManageEnrollments: Boolean(snapshot.canManageEnrollments),
       error: null,
     };
   }
@@ -10469,7 +10480,7 @@ export function TeacherStudentsData({ slug, programId }: { slug: string; program
     setTrackSessionKeysById(rosterSnapshot.trackSessionKeysById);
     setCurrentUserId(rosterSnapshot.currentUserId);
     setCanDecideApplications(rosterSnapshot.canDecideApplications);
-    setStudentAccess({ applications: rosterSnapshot.canViewApplications || rosterSnapshot.canDecideApplications, finances: rosterSnapshot.canManageFinances });
+    setStudentAccess({ applications: rosterSnapshot.canViewApplications || rosterSnapshot.canDecideApplications, finances: rosterSnapshot.canManageFinances, records: rosterSnapshot.canViewStudentRecords, enrollments: rosterSnapshot.canManageEnrollments });
     setStudents(rosterSnapshot.students);
     setWaitlist(rosterSnapshot.waitlist);
     setError(rosterSnapshot.error);
@@ -10502,7 +10513,6 @@ export function TeacherStudentsData({ slug, programId }: { slug: string; program
 
     setBusyStudentId(studentId);
     setError(null);
-    const supabase = createSupabaseBrowserClient();
     const targetStudent = students.find((student) => student.enrollment.student_profile_id === studentId);
     if (hasActiveRecurringSubscription(targetStudent?.subscription ?? null)) {
       setError("End this student's active subscription before removing them from class.");
@@ -10510,50 +10520,19 @@ export function TeacherStudentsData({ slug, programId }: { slug: string; program
       return;
     }
 
-    const { error: updateError } = await supabase
-      .from("enrollments")
-      .update({ status: "kicked" })
-      .eq("program_id", program.id)
-      .eq("student_profile_id", studentId);
-
-    if (updateError) {
-      setError(friendlyErrorMessage(updateError, "Could not remove this student."));
+    const reviewNote = customMessage?.trim() || `You were removed from ${program.title}.`;
+    const token = (await loadCachedSession())?.access_token;
+    const response = await fetch(`/api/programs/${program.id}/students/${studentId}/remove`, {
+      method: "POST",
+      headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) },
+      body: JSON.stringify({ message: reviewNote }),
+    });
+    const result = (await response.json().catch(() => ({}))) as { error?: string };
+    if (!response.ok) {
+      setError(result.error ?? "Could not remove this student.");
       setBusyStudentId(null);
       return;
     }
-
-    const now = new Date().toISOString();
-    const parentId = targetStudent?.parent?.id ?? null;
-    const reviewNote = customMessage?.trim() || `You were removed from ${program.title}.`;
-    const { error: noticeError } = await supabase.from("enrollment_requests").upsert(
-      {
-        mosque_id: mosque.id,
-        program_id: program.id,
-        student_profile_id: studentId,
-        parent_profile_id: parentId,
-        status: "cancelled",
-        reviewed_by: currentUserId,
-        reviewed_at: now,
-        review_note: reviewNote,
-        student_dismissed_at: null,
-      },
-      { onConflict: "program_id,student_profile_id" },
-    );
-
-    if (noticeError) {
-      setError(friendlyErrorMessage(noticeError, "Could not send removal notice."));
-    }
-
-    const { data: actorProfile } = await supabase.from("profiles").select("full_name, email").eq("id", currentUserId).maybeSingle();
-    const actorName = actorProfile?.full_name?.trim() || actorProfile?.email?.trim() || "Director";
-    await supabase.from("program_finance_audit_events").insert({
-      program_id: program.id,
-      student_profile_id: studentId,
-      actor_profile_id: currentUserId,
-      event_type: "student_removed",
-      summary: `${actorName} removed ${targetStudent?.profile?.full_name || "Student"} from ${program.title}.`,
-      metadata: {},
-    });
 
     window.dispatchEvent(new Event("tareeqah:notifications-changed"));
     const refreshedRoster = await fetchTeacherRoster();
@@ -10568,6 +10547,16 @@ export function TeacherStudentsData({ slug, programId }: { slug: string; program
     setKickTarget(null);
     setShowKickMessage(false);
     setKickMessage("");
+  }
+
+  function openStudentFile(student: TeacherStudentItem) {
+    if (!program) return;
+    setStudentFileProgram(program);
+    setStudentFileRow({ enrollment: student.enrollment, student: student.profile, parent: student.parent ?? null, approver: null, request: null, subscription: student.subscription ?? null, paymentTerms: null, paymentTermsHistory: [] });
+    if (!studentAccess.finances) return;
+    void loadFinanceStudentRecord(slug, programId, student.enrollment.student_profile_id).then((record) => {
+      if (record) { setStudentFileProgram(record.program); setStudentFileRow(record.row); }
+    }).catch(() => undefined);
   }
 
   async function reviewWaitlistedRequest(
@@ -10633,7 +10622,7 @@ export function TeacherStudentsData({ slug, programId }: { slug: string; program
     const sorted = students
       .filter((student) => {
         const gender = normalizeGender(student.profile?.gender ?? null);
-        const genderMatches = studentView === "parents" || genderFilter === "all" || gender === genderFilter;
+        const genderMatches = genderFilter === "all" || gender === genderFilter;
         if (!genderMatches) {
           return false;
         }
@@ -10688,29 +10677,8 @@ export function TeacherStudentsData({ slug, programId }: { slug: string; program
         return sortDirection === "asc" ? comparison : -comparison;
       });
     return sorted;
-  }, [activeSessionKey, genderFilter, rosterDayOptions, selectedRosterDays, selectedRosterTrackIds, sortDirection, studentSearch, studentSort, studentView, students, trackDayMap, trackSessionKeysById, tracks]);
-  const familyGroups = useMemo(() => {
-    const groups = new Map<string, { parent: ParentDisplay | null; children: TeacherStudentItem[] }>();
-    for (const student of filteredStudents) {
-      if (!student.parent) {
-        continue;
-      }
-      const key = student.parent?.id ?? `student:${student.enrollment.student_profile_id}`;
-      const current = groups.get(key) ?? { parent: student.parent ?? null, children: [] };
-      current.children.push(student);
-      groups.set(key, current);
-    }
-    return Array.from(groups.values()).sort((left, right) => {
-      const leftName = left.parent?.full_name ?? left.children[0]?.profile?.full_name ?? "";
-      const rightName = right.parent?.full_name ?? right.children[0]?.profile?.full_name ?? "";
-      const comparison =
-        studentSort === "last"
-          ? lastNameOf(leftName).localeCompare(lastNameOf(rightName))
-          : firstNameOf(leftName).localeCompare(firstNameOf(rightName));
-      return sortDirection === "asc" ? comparison : -comparison;
-    });
-  }, [filteredStudents, sortDirection, studentSort]);
-  const resultCount = studentView === "parents" ? familyGroups.length : filteredStudents.length;
+  }, [activeSessionKey, genderFilter, rosterDayOptions, selectedRosterDays, selectedRosterTrackIds, sortDirection, studentSearch, studentSort, students, trackDayMap, trackSessionKeysById, tracks]);
+  const resultCount = filteredStudents.length;
   const hasVisibleStudents = resultCount > 0;
 
   if (loading) {
@@ -10795,7 +10763,8 @@ export function TeacherStudentsData({ slug, programId }: { slug: string; program
             gender={genderFilter}
             sort={studentSort}
             sortDirection={sortDirection}
-            view={studentView}
+            view="students"
+            canViewParents={false}
             tracks={tracks}
             selectedTrackIds={selectedRosterTrackIds}
             selectedDays={selectedRosterDays}
@@ -10828,69 +10797,14 @@ export function TeacherStudentsData({ slug, programId }: { slug: string; program
             }
             onSortChange={setStudentSort}
             onSortDirectionChange={setSortDirection}
-            onViewChange={(view) => {
-              setStudentView(view);
-              if (view === "parents") {
-                setGenderFilter("all");
-              }
-            }}
+            onViewChange={() => undefined}
           />
           <p className="text-xs font-medium text-[#6B747B]">
             Showing {resultCount} {resultCount === 1 ? "result" : "results"}
           </p>
           {hasVisibleStudents ? (
-            <div className="divide-y divide-[#EEF2F4]">
-              {studentView === "parents" ? (
-              familyGroups.map((group) => (
-                <TeacherFamilyRow
-                  basePath={studentBasePath} access={studentAccess}
-                  key={group.parent?.id ?? group.children[0]?.enrollment.id}
-                  group={group}
-                  busyStudentId={busyStudentId}
-                  onKick={(student) => {
-                    setKickTarget({
-                      studentId: student.enrollment.student_profile_id,
-                      studentName: student.profile?.full_name ?? "this student",
-                      subscription: student.subscription ?? null,
-                    });
-                    setShowKickMessage(false);
-                    setKickMessage("");
-                  }}
-                  onNote={(student) => {
-                    if (student.parent) {
-                      setNoteTarget({ item: student });
-                      return;
-                    }
-                    router.push(notesHref(student.enrollment.student_profile_id));
-                  }}
-                />
-              ))
-              ) : (
-              filteredStudents.map((student) => (
-                <TeacherStudentRow
-                  basePath={studentBasePath} access={studentAccess}
-                  key={student.enrollment.id}
-                  item={student}
-                  busy={busyStudentId === student.enrollment.student_profile_id}
-                  onKick={() => {
-                    setKickTarget({
-                      studentId: student.enrollment.student_profile_id,
-                      studentName: student.profile?.full_name ?? "this student",
-                      subscription: student.subscription ?? null,
-                    });
-                    setShowKickMessage(false);
-                    setKickMessage("");
-                  }}
-                  onNote={() => {
-                    if (student.parent) {
-                      setNoteTarget({ item: student });
-                      return;
-                    }
-                    router.push(notesHref(student.enrollment.student_profile_id));
-                  }}
-                />
-              ))
-              )}
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
+              {filteredStudents.map((student) => <StudentIdentityCard key={student.enrollment.id} item={student} onOpen={() => openStudentFile(student)} />)}
             </div>
           ) : (
             <EmptyState title={students.length ? "No matching students" : "No enrolled students"} text={students.length ? "Adjust the search or filters." : "Accepted students will appear here."} />
@@ -10924,6 +10838,13 @@ export function TeacherStudentsData({ slug, programId }: { slug: string; program
           onSubmit={(options) => reviewWaitlistedRequest(reviewTarget.request, reviewTarget.action, options)}
         />
       ) : null}
+      {studentFileRow && studentFileProgram ? <FinanceDetailsDrawer row={studentFileRow} program={studentFileProgram} canViewFinances={studentAccess.finances} canManageEnrollments={studentAccess.enrollments} childDialogOpen={Boolean(studentFileAction || studentFileNote || kickTarget)} onClose={() => { setStudentFileRow(null); setStudentFileProgram(null); }} onAction={(action) => {
+        if (action === "add_note") setStudentFileNote(studentFileRow);
+        else if (action === "remove_student") { setKickTarget({ studentId: studentFileRow.enrollment.student_profile_id, studentName: studentFileRow.student?.full_name ?? "this student", subscription: studentFileRow.subscription }); setShowKickMessage(false); setKickMessage(""); }
+        else setStudentFileAction({ row: studentFileRow, action });
+      }} /> : null}
+      {studentFileAction && studentFileProgram ? <FinanceActionModal row={studentFileAction.row} action={studentFileAction.action} program={studentFileProgram} onClose={() => setStudentFileAction(null)} onSuccess={() => { const target = students.find((student) => student.enrollment.student_profile_id === studentFileAction.row.enrollment.student_profile_id); if (target) openStudentFile(target); }} /> : null}
+      {studentFileNote && studentFileProgram ? <FinanceAddNoteModal row={studentFileNote} program={studentFileProgram} onClose={() => setStudentFileNote(null)} onSuccess={() => { const target = students.find((student) => student.enrollment.student_profile_id === studentFileNote.enrollment.student_profile_id); if (target) openStudentFile(target); }} /> : null}
       {kickTarget ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#26323A]/35 px-6 backdrop-blur-sm">
           <div ref={kickModalRef} role="dialog" aria-modal="true" tabIndex={-1} className="w-full max-w-sm rounded-[28px] bg-white p-5 text-[#26323A] shadow-[0_24px_70px_rgba(38,50,58,0.22)] outline-none">
@@ -11148,7 +11069,36 @@ type FinanceEnrollmentRow = {
   paymentTermsHistory: ProgramPaymentTerms[];
 };
 
+async function loadFinanceStudentRecord(slug: string, programId: string, studentProfileId: string): Promise<{ program: Program; row: FinanceEnrollmentRow } | null> {
+  const supabase = createSupabaseBrowserClient();
+  const result = await supabase.rpc("get_program_finances_snapshot", { p_slug: slug, p_program_id: programId });
+  if (result.error) throw result.error;
+  const snapshot = result.data as unknown as {
+    program: Program | null; hasAccess: boolean; enrollments: Enrollment[]; requests: EnrollmentRequest[];
+    subscriptions: ProgramSubscription[]; paymentTerms: ProgramPaymentTerms[];
+    links: Array<{ child_profile_id: string; parent_profile_id: string }>; profiles: Profile[];
+  } | null;
+  if (!snapshot?.program || !snapshot.hasAccess) return null;
+  const enrollment = (snapshot.enrollments ?? []).find((item) => item.student_profile_id === studentProfileId);
+  if (!enrollment) return null;
+  const subscription = (snapshot.subscriptions ?? []).find((item) => item.student_profile_id === studentProfileId) ?? null;
+  const request = (snapshot.requests ?? []).find((item) => item.id === subscription?.enrollment_request_id)
+    ?? (snapshot.requests ?? []).find((item) => item.student_profile_id === studentProfileId && item.status === "approved")
+    ?? (snapshot.requests ?? []).find((item) => item.student_profile_id === studentProfileId) ?? null;
+  const paymentTermsHistory = (snapshot.paymentTerms ?? []).filter((terms) => terms.student_profile_id === studentProfileId);
+  const paymentTerms = selectCurrentPaymentTerms(paymentTermsHistory, request, subscription);
+  const parentId = paymentTerms?.parent_profile_id ?? request?.parent_profile_id ?? subscription?.parent_profile_id
+    ?? (snapshot.links ?? []).find((link) => link.child_profile_id === studentProfileId)?.parent_profile_id ?? null;
+  return { program: snapshot.program, row: {
+    enrollment, request, subscription, paymentTerms, paymentTermsHistory,
+    student: (snapshot.profiles ?? []).find((profile) => profile.id === studentProfileId) as StudentDisplay | null,
+    approver: request?.reviewed_by ? ((snapshot.profiles ?? []).find((profile) => profile.id === request.reviewed_by) ?? null) : null,
+    parent: parentId ? ((snapshot.profiles ?? []).find((profile) => profile.id === parentId) as ParentDisplay | undefined) ?? null : null,
+  } };
+}
+
 type FinanceAction = "waive" | "change_price" | "end_subscription";
+type StudentFileAction = FinanceAction | "add_note" | "remove_student";
 type FinanceRowMenuAction = FinanceAction | "view_details" | "add_note";
 
 type FinanceChargeRow = {
@@ -11291,6 +11241,8 @@ type CachedFinancesPage = {
 };
 
 export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slug: string; programId: string; mode?: "teacher" | "admin" }) {
+  const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const cacheKey = `finances:${slug}:${programId}:${mode}:${getCachedSessionSnapshot()?.user.id ?? "unresolved"}`;
   const [initialPage] = useState(() => readPrivatePage<CachedFinancesPage>(cacheKey));
@@ -11309,6 +11261,9 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
   const [actionTarget, setActionTarget] = useState<{ row: FinanceEnrollmentRow; action: FinanceAction } | null>(null);
   const [detailsTarget, setDetailsTarget] = useState<FinanceEnrollmentRow | null>(null);
   const [noteTarget, setNoteTarget] = useState<FinanceEnrollmentRow | null>(null);
+  const [removeTarget, setRemoveTarget] = useState<FinanceEnrollmentRow | null>(null);
+  const [removeBusy, setRemoveBusy] = useState(false);
+  const [removeError, setRemoveError] = useState<string | null>(null);
   const [loading, setLoading] = useState(!initialPage);
   const [error, setError] = useState<string | null>(null);
 
@@ -11604,27 +11559,42 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
         View audit trail{auditEvents.length ? ` (${auditEvents.length})` : ""}
       </Link>
 
+      {detailsTarget ? (
+        <FinanceDetailsDrawer
+          row={detailsTarget}
+          program={program}
+          childDialogOpen={Boolean(actionTarget || noteTarget || removeTarget)}
+          onClose={() => {
+            setDetailsTarget(null);
+            if (searchParams.get("from") === "students") {
+              router.replace(`${pathname.replace(/\/finances$/, "")}/students`, { scroll: false });
+              return;
+            }
+            if (searchParams.has("studentId")) {
+              const nextParams = new URLSearchParams(searchParams.toString());
+              nextParams.delete("studentId");
+              const query = nextParams.toString();
+              router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+            }
+          }}
+          onAction={(action) => {
+            const row = detailsTarget;
+            if (action === "add_note") setNoteTarget(row);
+            else if (action === "remove_student") { setRemoveError(null); setRemoveTarget(row); }
+            else setActionTarget({ row, action });
+          }}
+        />
+      ) : null}
+
       {actionTarget ? (
         <FinanceActionModal
           row={actionTarget.row}
           action={actionTarget.action}
           program={program}
-          onClose={() => setActionTarget(null)}
-          onSuccess={() => void loadFinanceRows()}
-        />
-      ) : null}
-
-      {detailsTarget ? (
-        <FinanceDetailsDrawer
-          row={detailsTarget}
-          program={program}
-          onClose={() => setDetailsTarget(null)}
-          onAction={(action) => {
-            const row = detailsTarget;
-            setDetailsTarget(null);
-            if (action === "add_note") setNoteTarget(row);
-            else setActionTarget({ row, action });
+          onClose={() => {
+            setActionTarget(null);
           }}
+          onSuccess={() => void loadFinanceRows()}
         />
       ) : null}
 
@@ -11632,10 +11602,27 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
         <FinanceAddNoteModal
           row={noteTarget}
           program={program}
-          onClose={() => setNoteTarget(null)}
+          onClose={() => {
+            setNoteTarget(null);
+          }}
           onSuccess={() => void loadFinanceRows()}
         />
       ) : null}
+
+      {removeTarget ? <ConfirmStudentRemovalModal row={removeTarget} program={program} busy={removeBusy} error={removeError} onClose={() => { if (!removeBusy) setRemoveTarget(null); }} onConfirm={async () => {
+        setRemoveBusy(true);
+        setRemoveError(null);
+        const token = (await loadCachedSession())?.access_token;
+        const response = await fetch(`/api/programs/${program.id}/students/${removeTarget.enrollment.student_profile_id}/remove`, { method: "POST", headers: { "content-type": "application/json", ...(token ? { authorization: `Bearer ${token}` } : {}) }, body: JSON.stringify({}) });
+        const result = await response.json().catch(() => ({})) as { error?: string };
+        setRemoveBusy(false);
+        if (!response.ok) { setRemoveError(result.error ?? "Could not remove this student."); return; }
+        setRemoveTarget(null);
+        setDetailsTarget(null);
+        invalidatePrivateSnapshots(`students:${slug}:${programId}:`);
+        invalidatePrivateSnapshots(`finances:${slug}:${programId}:`);
+        await loadFinanceRows();
+      }} /> : null}
     </section>
   );
 }
@@ -11777,10 +11764,12 @@ function FinanceActionModal({
     program.price_monthly_cents ??
     program.price_annual_cents ??
     0;
-  const [price, setPrice] = useState((initialPriceCents / 100).toFixed(2).replace(/\.00$/, ""));
-  const [billingMode, setBillingMode] = useState<PaymentType>(row.paymentTerms?.payment_type === "pay_in_full" || row.paymentTerms?.payment_type === "annual" || row.subscription?.payment_type === "annual" ? "annual" : "monthly");
+  const initialPrice = (initialPriceCents / 100).toFixed(2).replace(/\.00$/, "");
+  const [price, setPrice] = useState(initialPrice);
+  const initialBillingMode: PaymentType = row.paymentTerms?.payment_type === "pay_in_full" || row.paymentTerms?.payment_type === "annual" || row.subscription?.payment_type === "annual" ? "annual" : "monthly";
+  const initialPaymentPlan: PaymentType | "waived" = row.paymentTerms?.payment_type === "waived" || row.subscription?.payment_waived ? "waived" : initialBillingMode;
+  const [paymentPlan, setPaymentPlan] = useState<PaymentType | "waived">(initialPaymentPlan);
   const [note, setNote] = useState("");
-  const [reason, setReason] = useState("");
   const [timing, setTiming] = useState<"period_end" | "immediate">("period_end");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -11788,23 +11777,26 @@ function FinanceActionModal({
   const [copied, setCopied] = useState(false);
   const studentProfileId = row.enrollment.student_profile_id;
   const hasActiveSubscription = hasActiveRecurringSubscription(row.subscription);
+  const paymentPlanChoices: Array<PaymentType | "waived"> = [
+    ...(program.offers_monthly_payment ? ["monthly" as const] : []),
+    ...(program.offers_annual_payment && (!hasActiveSubscription || program.is_ongoing) ? ["annual" as const] : []),
+    "waived",
+  ];
+  const paymentPlanChanged = action === "change_price" && !checkoutUrl && (paymentPlan !== initialPaymentPlan || price.trim() !== initialPrice || Boolean(note.trim()));
+  const liveSubscriptionChange = hasActiveSubscription && paymentPlanChanged;
 
-  const modalTitle = action === "waive" ? "Waive Future Payments" : action === "change_price" ? "Manage Billing" : "End Subscription";
+  const modalTitle = action === "waive" || action === "change_price" ? "Manage Payment Plan" : "End Subscription";
   const modalText =
     action === "waive"
-      ? "This will stop future payment requirements for this student. Past payments will not be changed. The student will remain enrolled."
+      ? "Choose the student's future payment arrangement."
       : action === "change_price"
-        ? "This creates a new Stripe checkout link for this student. Past payments will not be changed."
+        ? "Choose the student's future payment arrangement."
         : "This stops the Stripe subscription. It does not remove the student from the class.";
 
   async function handleWaive() {
-    if (!reason.trim()) {
-      setError("A reason is required.");
-      return;
-    }
     setBusy(true);
     setError(null);
-    const result = await callFinanceAction(program.id, "waive", { studentProfileId, timing, reason: reason.trim(), note: note.trim() || undefined });
+    const result = await callFinanceAction(program.id, "waive", { studentProfileId, note: note.trim() || undefined });
     setBusy(false);
     if (!result.ok) {
       setError(result.error);
@@ -11815,21 +11807,21 @@ function FinanceActionModal({
   }
 
   async function handleChangePrice() {
+    if (paymentPlan === "waived") {
+      await handleWaive();
+      return;
+    }
     const amountCents = Math.round(parseFloat(price) * 100);
     if (!amountCents || Number.isNaN(amountCents) || amountCents < 50) {
       setError("Enter a valid price.");
       return;
     }
-    if (hasActiveSubscription) {
-      setError("End the current subscription before sending a new checkout link.");
-      return;
-    }
     setBusy(true);
     setError(null);
-    const result = await callFinanceAction<{ url: string }>(program.id, "change-price", {
+    const result = await callFinanceAction<{ url: string | null; scheduled?: boolean }>(program.id, "change-price", {
       studentProfileId,
       amountCents,
-      billingMode,
+      billingMode: paymentPlan,
       note: note.trim() || undefined,
     });
     setBusy(false);
@@ -11838,7 +11830,8 @@ function FinanceActionModal({
       return;
     }
     onSuccess();
-    setCheckoutUrl(result.data.url);
+    if (result.data.url) setCheckoutUrl(result.data.url);
+    else onClose();
   }
 
   async function handleEndSubscription() {
@@ -11857,67 +11850,33 @@ function FinanceActionModal({
   const containerRef = useRef<HTMLDivElement>(null);
   useModalFocusTrap(containerRef, true, onClose);
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#26323A]/35 px-5 backdrop-blur-sm">
-      <div ref={containerRef} role="dialog" aria-modal="true" tabIndex={-1} className="max-h-[88vh] w-full max-w-md overflow-y-auto rounded-[28px] bg-white p-5 text-[#26323A] shadow-[0_24px_70px_rgba(38,50,58,0.22)] outline-none">
+    <div className="fixed inset-0 z-[2147483647] flex items-center justify-center bg-[#26323A]/35 px-5 backdrop-blur-sm">
+      <div ref={containerRef} role="dialog" aria-modal="true" tabIndex={-1} className={cn("max-h-[88vh] w-full max-w-md overflow-y-auto rounded-[28px] border-2 bg-white p-5 text-[#26323A] shadow-[0_24px_70px_rgba(38,50,58,0.22)] outline-none transition-colors", liveSubscriptionChange ? "border-[#C83F31] bg-[#FFF9F8]" : "border-transparent")}>
         <p className="text-xs font-semibold uppercase tracking-wide text-[#6B747B]">{program.title}</p>
         <h2 className="mt-1 text-xl font-semibold">{modalTitle}</h2>
         <p className="mt-2 text-sm leading-6 text-[#6B747B]">{row.student?.full_name || "Student"} - {modalText}</p>
 
         <div className="mt-5 grid gap-3">
-          {action === "waive" ? (
-            <>
-              {hasActiveSubscription ? (
-                <div className="grid grid-cols-2 overflow-hidden rounded-[10px] border border-[#D6DCE0]">
-                  {(
-                    [
-                      ["period_end", "After current period"],
-                      ["immediate", "Immediately"],
-                    ] as const
-                  ).map(([value, label]) => (
-                    <button
-                      key={value}
-                      type="button"
-                      disabled={busy}
-                      onClick={() => setTiming(value)}
-                      className={cn("px-3 py-2 text-xs font-semibold disabled:opacity-60", timing === value ? "bg-[#17624F] text-white" : "bg-white text-[#52616A]")}
-                    >
-                      {label}
-                    </button>
-                  ))}
-                </div>
-              ) : null}
-              <label className="grid gap-1 text-[10px] font-semibold uppercase tracking-wide text-[#7B858C]">
-                Reason (required)
-                <textarea
-                  value={reason}
-                  onChange={(event) => setReason(event.target.value)}
-                  disabled={busy}
-                  rows={2}
-                  placeholder="e.g. Financial hardship approved by director"
-                  className="rounded-[10px] border border-[#B9C3C8] px-3 py-2 text-sm font-semibold normal-case tracking-normal text-[#26323A] outline-none focus:border-[#2F8FB3] disabled:opacity-60"
-                />
-              </label>
-              <label className="grid gap-1 text-[10px] font-semibold uppercase tracking-wide text-[#7B858C]">
-                Internal note (optional)
-                <input
-                  value={note}
-                  onChange={(event) => setNote(event.target.value)}
-                  disabled={busy}
-                  placeholder="e.g. Parent requested discount due to sibling enrollment"
-                  className="h-10 rounded-[10px] border border-[#B9C3C8] px-3 text-sm font-semibold normal-case tracking-normal text-[#26323A] outline-none focus:border-[#2F8FB3] disabled:opacity-60"
-                />
-              </label>
-            </>
-          ) : null}
-          {action === "change_price" ? (
+          {action === "change_price" || action === "waive" ? (
             <div className="grid gap-3">
-              {hasActiveSubscription ? (
-                <div className="rounded-[14px] border border-[#F3D9A6] bg-[#FFF7E6] p-3 text-xs leading-5 text-[#8A5A00]">
-                  <p className="font-semibold">This student already has an active subscription.</p>
-                  <p className="mt-1">End the current subscription first, then send a new checkout link. This avoids double billing and keeps Stripe aligned with the student&apos;s payment terms.</p>
+              {liveSubscriptionChange ? <div role="alert" className="rounded-[14px] border border-[#E7A59D] bg-[#FFF0EE] p-4 text-[#9F2D22]">
+                <p className="text-sm font-bold">You are changing a live Stripe subscription</p>
+                <p className="mt-1 text-xs leading-5">Saving will schedule these new payment terms in Stripe for the end of the student&apos;s current paid period. Existing payments will remain unchanged.</p>
+              </div> : null}
+              {hasActiveSubscription && !liveSubscriptionChange ? (
+                <div className="rounded-[14px] border border-[#D8E7E2] bg-[#F1F8F5] p-3 text-xs leading-5 text-[#17624F]">
+                  Changes take effect at the end of the current paid period. Existing payments remain unchanged.
                 </div>
               ) : null}
-              <div className="grid grid-cols-[1fr_auto] gap-2">
+              <div className="grid gap-2" role="radiogroup" aria-label="Payment plan">
+                {paymentPlanChoices.map((mode) => (
+                  <button key={mode} type="button" role="radio" aria-checked={paymentPlan === mode} disabled={busy || Boolean(checkoutUrl)} onClick={() => setPaymentPlan(mode)} className={cn("flex min-h-12 w-full items-center justify-between rounded-[12px] border px-4 text-left text-sm font-semibold transition-colors", paymentPlan === mode ? (liveSubscriptionChange ? "border-[#C83F31] bg-[#FFF0EE] text-[#9F2D22]" : "border-[#17624F] bg-[#EAF6F2] text-[#17624F]") : "border-[#D6DCE0] bg-white text-[#52616A] hover:bg-[#F7FAFB]")}>
+                    <span>{mode === "waived" ? "Waive future payments" : paymentTypeLabel(mode, program)}</span>
+                    <span className={cn("h-4 w-4 rounded-full border", paymentPlan === mode ? (liveSubscriptionChange ? "border-[5px] border-[#C83F31] bg-white" : "border-[5px] border-[#17624F] bg-white") : "border-[#AEB9BE]")} />
+                  </button>
+                ))}
+              </div>
+              {paymentPlan !== "waived" ? <label className="grid gap-1 text-[10px] font-semibold uppercase tracking-wide text-[#7B858C]">Price
                 <input
                   value={price}
                   onChange={(event) => setPrice(event.target.value)}
@@ -11925,20 +11884,7 @@ function FinanceActionModal({
                   inputMode="decimal"
                   className="h-11 rounded-[10px] border border-[#B9C3C8] px-3 text-sm font-semibold outline-none focus:border-[#2F8FB3] disabled:opacity-60"
                 />
-                <div className="grid grid-cols-2 overflow-hidden rounded-[10px] border border-[#D6DCE0]">
-                  {(["monthly", "annual"] as const).map((mode) => (
-                    <button
-                      key={mode}
-                      type="button"
-                      disabled={busy || Boolean(checkoutUrl)}
-                      onClick={() => setBillingMode(mode)}
-                      className={cn("px-3 text-xs font-semibold disabled:opacity-60", billingMode === mode ? "bg-[#17624F] text-white" : "bg-white text-[#52616A]")}
-                    >
-                      {paymentTypeLabel(mode, program)}
-                    </button>
-                  ))}
-                </div>
-              </div>
+              </label> : null}
               <label className="grid gap-1 text-[10px] font-semibold uppercase tracking-wide text-[#7B858C]">
                 Internal note (optional)
                 <input
@@ -12003,25 +11949,15 @@ function FinanceActionModal({
         <div className="mt-5 flex items-center justify-between gap-3">
           <p className="flex-1 text-xs font-semibold text-[#C0392B]">{error ?? ""}</p>
           <div className="flex shrink-0 gap-2">
-            <button type="button" onClick={onClose} className="min-h-10 px-3 text-sm font-semibold text-[#6B747B]">Close</button>
-            {action === "waive" ? (
+            <button type="button" onClick={onClose} className="min-h-10 px-3 text-sm font-semibold text-[#6B747B]">Quit</button>
+            {(action === "change_price" || action === "waive") && !checkoutUrl ? (
               <button
                 type="button"
-                disabled={busy || !reason.trim()}
-                onClick={handleWaive}
-                className="min-h-10 rounded-[10px] bg-[#26323A] px-4 text-sm font-semibold text-white transition-opacity disabled:opacity-50"
-              >
-                {busy ? "Waiving..." : "Waive future payments"}
-              </button>
-            ) : null}
-            {action === "change_price" && !checkoutUrl ? (
-              <button
-                type="button"
-                disabled={busy || hasActiveSubscription}
+                disabled={busy}
                 onClick={handleChangePrice}
                 className="min-h-10 rounded-[10px] bg-[#26323A] px-4 text-sm font-semibold text-white transition-opacity disabled:opacity-50"
               >
-                {busy ? "Generating..." : "Send checkout link"}
+                {busy ? "Saving..." : paymentPlan === "waived" ? "Waive future payments" : hasActiveSubscription ? "Schedule plan change" : "Create checkout link"}
               </button>
             ) : null}
           </div>
@@ -12044,15 +11980,24 @@ function FinanceRecordFact({ label, children, valueClassName }: { label: string;
 function FinanceDetailsDrawer({
   row,
   program,
+  canViewFinances = true,
+  canManageEnrollments = true,
+  childDialogOpen,
   onClose,
   onAction,
 }: {
   row: FinanceEnrollmentRow;
   program: Program;
+  canViewFinances?: boolean;
+  canManageEnrollments?: boolean;
+  childDialogOpen: boolean;
   onClose: () => void;
-  onAction: (action: FinanceAction | "add_note") => void;
+  onAction: (action: StudentFileAction) => void;
 }) {
   const studentProfileId = row.enrollment.student_profile_id;
+  const drawerPathname = usePathname();
+  const [activeTab, setActiveTab] = useState<"overview" | "history" | "finances" | "actions">("overview");
+  const [trackNames, setTrackNames] = useState<string[]>([]);
   const [history, setHistory] = useState<FinanceChargeRow[] | null>(null);
   const [historyLoading, setHistoryLoading] = useState(true);
   const [historyError, setHistoryError] = useState<string | null>(null);
@@ -12060,15 +12005,16 @@ function FinanceDetailsDrawer({
   const [eventsLoading, setEventsLoading] = useState(true);
   const [eventsError, setEventsError] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
-  useModalFocusTrap(containerRef, true, onClose);
+  useModalFocusTrap(containerRef, !childDialogOpen, onClose);
   useHideMobileChromeWhileMounted();
 
   useEffect(() => {
     let cancelled = false;
     const timeout = window.setTimeout(() => {
-      setHistoryLoading(true);
-      setHistoryError(null);
-      void callFinanceAction<{ charges: FinanceChargeRow[] }>(program.id, "payment-history", { studentProfileId }).then((result) => {
+      if (canViewFinances) {
+        setHistoryLoading(true);
+        setHistoryError(null);
+        void callFinanceAction<{ charges: FinanceChargeRow[] }>(program.id, "payment-history", { studentProfileId }).then((result) => {
         if (cancelled) {
           return;
         }
@@ -12078,10 +12024,11 @@ function FinanceDetailsDrawer({
           return;
         }
         setHistory(result.data.charges ?? []);
-      });
+        });
+      } else setHistoryLoading(false);
 
       setEventsLoading(true);
-      void loadStudentActivity(program.id, studentProfileId, "finance").then((events) => {
+      void loadStudentActivity(program.id, studentProfileId, canViewFinances ? "finance" : "application").then((events) => {
         if (!cancelled) { setStudentEvents(events); setEventsError(null); }
       }).catch(() => { if (!cancelled) setEventsError("Activity could not be loaded. Close and reopen to retry."); }).finally(() => { if (!cancelled) setEventsLoading(false); });
     }, 0);
@@ -12089,17 +12036,35 @@ function FinanceDetailsDrawer({
       cancelled = true;
       window.clearTimeout(timeout);
     };
-  }, [program.id, studentProfileId]);
+  }, [canViewFinances, program.id, studentProfileId]);
+
+  useEffect(() => {
+    let cancelled = false;
+    const supabase = createSupabaseBrowserClient();
+    void Promise.all([
+      supabase.from("enrollment_tracks").select("program_track_id").eq("enrollment_id", row.enrollment.id),
+      supabase.from("program_tracks").select("id, name").eq("program_id", program.id),
+    ]).then(([linksResult, tracksResult]) => {
+      if (cancelled || linksResult.error || tracksResult.error) return;
+      const selected = new Set((linksResult.data ?? []).map((link) => link.program_track_id));
+      setTrackNames((tracksResult.data ?? []).filter((track) => selected.has(track.id)).map((track) => track.name));
+    });
+    return () => { cancelled = true; };
+  }, [program.id, row.enrollment.id]);
 
   const checkoutLinkStatus = row.subscription?.status === "checkout_started" ? "Checkout sent, awaiting completion" : "No pending checkout";
-  const recordActions: StudentRecordAction[] = [
-    { id: "change_price", label: "Manage billing", description: hasActiveRecurringSubscription(row.subscription) ? "End the current subscription before starting a new plan." : "Set a new price or send a checkout link." },
-    { id: "waive", label: "Waive future payments", description: "Keep the student enrolled without future charges.", tone: "warning" },
-    { id: "add_note", label: "Add note", description: "Add an internal note to this class record." },
-  ];
-  if (hasActiveRecurringSubscription(row.subscription)) {
-    recordActions.splice(2, 0, { id: "end_subscription", label: "End subscription", description: "Stop recurring billing while preserving payment history.", tone: "danger" });
+  const recordActions: StudentRecordAction[] = [];
+  if (canViewFinances) {
+    recordActions.push(
+      { id: "change_price", label: "Manage payment plan", description: "Change paid terms or waive future payments." },
+    );
   }
+  recordActions.push(
+    { id: "add_note", label: "Add note", description: "Add an internal note to this class record." },
+    { id: "download_history", label: "Download student history", description: "Export this student's permitted class history as a structured Excel report." },
+  );
+  if (canViewFinances && hasActiveRecurringSubscription(row.subscription)) recordActions.push({ id: "end_subscription", label: "End subscription", description: "Stop recurring billing while preserving payment history.", tone: "danger" });
+  if (canManageEnrollments) recordActions.push({ id: "remove_student", label: "Remove from class", description: "End this enrollment while preserving the student's history.", tone: "danger" });
 
   return createPortal(
     <div className="fixed inset-0 z-[2147483647] flex justify-end bg-[#26323A]/35 backdrop-blur-sm">
@@ -12114,37 +12079,68 @@ function FinanceDetailsDrawer({
           </button>
         </div>
 
+        <div className="border-b border-[#E7ECEF] px-3 py-2">
+          <div className="grid rounded-[12px] bg-[#F1F5F6] p-1" style={{ gridTemplateColumns: `repeat(${canViewFinances ? 4 : 3}, minmax(0, 1fr))` }} role="tablist" aria-label="Student file sections">
+            {([['overview', 'Info'], ['history', 'History'], ...(canViewFinances ? [['finances', 'Finances'] as const] : []), ['actions', 'Actions']] as const).map(([id, label]) => (
+              <button key={id} type="button" role="tab" aria-selected={activeTab === id} onClick={() => setActiveTab(id)} className={cn("min-h-9 rounded-[9px] px-2 text-xs font-semibold transition-colors", activeTab === id ? "bg-white text-[#17624F] shadow-sm" : "text-[#64727A]")}>{label}</button>
+            ))}
+          </div>
+        </div>
+
         <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-5">
-          {row.parent ? (
+          {activeTab === "overview" ? <>
             <dl className="grid grid-cols-2 gap-x-5 gap-y-4 rounded-[16px] border border-[#E1E8EC] bg-[#FAFCFC] p-4">
-              <FinanceRecordFact label="Parent">{row.parent.full_name || "—"}</FinanceRecordFact>
-              <FinanceRecordFact label="Parent email" valueClassName="break-all">{row.parent.email || "—"}</FinanceRecordFact>
+              <FinanceRecordFact label="Age">{displayAge(row.student)}</FinanceRecordFact>
+              <FinanceRecordFact label="Gender">{formatStudentDetailGender(row.student?.gender ?? null)}</FinanceRecordFact>
+              {row.parent ? <div className="col-span-2 space-y-1 text-sm text-[#52616A]">
+                {row.student?.email ? <p className="break-all">{row.student.email}</p> : null}
+                {row.student?.phone_number ? <p>{row.student.phone_number}</p> : null}
+              </div> : <>
+                <FinanceRecordFact label="Email" valueClassName="break-all">{row.student?.email || "—"}</FinanceRecordFact>
+                <FinanceRecordFact label="Phone">{row.student?.phone_number || "—"}</FinanceRecordFact>
+              </>}
             </dl>
-          ) : null}
+            {row.parent ? <dl className="grid grid-cols-2 gap-x-5 gap-y-4 rounded-[16px] border border-[#E1E8EC] bg-[#FAFCFC] p-4">
+              <FinanceRecordFact label="Parent">{row.parent.full_name || "—"}</FinanceRecordFact>
+              <FinanceRecordFact label="Parent phone">{row.parent.phone_number || "—"}</FinanceRecordFact>
+              <FinanceRecordFact label="Parent email" valueClassName="col-span-2 break-all">{row.parent.email || "—"}</FinanceRecordFact>
+            </dl> : null}
+            <dl className="grid grid-cols-2 gap-x-5 gap-y-4 rounded-[16px] border border-[#E1E8EC] bg-[#FAFCFC] p-4">
+              <FinanceRecordFact label="Class">{program.title}</FinanceRecordFact>
+              <FinanceRecordFact label="Track">{trackNames.length ? trackNames.join(", ") : "General"}</FinanceRecordFact>
+              <FinanceRecordFact label="Enrollment"><span className={cn("inline-flex rounded-full px-2.5 py-1 text-xs font-semibold", programStatusBadgeToneClass(financeBadgeTone(financeStatus(row))))}>{financeStatus(row)}</span></FinanceRecordFact>
+              <FinanceRecordFact label="Enrolled">{formatFinanceDate(row.enrollment.created_at)}</FinanceRecordFact>
+            </dl>
+          </> : null}
 
-          <dl className="grid grid-cols-2 gap-x-5 gap-y-4 rounded-[16px] border border-[#E1E8EC] bg-[#FAFCFC] p-4">
-            <FinanceRecordFact label="Enrollment">
-              <span className={cn("inline-flex rounded-full px-2.5 py-1 text-xs font-semibold", programStatusBadgeToneClass(financeBadgeTone(financeStatus(row))))}>{financeStatus(row)}</span>
-            </FinanceRecordFact>
-            <FinanceRecordFact label="Approved price">{financePrice(row, program)}</FinanceRecordFact>
-            <FinanceRecordFact label="Payment plan">{financePaymentType(row, program)}</FinanceRecordFact>
-            <FinanceRecordFact label="Payment status">
-              <span className={cn("inline-flex rounded-full px-2.5 py-1 text-xs font-semibold", programStatusBadgeToneClass(financeBadgeTone(financePaymentStatus(row, program))))}>{financePaymentStatus(row, program)}</span>
-            </FinanceRecordFact>
-            <FinanceRecordFact label="Billing cycle">{row.paymentTerms ? financeBillingCycleLabel(row.paymentTerms, program) : "—"}</FinanceRecordFact>
-            <FinanceRecordFact label="Subscription">
-              <span className={cn("inline-flex rounded-full px-2.5 py-1 text-xs font-semibold", programStatusBadgeToneClass(financeBadgeTone(financeSubscriptionStatus(row))))}>{financeSubscriptionStatus(row)}</span>
-            </FinanceRecordFact>
-          </dl>
+          {activeTab === "history" ? <>
+            {row.request ? <dl className="grid grid-cols-2 gap-x-5 gap-y-4 rounded-[16px] border border-[#E1E8EC] bg-[#FAFCFC] p-4">
+              <FinanceRecordFact label="Application status">{titleCase(row.request.status)}</FinanceRecordFact>
+              <FinanceRecordFact label="Submitted">{formatFinanceDate(row.request.requested_at)}</FinanceRecordFact>
+              <FinanceRecordFact label="Payment choice">{titleCase(row.request.payment_type ?? "—")}</FinanceRecordFact>
+              <FinanceRecordFact label="Reviewed">{row.request.reviewed_at ? formatFinanceDate(row.request.reviewed_at) : "—"}</FinanceRecordFact>
+            </dl> : null}
+            <section className="space-y-2">
+              <h3 className="text-sm font-semibold text-[#26323A]">Student History</h3>
+              {eventsLoading ? <div className="rounded-[14px] border border-dashed border-[#D6DCE0] bg-[#F8FAFB] p-3 text-sm font-semibold text-[#6B747B]">Loading history...</div> : eventsError ? <p role="alert" className="text-sm text-red-700">{eventsError}</p> : !studentEvents?.length ? <div className="rounded-[14px] border border-dashed border-[#D6DCE0] bg-[#F8FAFB] p-3 text-sm font-semibold text-[#6B747B]">No history recorded yet.</div> : <div className="divide-y divide-[#EEF2F4]">{studentEvents.map((event) => <div key={event.id} className="py-2.5"><p className="text-sm font-semibold text-[#26323A]">{event.summary}</p><p className="mt-0.5 text-xs text-[#7B858C]">{formatFinanceDate(event.created_at)} · {event.actor_name}</p>{event.context ? <p className="mt-0.5 text-xs font-medium text-[#52616A]">{event.context}</p> : null}</div>)}</div>}
+            </section>
+            <TransitionLink label="Attendance history" href={`${drawerPathname.replace(/\/finances$/, "")}/attendance?from=students&studentId=${encodeURIComponent(studentProfileId)}`} className="flex min-h-11 items-center justify-between rounded-[14px] border border-[#DDE6E9] bg-[#F7FAFB] px-4 text-sm font-semibold text-[#17624F]">
+              <span>View attendance history</span><span aria-hidden="true">→</span>
+            </TransitionLink>
+          </> : null}
 
-          <dl className="grid grid-cols-2 gap-x-5 gap-y-4 rounded-[16px] border border-[#E1E8EC] bg-[#FAFCFC] p-4">
-            <FinanceRecordFact label="Current period">{financeCurrentPeriodLabel(row)}</FinanceRecordFact>
-            <FinanceRecordFact label="Next billing">{financeNextBillingLabel(row)}</FinanceRecordFact>
-            <FinanceRecordFact label="Checkout">{checkoutLinkStatus}</FinanceRecordFact>
-            <FinanceRecordFact label="Enrolled">{formatFinanceDate(row.enrollment.created_at)}</FinanceRecordFact>
-          </dl>
-
-          <section className="space-y-2">
+          {activeTab === "finances" ? <>
+            <dl className="grid grid-cols-2 gap-x-5 gap-y-4 rounded-[16px] border border-[#E1E8EC] bg-[#FAFCFC] p-4">
+              <FinanceRecordFact label="Approved price">{financePrice(row, program)}</FinanceRecordFact>
+              <FinanceRecordFact label="Payment plan">{financePaymentType(row, program)}</FinanceRecordFact>
+              <FinanceRecordFact label="Payment status"><span className={cn("inline-flex rounded-full px-2.5 py-1 text-xs font-semibold", programStatusBadgeToneClass(financeBadgeTone(financePaymentStatus(row, program))))}>{financePaymentStatus(row, program)}</span></FinanceRecordFact>
+              <FinanceRecordFact label="Subscription"><span className={cn("inline-flex rounded-full px-2.5 py-1 text-xs font-semibold", programStatusBadgeToneClass(financeBadgeTone(financeSubscriptionStatus(row))))}>{financeSubscriptionStatus(row)}</span></FinanceRecordFact>
+              <FinanceRecordFact label="Billing cycle">{row.paymentTerms ? financeBillingCycleLabel(row.paymentTerms, program) : "—"}</FinanceRecordFact>
+              <FinanceRecordFact label="Current period">{financeCurrentPeriodLabel(row)}</FinanceRecordFact>
+              <FinanceRecordFact label="Next billing">{financeNextBillingLabel(row)}</FinanceRecordFact>
+              <FinanceRecordFact label="Checkout">{checkoutLinkStatus}</FinanceRecordFact>
+            </dl>
+            <section className="space-y-2">
             <h3 className="text-sm font-semibold text-[#26323A]">Payment History</h3>
             {historyLoading ? (
               <div className="rounded-[14px] border border-dashed border-[#D6DCE0] bg-[#F8FAFB] p-3 text-sm font-semibold text-[#6B747B]">Loading payment history...</div>
@@ -12175,38 +12171,35 @@ function FinanceDetailsDrawer({
                 ))}
               </div>
             )}
-          </section>
+            </section>
+          </> : null}
 
-          <section className="space-y-2">
-            <h3 className="text-sm font-semibold text-[#26323A]">Student History</h3>
-            {eventsLoading ? (
-              <div className="rounded-[14px] border border-dashed border-[#D6DCE0] bg-[#F8FAFB] p-3 text-sm font-semibold text-[#6B747B]">Loading activity...</div>
-            ) : eventsError ? <p role="alert" className="text-sm text-red-700">{eventsError}</p> : !studentEvents?.length ? (
-              <div className="rounded-[14px] border border-dashed border-[#D6DCE0] bg-[#F8FAFB] p-3 text-sm font-semibold text-[#6B747B]">No finance activity for this student yet.</div>
-            ) : (
-              <div className="divide-y divide-[#EEF2F4]">
-                {studentEvents.map((event) => (
-                  <div key={event.id} className="py-2.5">
-                    <div className="flex items-center gap-2">
-                      {event.event_type === "manual_note" ? (
-                        <span className={cn("rounded-full px-2 py-0.5 text-[10px] font-semibold", programStatusBadgeToneClass("neutral"))}>Note</span>
-                      ) : null}
-                      <p className="text-sm font-semibold text-[#26323A]">{event.summary}</p>
-                    </div>
-                    <p className="mt-0.5 text-xs text-[#7B858C]">{formatFinanceDate(event.created_at)} · {event.actor_name}</p>
-                    {event.context ? <p className="mt-0.5 text-xs font-medium text-[#52616A]">{event.context}</p> : null}
-                  </div>
-                ))}
-              </div>
-            )}
-          </section>
+          {activeTab === "actions" ? <div className="divide-y divide-[#E7ECEF]">
+            {recordActions.map((action) => <button key={action.id} type="button" onClick={() => { if (action.id === "download_history") { void downloadStudentHistory(program.id, studentProfileId, row.student?.full_name || "student").catch((error) => setEventsError(error instanceof Error ? error.message : "Could not download student history.")); return; } onAction(action.id as StudentFileAction); }} className={cn("group flex min-h-14 w-full items-center justify-between gap-4 rounded-[10px] px-2 text-left transition-colors hover:bg-[#F4F7F8] active:bg-[#EAF0F2]", action.tone === "danger" ? "text-[#B42318]" : action.tone === "warning" ? "text-[#8A5A12]" : "text-[#26323A]")}><span className="text-sm font-semibold">{action.label}</span><span aria-hidden="true" className="text-lg text-[#9AA6AC] transition-transform group-hover:translate-x-0.5">›</span></button>)}
+          </div> : null}
         </div>
-
-        <StudentRecordActions actions={recordActions} onSelect={(action) => onAction(action as FinanceAction | "add_note")} />
       </div>
     </div>,
     document.body,
   );
+}
+
+function ConfirmStudentRemovalModal({ row, program, busy, error, onClose, onConfirm }: { row: FinanceEnrollmentRow; program: Program; busy: boolean; error: string | null; onClose: () => void; onConfirm: () => void }) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  useModalFocusTrap(containerRef, true, onClose);
+  useHideMobileChromeWhileMounted();
+  const activeSubscription = hasActiveRecurringSubscription(row.subscription);
+  return createPortal(<div className="fixed inset-0 z-[2147483647] flex items-center justify-center bg-[#26323A]/40 px-5 backdrop-blur-sm">
+    <div ref={containerRef} role="dialog" aria-modal="true" tabIndex={-1} className="w-full max-w-sm rounded-[24px] bg-white p-5 text-[#26323A] shadow-[0_24px_70px_rgba(38,50,58,0.24)] outline-none">
+      <h2 className="text-lg font-semibold">Remove from class?</h2>
+      <p className="mt-2 text-sm leading-6 text-[#66747C]">{activeSubscription ? `${row.student?.full_name || "This student"} has an active subscription. End it before removing the enrollment.` : `${row.student?.full_name || "This student"} will be removed from ${program.title}. Their application, payments, notes, and history will be preserved.`}</p>
+      {error ? <p className="mt-3 text-sm font-semibold text-[#B42318]">{error}</p> : null}
+      <div className="mt-5 flex justify-end gap-3">
+        <button type="button" disabled={busy} onClick={onClose} className="min-h-10 px-3 text-sm font-semibold text-[#66747C]">Cancel</button>
+        <button type="button" disabled={busy || activeSubscription} onClick={onConfirm} className="min-h-10 rounded-[10px] bg-[#B42318] px-4 text-sm font-semibold text-white disabled:opacity-45">{busy ? "Removing..." : "Remove student"}</button>
+      </div>
+    </div>
+  </div>, document.body);
 }
 
 function FinanceAddNoteModal({
@@ -12262,7 +12255,7 @@ function FinanceAddNoteModal({
   useModalFocusTrap(containerRef, true, onClose);
   useHideMobileChromeWhileMounted();
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#26323A]/35 px-5 backdrop-blur-sm">
+    <div className="fixed inset-0 z-[2147483647] flex items-center justify-center bg-[#26323A]/35 px-5 backdrop-blur-sm">
       <div ref={containerRef} role="dialog" aria-modal="true" tabIndex={-1} className="w-full max-w-md rounded-[28px] bg-white p-5 text-[#26323A] shadow-[0_24px_70px_rgba(38,50,58,0.22)] outline-none">
         <p className="text-xs font-semibold uppercase tracking-wide text-[#6B747B]">{program.title}</p>
         <h2 className="mt-1 text-xl font-semibold">Add Note</h2>
@@ -12347,6 +12340,8 @@ type CachedApplicationsPage = {
 };
 
 export function ProgramApplicationsData({ slug, programId, mode = "teacher" }: { slug: string; programId: string; mode?: "teacher" | "admin" }) {
+  const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const cacheKey = `applications:${slug}:${programId}:${mode}:${getCachedSessionSnapshot()?.user.id ?? "unresolved"}`;
   const [initialPage] = useState(() => readPrivatePage<CachedApplicationsPage>(cacheKey));
@@ -12376,6 +12371,13 @@ export function ProgramApplicationsData({ slug, programId, mode = "teacher" }: {
     return () => window.clearTimeout(timeout);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [programId, slug, mode]);
+
+  useEffect(() => {
+    const studentId = searchParams.get("studentId");
+    if (!studentId || detailsTarget || !rows.length) return;
+    const row = rows.find((item) => item.request.student_profile_id === studentId);
+    if (row) setDetailsTarget(row);
+  }, [detailsTarget, rows, searchParams]);
 
   useEffect(() => {
     if (loading) {
@@ -12765,7 +12767,19 @@ export function ProgramApplicationsData({ slug, programId, mode = "teacher" }: {
           initialRow={detailsTarget}
           initialProgram={program ?? undefined}
           canDecide={canDecide}
-          onClose={() => setDetailsTarget(null)}
+          onClose={() => {
+            setDetailsTarget(null);
+            if (searchParams.get("from") === "students") {
+              router.replace(`${pathname.replace(/\/applications$/, "")}/students`, { scroll: false });
+              return;
+            }
+            if (searchParams.has("studentId")) {
+              const nextParams = new URLSearchParams(searchParams.toString());
+              nextParams.delete("studentId");
+              const query = nextParams.toString();
+              router.replace(query ? `${pathname}?${query}` : pathname, { scroll: false });
+            }
+          }}
           onChanged={loadApplications}
         />
       ) : null}
@@ -13408,7 +13422,7 @@ export async function fetchTeacherPrograms(slug: string): Promise<TeacherProgram
   const [{ data, error }, { data: permissionRows, error: permissionError }] = await Promise.all([
     supabase.rpc("get_teacher_programs_snapshot", { p_slug: slug }),
     supabase.from("program_teachers")
-      .select("program_id, role, can_view_applications, can_decide_applications, can_edit_class, can_manage_finances, can_announce")
+      .select("program_id, role, can_view_student_records, can_manage_enrollments, can_view_applications, can_decide_applications, can_edit_class, can_manage_finances, can_announce")
       .eq("teacher_profile_id", userId),
   ]);
   if (error) {
@@ -13494,8 +13508,8 @@ export async function fetchTeacherPrograms(slug: string): Promise<TeacherProgram
       nextRoleByProgramId[program.id] = assignedRole;
       const permissionRow = (permissionRows ?? []).find((row) => row.program_id === program.id);
       nextPermissionsByProgramId[program.id] = assignedRole === "director"
-        ? { can_view_applications: true, can_decide_applications: true, can_edit_class: true, can_manage_finances: Boolean(permissionRow?.can_manage_finances), can_announce: true }
-        : { can_view_applications: Boolean(permissionRow?.can_view_applications || permissionRow?.can_decide_applications), can_decide_applications: Boolean(permissionRow?.can_decide_applications), can_edit_class: Boolean(permissionRow?.can_edit_class), can_manage_finances: Boolean(permissionRow?.can_manage_finances), can_announce: permissionRow?.can_announce !== false };
+        ? { can_view_student_records: true, can_manage_enrollments: true, can_view_applications: true, can_decide_applications: true, can_edit_class: true, can_manage_finances: Boolean(permissionRow?.can_manage_finances), can_announce: true }
+        : { can_view_student_records: Boolean(permissionRow?.can_view_student_records), can_manage_enrollments: Boolean(permissionRow?.can_manage_enrollments), can_view_applications: Boolean(permissionRow?.can_view_applications || permissionRow?.can_decide_applications), can_decide_applications: Boolean(permissionRow?.can_decide_applications), can_edit_class: Boolean(permissionRow?.can_edit_class), can_manage_finances: Boolean(permissionRow?.can_manage_finances), can_announce: permissionRow?.can_announce !== false };
       return true;
     }
     return false;
@@ -13503,7 +13517,7 @@ export async function fetchTeacherPrograms(slug: string): Promise<TeacherProgram
   if (isAdminForMosque) {
     for (const program of assignedPrograms) {
       nextRoleByProgramId[program.id] = "director";
-      nextPermissionsByProgramId[program.id] = { can_view_applications: true, can_decide_applications: true, can_edit_class: true, can_manage_finances: true, can_announce: true };
+      nextPermissionsByProgramId[program.id] = { can_view_student_records: true, can_manage_enrollments: true, can_view_applications: true, can_decide_applications: true, can_edit_class: true, can_manage_finances: true, can_announce: true };
     }
   }
 
@@ -14578,6 +14592,7 @@ function TeacherStudentListControls({
   sort,
   sortDirection,
   view,
+  canViewParents,
   tracks,
   selectedTrackIds,
   selectedDays,
@@ -14595,6 +14610,7 @@ function TeacherStudentListControls({
   sort: "first" | "last" | "age";
   sortDirection: "asc" | "desc";
   view: "students" | "parents";
+  canViewParents: boolean;
   tracks: ProgramTrack[];
   selectedTrackIds: string[];
   selectedDays: string[];
@@ -14653,7 +14669,7 @@ function TeacherStudentListControls({
             );
           })}
         </div>
-        <div className="relative shrink-0">
+        {canViewParents ? <div className="relative shrink-0">
           <button
             type="button"
             onClick={() => setViewMenuOpen((value) => !value)}
@@ -14683,7 +14699,7 @@ function TeacherStudentListControls({
               ))}
             </div>
           ) : null}
-        </div>
+        </div> : null}
       </div>
       <div className="grid gap-2">
         {tracks.length ? (
@@ -14787,10 +14803,28 @@ function TeacherStudentListControls({
   );
 }
 
-type StudentLinks = { basePath: string; access: { applications: boolean; finances: boolean } };
+type StudentLinks = { basePath: string; access: { applications: boolean; finances: boolean; records: boolean; enrollments: boolean } };
+
+function StudentIdentityCard({ item, onOpen }: { item: TeacherStudentItem; onOpen: () => void }) {
+  const name = item.profile?.full_name?.trim() || "Student";
+  const content = <>
+    <div className="flex items-start justify-between gap-3">
+      <Avatar src={item.profile?.avatar_url ?? null} name={name} />
+      <span className={cn("rounded-full px-2.5 py-1 text-[10px] font-semibold", item.enrollment.status === "active" ? "bg-[#E8F6EF] text-[#17624F]" : "bg-[#F1F4F5] text-[#66747C]")}>{titleCase(item.enrollment.status)}</span>
+    </div>
+    <div className="mt-4 min-w-0">
+      <h3 className="truncate text-[15px] font-semibold text-[#26323A]">{name}</h3>
+      <p className="mt-1 text-xs font-medium text-[#748189]">{item.parent ? "Child student" : "Adult student"}</p>
+      {item.parent?.full_name ? <p className="mt-2 truncate text-xs text-[#52616A]">Parent: {item.parent.full_name}</p> : null}
+    </div>
+  </>;
+  const className = "block min-h-40 rounded-[20px] border border-[#DFE7EA] bg-white p-4 text-left shadow-[0_8px_24px_rgba(38,50,58,0.06)] transition hover:-translate-y-0.5 hover:border-[#B9D3CC] hover:shadow-[0_12px_28px_rgba(38,50,58,0.10)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2F8FB3]";
+  return <button type="button" onClick={onOpen} aria-label={`Open ${name}'s student file`} className={className}>{content}</button>;
+}
 
 function StudentActionMenu({ busy, onKick, basePath, access, studentId }: StudentLinks & { studentId: string; busy: boolean; onKick: () => void }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  if (!access.finances && !access.applications && !access.enrollments) return null;
 
   return (
     <span className="relative shrink-0">
@@ -14812,7 +14846,7 @@ function StudentActionMenu({ busy, onKick, basePath, access, studentId }: Studen
           ) : access.applications ? (
             <TransitionLink label="Student file" href={`${basePath}/applications?studentId=${encodeURIComponent(studentId)}`} onClick={(event) => event.stopPropagation()} className="block rounded-[12px] px-3 py-2.5 font-semibold text-[#26323A] hover:bg-[#EEF3F5]">View student file</TransitionLink>
           ) : null}
-          <button
+          {access.enrollments ? <button
             type="button"
             onClick={(event) => {
               event.stopPropagation();
@@ -14826,7 +14860,7 @@ function StudentActionMenu({ busy, onKick, basePath, access, studentId }: Studen
             className="flex w-full items-center gap-2 rounded-[12px] px-3 py-2.5 text-left font-semibold text-[#C83F31] hover:bg-[#FFF1EF] disabled:opacity-50"
           >
             {busy ? "Removing..." : "Remove"}
-          </button>
+          </button> : null}
         </span>
       ) : null}
     </span>
@@ -14857,7 +14891,7 @@ function TeacherStudentRow({
           <h3 className="truncate text-[15px] font-semibold leading-5 text-[#26323A]">{studentName}</h3>
           <p className="mt-0.5 truncate text-xs font-medium text-[#7B858C]">{roleLabel}</p>
         </div>
-        <button
+        {access.records ? <button
           type="button"
           onClick={() => setExpanded((value) => !value)}
           className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[#52616A] hover:bg-[#EEF3F5]"
@@ -14865,13 +14899,13 @@ function TeacherStudentRow({
           aria-label={expanded ? "Hide student details" : "Show student details"}
         >
           <ChevronIcon expanded={expanded} />
-        </button>
+        </button> : null}
         <button type="button" onClick={onNote} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[#52616A] hover:bg-[#EEF3F5]" aria-label={`Add note for ${studentName}`}>
           <NoteAddIcon />
         </button>
         <StudentActionMenu basePath={basePath} access={access} studentId={item.enrollment.student_profile_id} busy={busy} onKick={onKick} />
       </div>
-      <div className={cn("grid transition-[grid-template-rows] duration-200 ease-out", expanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]")}>
+      <div className={cn("grid transition-[grid-template-rows] duration-200 ease-out", access.records && expanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]")}>
         <div className="overflow-hidden">
           <div className="pb-4 pl-0 pr-2">
             <dl className="grid grid-cols-[minmax(0,1.7fr)_minmax(0,0.85fr)] gap-x-4 gap-y-3 rounded-[18px] bg-[#F7FAFB] px-4 py-3 text-sm">
@@ -14918,7 +14952,7 @@ function TeacherFamilyRow({
           <p className="truncate text-[15px] font-semibold leading-5 text-[#26323A]">{parentName}</p>
           <p className="mt-0.5 truncate text-xs font-medium text-[#7B858C]">Parent</p>
         </div>
-        <button
+        {access.records ? <button
           type="button"
           onClick={() => setExpanded((value) => !value)}
           className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-[#52616A] hover:bg-[#EEF3F5]"
@@ -14926,9 +14960,9 @@ function TeacherFamilyRow({
           aria-label={expanded ? "Hide parent details" : "Show parent details"}
         >
           <ChevronIcon expanded={expanded} />
-        </button>
+        </button> : null}
       </div>
-      <div className={cn("grid transition-[grid-template-rows] duration-200 ease-out", expanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]")}>
+      <div className={cn("grid transition-[grid-template-rows] duration-200 ease-out", access.records && expanded ? "grid-rows-[1fr]" : "grid-rows-[0fr]")}>
         <div className="overflow-hidden">
           <div className="space-y-3 pb-4 pl-0 pr-2">
             <dl className="grid grid-cols-[minmax(0,1.7fr)_minmax(0,0.85fr)] gap-x-4 gap-y-3 rounded-[18px] bg-[#F7FAFB] px-4 py-3 text-sm">
@@ -17838,7 +17872,7 @@ function TeacherClassCard({
           {isDirector || permissions?.can_announce ? <TeacherActionLink href={`${classBasePath}/${program.id}/announcement`} icon={<MegaphoneIcon />} label="Announcement" /> : null}
           <TeacherActionLink href={attendanceHistoryHref(mosqueSlug, program.id, classBasePath)} icon={<AttendanceIcon />} label="Attendance History" />
           {permissions?.can_manage_finances ? <TeacherActionLink href={`${classBasePath}/${program.id}/finances`} icon={<FinanceIcon />} label="Manage Finances" /> : null}
-          {isDirector || permissions?.can_manage_finances ? <TeacherActionLink href={`${classBasePath}/${program.id}/exports`} icon={<ClipboardIcon />} label="Export Data" /> : null}
+          {isDirector || permissions?.can_view_student_records || permissions?.can_view_applications || permissions?.can_decide_applications || permissions?.can_manage_finances ? <TeacherActionLink href={`${classBasePath}/${program.id}/exports`} icon={<ClipboardIcon />} label="Reports" /> : null}
           {isDirector || permissions?.can_edit_class ? <TeacherActionLink href={`${classBasePath}/${program.id}`} icon={<EditClassIcon />} label="Edit Class" /> : null}
           {!isDirector ? <TeacherActionButton icon={<XIcon />} label="Resign from Class" onClick={() => setResignOpen(true)} /> : null}
         </div>
@@ -18807,10 +18841,12 @@ function ProgramTeacherStaffTools({ program }: { program: Program }) {
   );
 }
 
-type InstructorPermissions = Pick<ProgramTeacher, "can_view_applications" | "can_decide_applications" | "can_edit_class" | "can_manage_finances" | "can_announce">;
+type InstructorPermissions = Pick<ProgramTeacher, "can_view_student_records" | "can_manage_enrollments" | "can_view_applications" | "can_decide_applications" | "can_edit_class" | "can_manage_finances" | "can_announce">;
 
 function instructorPermissions(assignment: ProgramTeacher): InstructorPermissions {
   return {
+    can_view_student_records: assignment.can_view_student_records,
+    can_manage_enrollments: assignment.can_manage_enrollments,
     can_view_applications: assignment.can_view_applications,
     can_decide_applications: assignment.can_decide_applications,
     can_edit_class: assignment.can_edit_class,
@@ -18824,6 +18860,8 @@ function InstructorPermissionEditor({ assignment, onSave }: { assignment: Progra
   const [draft, setDraft] = useState(() => instructorPermissions(assignment));
   const [busy, setBusy] = useState(false);
   const fields: Array<{ key: keyof InstructorPermissions; label: string; detail: string }> = [
+    { key: "can_view_student_records", label: "View student records", detail: "See contact, parent, and student history details" },
+    { key: "can_manage_enrollments", label: "Manage enrollments", detail: "Move or remove enrolled students" },
     { key: "can_view_applications", label: "View applications", detail: "See applications for this class" },
     { key: "can_decide_applications", label: "Accept or decline", detail: "Review and decide applications" },
     { key: "can_edit_class", label: "Edit class", detail: "Change class details and pricing" },
@@ -18831,6 +18869,8 @@ function InstructorPermissionEditor({ assignment, onSave }: { assignment: Progra
     { key: "can_announce", label: "Send announcements", detail: "Post class announcements" },
   ];
   const changed = fields.some(({ key }) => draft[key] !== saved[key]);
+  const allEnabled = fields.every(({ key }) => draft[key]);
+  const noneEnabled = fields.every(({ key }) => !draft[key]);
 
   async function save() {
     setBusy(true);
@@ -18845,7 +18885,13 @@ function InstructorPermissionEditor({ assignment, onSave }: { assignment: Progra
 
   return (
     <div className="mt-4 border-t border-[#E3E8EC] pt-3">
-      <p className="mb-2 text-xs font-semibold uppercase tracking-wide text-[#52616A]">Class permissions</p>
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <p className="text-xs font-semibold uppercase tracking-wide text-[#52616A]">Class permissions</p>
+        <div className="flex items-center gap-1 rounded-full bg-[#F1F5F4] p-1">
+          <button type="button" disabled={busy || allEnabled} onClick={() => setDraft(Object.fromEntries(fields.map(({ key }) => [key, true])) as InstructorPermissions)} className="rounded-full px-3 py-1.5 text-xs font-semibold text-[#17624F] transition hover:bg-white disabled:opacity-40">Add all</button>
+          <button type="button" disabled={busy || noneEnabled} onClick={() => setDraft(Object.fromEntries(fields.map(({ key }) => [key, false])) as InstructorPermissions)} className="rounded-full px-3 py-1.5 text-xs font-semibold text-[#52616A] transition hover:bg-white disabled:opacity-40">Remove all</button>
+        </div>
+      </div>
       <div className="divide-y divide-[#E3E8EC]">
         {fields.map(({ key, label, detail }) => (
           <label key={key} className="flex min-h-14 cursor-pointer items-center justify-between gap-3 py-2">

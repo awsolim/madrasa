@@ -69,15 +69,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
       .eq("student_profile_id", body.studentProfileId)
       .maybeSingle();
 
-    if (existingSubscription?.stripe_subscription_id && isActiveStripeSubscriptionStatus(existingSubscription.status)) {
-      return Response.json(
-        {
-          error:
-            "This student already has an active subscription. End the current subscription before sending a new payment setup to avoid double billing.",
-        },
-        { status: 409 },
-      );
-    }
+    const hasActiveSubscription = Boolean(existingSubscription?.stripe_subscription_id && isActiveStripeSubscriptionStatus(existingSubscription.status));
 
     const [{ data: link }, { data: student }, { data: fallbackRequest }] = await Promise.all([
       supabase
@@ -120,15 +112,20 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
         ? program.billing_duration_months ?? program.duration_months ?? null
         : null;
 
-    await supabase
-      .from("program_payment_terms")
-      .update({ status: "superseded", updated_at: now })
-      .eq("program_id", programId)
-      .eq("student_profile_id", body.studentProfileId)
-      .not("status", "in", "(superseded,cancelled,ended)");
+    if (!hasActiveSubscription) {
+      await supabase
+        .from("program_payment_terms")
+        .update({ status: "superseded", updated_at: now })
+        .eq("program_id", programId)
+        .eq("student_profile_id", body.studentProfileId)
+        .not("status", "in", "(superseded,cancelled,ended)");
+    }
 
     const isRecurring = billingMode === "monthly" || isRecurringAnnual;
     const recurringInterval: "month" | "year" = billingMode === "monthly" ? "month" : "year";
+    if (hasActiveSubscription && !isRecurring) {
+      return Response.json({ error: "A pay-in-full plan cannot replace an active subscription automatically. Choose monthly, waive future payments, or end the subscription first." }, { status: 409 });
+    }
 
     const { data: terms, error: termsError } = await supabase
       .from("program_payment_terms")
@@ -148,7 +145,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
         billing_end_behavior: billingMode === "monthly" ? (billingMonths ? "fixed_month_count" : "ongoing_until_cancelled") : isRecurringAnnual ? "ongoing_until_cancelled" : "not_applicable",
         program_start_date_snapshot: program.start_date ?? null,
         program_end_date_snapshot: program.end_date ?? null,
-        status: "checkout_pending",
+        status: hasActiveSubscription ? "scheduled" : "checkout_pending",
         approved_by: user.id,
         approved_at: now,
         internal_note: note,
@@ -179,6 +176,49 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
       },
       stripeRequestOptions,
     );
+
+    if (hasActiveSubscription && existingSubscription?.stripe_subscription_id) {
+      const stripeSubscription = await stripe.subscriptions.retrieve(existingSubscription.stripe_subscription_id, undefined, stripeRequestOptions);
+      const existingScheduleId = typeof stripeSubscription.schedule === "string" ? stripeSubscription.schedule : stripeSubscription.schedule?.id ?? null;
+      const schedule = existingScheduleId
+        ? await stripe.subscriptionSchedules.retrieve(existingScheduleId, undefined, stripeRequestOptions)
+        : await stripe.subscriptionSchedules.create({ from_subscription: stripeSubscription.id }, stripeRequestOptions);
+      const currentPhase = schedule.phases[0];
+      const transitionAt = existingSubscription.current_period_end
+        ? Math.floor(new Date(existingSubscription.current_period_end).getTime() / 1000)
+        : currentPhase?.end_date;
+      if (!transitionAt) throw new Error("The current subscription period could not be determined.");
+      const currentItems = (currentPhase?.items ?? stripeSubscription.items.data).map((item) => ({
+        price: typeof item.price === "string" ? item.price : item.price.id,
+        quantity: item.quantity ?? 1,
+      }));
+      await stripe.subscriptionSchedules.update(schedule.id, {
+        end_behavior: "release",
+        phases: [
+          { start_date: currentPhase?.start_date ?? "now", end_date: transitionAt, items: currentItems },
+          { start_date: transitionAt, items: [{ price: dynamicPrice.id, quantity: 1 }], metadata: {
+            payment_terms_id: terms.id,
+            enrollment_request_id: enrollmentRequestId ?? "",
+            program_id: programId,
+            mosque_id: program.mosque_id,
+            student_profile_id: body.studentProfileId,
+            parent_profile_id: parentProfileId ?? "",
+            payment_type: billingMode,
+            stripe_price_id: dynamicPrice.id,
+          } },
+        ],
+      }, stripeRequestOptions);
+      await supabase.from("program_payment_terms").update({ stripe_subscription_schedule_id: schedule.id, updated_at: now }).eq("id", terms.id);
+      await recordFinanceAuditEvent(supabase, {
+        programId,
+        studentProfileId: body.studentProfileId,
+        actorProfileId: user.id,
+        eventType: "payment_plan_change_scheduled",
+        summary: `Payment plan change scheduled for ${student?.full_name || student?.email || "this student"} at the end of the current paid period: ${(amountCents / 100).toFixed(2)} CAD (${billingMode === "monthly" ? "monthly" : isRecurringAnnual ? "annual subscription" : "pay in full"}).${note ? ` Note: ${note}` : ""}`,
+        metadata: { paymentTermsId: terms.id, amountCents, billingMode, stripePriceId: dynamicPrice.id, stripeSubscriptionScheduleId: schedule.id, effectiveAt: new Date(transitionAt * 1000).toISOString(), note },
+      });
+      return Response.json({ url: null, scheduled: true, effectiveAt: new Date(transitionAt * 1000).toISOString() });
+    }
 
     const origin = getCheckoutOrigin(request);
     const returnPath = getPortalReturnPath(origin, mosque.slug);

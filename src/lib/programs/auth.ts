@@ -77,3 +77,35 @@ export async function requireProgramEditAccess(
   }
   return { ok: true };
 }
+
+export async function requireProgramStudentRecordAccess(
+  supabase: SupabaseClient<Database>,
+  programId: string,
+  userId: string,
+) {
+  return requireProgramCapability(supabase, programId, userId, "can_view_program_student_records", "You do not have permission to view private student records.");
+}
+
+export async function requireProgramEnrollmentAccess(
+  supabase: SupabaseClient<Database>,
+  programId: string,
+  userId: string,
+) {
+  return requireProgramCapability(supabase, programId, userId, "can_manage_program_enrollments", "You do not have permission to manage enrollments.");
+}
+
+async function requireProgramCapability(
+  supabase: SupabaseClient<Database>,
+  programId: string,
+  userId: string,
+  capability: "can_view_program_student_records" | "can_manage_program_enrollments",
+  forbiddenMessage: string,
+) {
+  const { data: allowed, error } = await supabase.rpc(capability, {
+    check_program_id: programId,
+    check_profile_id: userId,
+  });
+  if (error) return { ok: false as const, status: 500, error: error.message };
+  if (!allowed) return { ok: false as const, status: 403, error: forbiddenMessage };
+  return { ok: true as const };
+}
