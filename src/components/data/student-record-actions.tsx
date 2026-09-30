@@ -1,7 +1,6 @@
 "use client";
 
 import { useRef, useState } from "react";
-import { createPortal } from "react-dom";
 import { useModalFocusTrap } from "@/hooks/use-modal-behavior";
 import { cn } from "@/lib/utils";
 
@@ -25,10 +24,10 @@ export function StudentRecordActions({ actions, onSelect }: { actions: StudentRe
           Actions
         </button>
       </div>
-      {open ? createPortal(
-        <div className="fixed inset-0 z-[2147483647] flex items-end justify-center bg-[#26323A]/35 backdrop-blur-sm sm:items-center sm:px-5" onMouseDown={(event) => { if (event.target === event.currentTarget) setOpen(false); }}>
-          <div ref={panelRef} role="dialog" aria-modal="true" tabIndex={-1} className="w-full rounded-t-[24px] bg-white px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-3 text-[#26323A] shadow-[0_24px_70px_rgba(38,50,58,0.22)] outline-none sm:max-w-sm sm:rounded-[22px] sm:p-4">
-            <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-[#D6DCE0] sm:hidden" />
+      {open ? (
+        <div className="absolute inset-0 z-50 flex items-end bg-[#26323A]/20" onMouseDown={(event) => { if (event.target === event.currentTarget) setOpen(false); }}>
+          <div ref={panelRef} role="dialog" aria-modal="true" tabIndex={-1} className="max-h-[58%] min-h-[46%] w-full overflow-y-auto rounded-t-[24px] bg-white px-4 pb-[calc(1rem+env(safe-area-inset-bottom))] pt-3 text-[#26323A] shadow-[0_-18px_48px_rgba(38,50,58,0.16)] outline-none">
+            <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-[#D6DCE0]" />
             <div className="flex items-center justify-between">
               <h3 className="text-base font-semibold">Student actions</h3>
               <button type="button" onClick={() => setOpen(false)} className="px-2 py-1 text-sm font-semibold text-[#6B747B]">Close</button>
@@ -42,7 +41,7 @@ export function StudentRecordActions({ actions, onSelect }: { actions: StudentRe
               ))}
             </div>
           </div>
-        </div>, document.body) : null}
+        </div>) : null}
     </>
   );
 }

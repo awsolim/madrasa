@@ -12101,7 +12101,7 @@ function FinanceDetailsDrawer({
 
   return createPortal(
     <div className="fixed inset-0 z-[2147483647] flex justify-end bg-[#26323A]/35 backdrop-blur-sm">
-      <div ref={containerRef} role="dialog" aria-modal="true" tabIndex={-1} className="flex h-full w-full max-w-md flex-col overflow-y-auto bg-white text-[#26323A] shadow-[0_24px_70px_rgba(38,50,58,0.22)] outline-none">
+      <div ref={containerRef} role="dialog" aria-modal="true" tabIndex={-1} className="relative flex h-full w-full max-w-md flex-col overflow-hidden bg-white text-[#26323A] shadow-[0_24px_70px_rgba(38,50,58,0.22)] outline-none">
         <div className="flex items-center justify-between border-b border-[#EEF2F4] px-5 py-4">
           <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-[#6B747B]">{program.title}</p>
@@ -12112,8 +12112,8 @@ function FinanceDetailsDrawer({
           </button>
         </div>
 
-        <div className="space-y-5 px-5 py-5">
-          <section className="grid grid-cols-2 gap-x-5 gap-y-3 rounded-[16px] border border-[#E1E8EC] bg-[#FAFCFC] p-3 text-sm">
+        <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-5">
+          <section className="grid gap-3 rounded-[16px] border border-[#E1E8EC] bg-[#FAFCFC] p-3 text-sm">
             {row.parent ? <div className="col-span-2 flex items-center justify-between">
               <span className="text-[#6B747B]">Parent</span>
               <span className="font-semibold">{row.parent.full_name || "—"}</span>
@@ -12136,7 +12136,7 @@ function FinanceDetailsDrawer({
               <span className="text-[#6B747B]">Approved price</span>
               <span className="font-semibold">{financePrice(row, program)}</span>
             </div>
-            {row.paymentTerms ? <div className="flex flex-col gap-1">
+            {row.paymentTerms ? <div className="flex items-center justify-between gap-4">
                   <span className="text-[#6B747B]">Billing cycle</span>
                   <span className="font-semibold">{financeBillingCycleLabel(row.paymentTerms)}</span>
                 </div> : null}
@@ -12192,15 +12192,6 @@ function FinanceDetailsDrawer({
                         </>
                       ) : null}
                     </p>
-                    {program.tax_receipt_policy !== "not_applicable" ? (
-                      <TaxReceiptStatusControl
-                        programId={program.id}
-                        payment={charge}
-                        onUpdated={(paymentId, fields) =>
-                          setHistory((current) => current?.map((item) => (item.id === paymentId ? { ...item, ...fields } : item)) ?? current)
-                        }
-                      />
-                    ) : null}
                   </div>
                 ))}
               </div>
@@ -12208,7 +12199,7 @@ function FinanceDetailsDrawer({
           </section>
 
           <section className="space-y-2">
-            <h3 className="text-sm font-semibold text-[#26323A]">Audit Trail</h3>
+            <h3 className="text-sm font-semibold text-[#26323A]">Student History</h3>
             {eventsLoading ? (
               <div className="rounded-[14px] border border-dashed border-[#D6DCE0] bg-[#F8FAFB] p-3 text-sm font-semibold text-[#6B747B]">Loading activity...</div>
             ) : eventsError ? <p role="alert" className="text-sm text-red-700">{eventsError}</p> : !studentEvents?.length ? (
@@ -12232,19 +12223,6 @@ function FinanceDetailsDrawer({
           </section>
         </div>
 
-        <div className="border-t border-[#EEF2F4] px-5 py-4">
-          {hasActiveRecurringSubscription(row.subscription) ? (
-            <p className="mb-3 rounded-[12px] border border-[#F3D9A6] bg-[#FFF7E6] p-3 text-xs font-semibold leading-5 text-[#8A5A00]">
-              This student has an active subscription. End or waive billing before removing them from the class.
-            </p>
-          ) : null}
-          <Link
-            href={`${basePath}/${program.id}/students?from=finances&studentId=${studentProfileId}`}
-            className="text-sm font-semibold text-[#17624F] hover:underline"
-          >
-            Manage class enrollment →
-          </Link>
-        </div>
         <StudentRecordActions actions={recordActions} onSelect={(action) => onAction(action as FinanceAction | "add_note")} />
       </div>
     </div>,

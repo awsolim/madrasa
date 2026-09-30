@@ -389,7 +389,7 @@ function ApplicationDetailsDrawer({
   useModalFocusTrap(containerRef, true, onClose);
   return createPortal(
     <div className="fixed inset-0 z-50 flex justify-end bg-[#26323A]/35 backdrop-blur-sm">
-      <div ref={containerRef} role="dialog" aria-modal="true" tabIndex={-1} className="flex h-full w-full max-w-md flex-col bg-white text-[#26323A] shadow-[0_24px_70px_rgba(38,50,58,0.22)] outline-none">
+      <div ref={containerRef} role="dialog" aria-modal="true" tabIndex={-1} className="relative flex h-full w-full max-w-md flex-col overflow-hidden bg-white text-[#26323A] shadow-[0_24px_70px_rgba(38,50,58,0.22)] outline-none">
         <div className="flex shrink-0 items-center justify-between border-b border-[#EEF2F4] px-4 py-3">
           <div>
             <p className="text-xs font-semibold uppercase tracking-wide text-[#6B747B]">{program.title}</p>
