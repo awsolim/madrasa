@@ -68,7 +68,7 @@ export type Database = {
           offers_monthly_payment: boolean;
           offers_annual_payment: boolean;
           billing_end_behavior: string;
-          billing_duration_months: number;
+          billing_duration_months: number | null;
           allow_custom_prices: boolean;
           allow_waived_payments: boolean;
           manual_payment_note: string | null;
