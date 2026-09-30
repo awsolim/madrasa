@@ -52,10 +52,12 @@ function BottomNav({ items, inboxBadgeCount = 0, inboxActionRequired = false }: 
       className="pointer-events-auto fixed inset-x-0 bottom-0 z-[2147483647] h-[calc(88px+env(safe-area-inset-bottom))] overflow-visible bg-transparent md:hidden"
       aria-label="Mobile primary navigation"
     >
+      <div aria-hidden className="pointer-events-auto absolute inset-0 bg-gradient-to-b from-transparent via-[#E7ECEE]/75 to-[#DDE4E7]/95" />
+      <div aria-hidden className="pointer-events-auto absolute inset-x-0 bottom-0 h-[calc(58px+env(safe-area-inset-bottom))] bg-[#E3E9EB]/55 backdrop-blur-[5px]" />
       <div
         className={cn(
-          "absolute inset-x-3 bottom-[calc(10px+env(safe-area-inset-bottom))] mx-auto grid h-[68px] max-w-[420px] overflow-hidden rounded-[24px] border border-white/70",
-          "bg-[#F1F4F5]/90 shadow-[0_10px_34px_rgba(38,50,58,0.18)] backdrop-blur-xl backdrop-saturate-150",
+          "absolute inset-x-3 bottom-[calc(10px+env(safe-area-inset-bottom))] mx-auto grid h-[68px] max-w-[420px] overflow-hidden rounded-[24px] border border-[#BCC8CD]/80",
+          "bg-[#E3E9EB]/95 shadow-[0_12px_36px_rgba(38,50,58,0.24)] backdrop-blur-xl backdrop-saturate-150",
         )}
         style={{ gridTemplateColumns: `repeat(${visibleItems.length}, minmax(0, 1fr))` }}
       >
