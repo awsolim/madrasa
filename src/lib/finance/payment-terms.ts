@@ -48,7 +48,7 @@ function paymentTypeFor(input: ApprovedPaymentInput): "free" | "waived" | "month
 
 function billingEndBehaviorFor(program: ProgramRow, paymentType: string) {
   if (paymentType === "monthly") {
-    return program.billing_end_behavior === "fixed_months" ? "fixed_month_count" : "ongoing_until_cancelled";
+    return !program.is_ongoing && program.billing_end_behavior === "fixed_months" ? "fixed_month_count" : "ongoing_until_cancelled";
   }
   if (paymentType === "annual") {
     return "ongoing_until_cancelled";
@@ -57,7 +57,7 @@ function billingEndBehaviorFor(program: ProgramRow, paymentType: string) {
 }
 
 function billingMonthsFor(program: ProgramRow, paymentType: string) {
-  if (paymentType !== "monthly" || program.billing_end_behavior !== "fixed_months") {
+  if (paymentType !== "monthly" || program.is_ongoing || program.billing_end_behavior !== "fixed_months") {
     return null;
   }
   return program.billing_duration_months ?? program.duration_months ?? null;

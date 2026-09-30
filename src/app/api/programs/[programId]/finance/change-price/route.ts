@@ -116,7 +116,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
     const isRecurringAnnual = billingMode === "annual" && Boolean(program.is_ongoing);
     const paymentTermsType = billingMode === "monthly" ? "monthly" : isRecurringAnnual ? "annual" : "pay_in_full";
     const billingMonths =
-      billingMode === "monthly" && program.billing_end_behavior === "fixed_months"
+      billingMode === "monthly" && !program.is_ongoing && program.billing_end_behavior === "fixed_months"
         ? program.billing_duration_months ?? program.duration_months ?? null
         : null;
 

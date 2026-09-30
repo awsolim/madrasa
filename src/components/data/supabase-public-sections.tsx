@@ -11618,8 +11618,6 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
         <FinanceDetailsDrawer
           row={detailsTarget}
           program={program}
-          slug={slug}
-          mode={mode}
           onClose={() => setDetailsTarget(null)}
           onAction={(action) => {
             const row = detailsTarget;
@@ -12034,18 +12032,23 @@ function FinanceActionModal({
   );
 }
 
+function FinanceRecordFact({ label, children, valueClassName }: { label: string; children: ReactNode; valueClassName?: string }) {
+  return (
+    <div className="min-w-0 text-left">
+      <dt className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-[0.12em] text-[#7B858C]">{label}</dt>
+      <dd className={cn("mt-1 min-w-0 text-left text-sm font-semibold leading-5 text-[#26323A]", valueClassName)}>{children}</dd>
+    </div>
+  );
+}
+
 function FinanceDetailsDrawer({
   row,
   program,
-  slug,
-  mode,
   onClose,
   onAction,
 }: {
   row: FinanceEnrollmentRow;
   program: Program;
-  slug: string;
-  mode: "teacher" | "admin";
   onClose: () => void;
   onAction: (action: FinanceAction | "add_note") => void;
 }) {
@@ -12089,7 +12092,6 @@ function FinanceDetailsDrawer({
   }, [program.id, studentProfileId]);
 
   const checkoutLinkStatus = row.subscription?.status === "checkout_started" ? "Checkout sent, awaiting completion" : "No pending checkout";
-  const basePath = mode === "admin" ? `/m/${slug}/admin/programs` : `/m/${slug}/teacher/classes`;
   const recordActions: StudentRecordAction[] = [
     { id: "change_price", label: "Manage billing", description: hasActiveRecurringSubscription(row.subscription) ? "End the current subscription before starting a new plan." : "Set a new price or send a checkout link." },
     { id: "waive", label: "Waive future payments", description: "Keep the student enrolled without future charges.", tone: "warning" },
@@ -12113,57 +12115,34 @@ function FinanceDetailsDrawer({
         </div>
 
         <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-5">
-          <section className="grid gap-3 rounded-[16px] border border-[#E1E8EC] bg-[#FAFCFC] p-3 text-sm">
-            {row.parent ? <div className="col-span-2 flex items-center justify-between">
-              <span className="text-[#6B747B]">Parent</span>
-              <span className="font-semibold">{row.parent.full_name || "—"}</span>
-            </div> : null}
-            {row.parent?.email ? (
-              <div className="flex items-center justify-between">
-                <span className="text-[#6B747B]">Parent email</span>
-                <span className="font-semibold">{row.parent.email}</span>
-              </div>
-            ) : null}
-            <div className="flex items-center justify-between">
-              <span className="text-[#6B747B]">Enrollment status</span>
-              <span className={cn("rounded-full px-2.5 py-1 text-xs font-semibold", programStatusBadgeToneClass(financeBadgeTone(financeStatus(row))))}>{financeStatus(row)}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-[#6B747B]">Payment type</span>
-              <span className="font-semibold">{financePaymentType(row, program)}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-[#6B747B]">Approved price</span>
-              <span className="font-semibold">{financePrice(row, program)}</span>
-            </div>
-            {row.paymentTerms ? <div className="flex items-center justify-between gap-4">
-                  <span className="text-[#6B747B]">Billing cycle</span>
-                  <span className="font-semibold">{financeBillingCycleLabel(row.paymentTerms)}</span>
-                </div> : null}
-            <div className="flex items-center justify-between">
-              <span className="text-[#6B747B]">Payment status</span>
-              <span className={cn("rounded-full px-2.5 py-1 text-xs font-semibold", programStatusBadgeToneClass(financeBadgeTone(financePaymentStatus(row, program))))}>{financePaymentStatus(row, program)}</span>
-            </div>
-          </section>
+          {row.parent ? (
+            <dl className="grid grid-cols-2 gap-x-5 gap-y-4 rounded-[16px] border border-[#E1E8EC] bg-[#FAFCFC] p-4">
+              <FinanceRecordFact label="Parent">{row.parent.full_name || "—"}</FinanceRecordFact>
+              <FinanceRecordFact label="Parent email" valueClassName="break-all">{row.parent.email || "—"}</FinanceRecordFact>
+            </dl>
+          ) : null}
 
-          <section className="grid gap-1 rounded-[16px] border border-[#E1E8EC] bg-[#FAFCFC] p-3 text-sm">
-            <div className="flex items-center justify-between">
-              <span className="text-[#6B747B]">Subscription status</span>
-              <span className={cn("rounded-full px-2.5 py-1 text-xs font-semibold", programStatusBadgeToneClass(financeBadgeTone(financeSubscriptionStatus(row))))}>{financeSubscriptionStatus(row)}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-[#6B747B]">Current period</span>
-              <span className="font-semibold">{financeCurrentPeriodLabel(row)}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-[#6B747B]">Next billing / ends on</span>
-              <span className="font-semibold">{financeNextBillingLabel(row)}</span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-[#6B747B]">Checkout link</span>
-              <span className="font-semibold">{checkoutLinkStatus}</span>
-            </div>
-          </section>
+          <dl className="grid grid-cols-2 gap-x-5 gap-y-4 rounded-[16px] border border-[#E1E8EC] bg-[#FAFCFC] p-4">
+            <FinanceRecordFact label="Enrollment">
+              <span className={cn("inline-flex rounded-full px-2.5 py-1 text-xs font-semibold", programStatusBadgeToneClass(financeBadgeTone(financeStatus(row))))}>{financeStatus(row)}</span>
+            </FinanceRecordFact>
+            <FinanceRecordFact label="Approved price">{financePrice(row, program)}</FinanceRecordFact>
+            <FinanceRecordFact label="Payment plan">{financePaymentType(row, program)}</FinanceRecordFact>
+            <FinanceRecordFact label="Payment status">
+              <span className={cn("inline-flex rounded-full px-2.5 py-1 text-xs font-semibold", programStatusBadgeToneClass(financeBadgeTone(financePaymentStatus(row, program))))}>{financePaymentStatus(row, program)}</span>
+            </FinanceRecordFact>
+            <FinanceRecordFact label="Billing cycle">{row.paymentTerms ? financeBillingCycleLabel(row.paymentTerms, program) : "—"}</FinanceRecordFact>
+            <FinanceRecordFact label="Subscription">
+              <span className={cn("inline-flex rounded-full px-2.5 py-1 text-xs font-semibold", programStatusBadgeToneClass(financeBadgeTone(financeSubscriptionStatus(row))))}>{financeSubscriptionStatus(row)}</span>
+            </FinanceRecordFact>
+          </dl>
+
+          <dl className="grid grid-cols-2 gap-x-5 gap-y-4 rounded-[16px] border border-[#E1E8EC] bg-[#FAFCFC] p-4">
+            <FinanceRecordFact label="Current period">{financeCurrentPeriodLabel(row)}</FinanceRecordFact>
+            <FinanceRecordFact label="Next billing">{financeNextBillingLabel(row)}</FinanceRecordFact>
+            <FinanceRecordFact label="Checkout">{checkoutLinkStatus}</FinanceRecordFact>
+            <FinanceRecordFact label="Enrolled">{formatFinanceDate(row.enrollment.created_at)}</FinanceRecordFact>
+          </dl>
 
           <section className="space-y-2">
             <h3 className="text-sm font-semibold text-[#26323A]">Payment History</h3>
@@ -13026,11 +13005,11 @@ function financePaymentTypeFromTerms(terms: ProgramPaymentTerms, program: Progra
   return "Free";
 }
 
-function financeBillingCycleLabel(terms: ProgramPaymentTerms) {
+function financeBillingCycleLabel(terms: ProgramPaymentTerms, program: Program | null) {
   if (!["monthly", "annual"].includes(terms.payment_type)) {
     return "Not applicable";
   }
-  if (terms.billing_end_behavior === "fixed_month_count" && terms.billing_months) {
+  if (!program?.is_ongoing && terms.billing_end_behavior === "fixed_month_count" && terms.billing_months) {
     return `${terms.billing_months} month${terms.billing_months === 1 ? "" : "s"}`;
   }
   return "Ongoing until cancelled";

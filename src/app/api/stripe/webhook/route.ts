@@ -20,8 +20,13 @@ async function ensureFixedDurationSchedule(
   subscription: Stripe.Subscription | null,
   stripeAccountId: string | undefined,
 ) {
+  const { data: program, error: programError } = terms
+    ? await supabase.from("programs").select("is_ongoing").eq("id", terms.program_id).maybeSingle()
+    : { data: null, error: null };
+  if (programError) throw programError;
   if (
     !terms ||
+    program?.is_ongoing ||
     terms.payment_type !== "monthly" ||
     terms.billing_end_behavior !== "fixed_month_count" ||
     !terms.billing_months ||
@@ -321,7 +326,7 @@ async function updateSubscription(subscription: Stripe.Subscription, stripeAccou
   }
 }
 
-async function handleInvoicePaid(invoice: Stripe.Invoice, suppressNotifications = false) {
+async function handleInvoicePaid(invoice: Stripe.Invoice, stripeAccountId: string | undefined, suppressNotifications = false) {
   const subscriptionRef = invoice.parent?.subscription_details?.subscription ?? null;
   const subscriptionId = typeof subscriptionRef === "string" ? subscriptionRef : subscriptionRef?.id ?? null;
   if (!subscriptionId) {
@@ -337,12 +342,15 @@ async function handleInvoicePaid(invoice: Stripe.Invoice, suppressNotifications 
   if (!subscriptionRow?.program_id || !subscriptionRow.student_profile_id) {
     return;
   }
+  const stripeRequestOptions = shouldUseStripeConnect() && stripeAccountId ? { stripeAccount: stripeAccountId } : undefined;
+  const stripeSubscription = await getStripe().subscriptions.retrieve(subscriptionId, undefined, stripeRequestOptions);
+  const subscriptionPeriod = getSubscriptionPeriod(stripeSubscription);
 
   const { error: periodUpdateError } = await supabase
     .from("program_subscriptions")
     .update({
-      current_period_start: stripeTimestampToIso(invoice.period_start),
-      current_period_end: stripeTimestampToIso(invoice.period_end),
+      current_period_start: subscriptionPeriod.start,
+      current_period_end: subscriptionPeriod.end,
       updated_at: new Date().toISOString(),
     })
     .eq("id", subscriptionRow.id);
@@ -370,8 +378,8 @@ async function handleInvoicePaid(invoice: Stripe.Invoice, suppressNotifications 
       .update({
         status: "active",
         stripe_invoice_id: invoice.id,
-        current_period_start: stripeTimestampToIso(invoice.period_start),
-        current_period_end: stripeTimestampToIso(invoice.period_end),
+        current_period_start: subscriptionPeriod.start,
+        current_period_end: subscriptionPeriod.end,
         updated_at: new Date().toISOString(),
       })
       .eq("id", subscriptionRow.payment_terms_id);
@@ -487,7 +495,7 @@ export async function POST(request: Request) {
     }
 
     if (event.type === "invoice.paid") {
-      await handleInvoicePaid(event.data.object as Stripe.Invoice, isReconciliation);
+      await handleInvoicePaid(event.data.object as Stripe.Invoice, stripeAccountId, isReconciliation);
     }
 
     if (event.type === "invoice.payment_failed") {

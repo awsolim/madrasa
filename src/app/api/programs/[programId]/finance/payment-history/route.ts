@@ -38,7 +38,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
 
     const { data: payments, error: paymentsError } = await supabase
       .from("program_payments")
-      .select("id, amount_cents, currency, paid_at, receipt_url, tax_receipt_status, tax_receipt_eligible_amount_cents, tax_receipt_number")
+      .select("id, amount_cents, currency, paid_at, receipt_url")
       .eq("program_id", programId)
       .eq("student_profile_id", body.studentProfileId)
       .order("paid_at", { ascending: false })
@@ -53,9 +53,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
         currency: payment.currency,
         createdAt: payment.paid_at,
         receiptUrl: payment.receipt_url,
-        taxReceiptStatus: payment.tax_receipt_status,
-        taxReceiptEligibleAmountCents: payment.tax_receipt_eligible_amount_cents,
-        taxReceiptNumber: payment.tax_receipt_number,
+        taxReceiptStatus: "not_applicable",
+        taxReceiptEligibleAmountCents: null,
+        taxReceiptNumber: null,
       })),
     });
   } catch (error) {
