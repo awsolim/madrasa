@@ -11779,9 +11779,12 @@ function ProgramFinanceOverview({ analytics, fallbackProjectedMonthlyCents }: {
   const edmontonDateParts = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Edmonton", year: "numeric", month: "2-digit" }).formatToParts(reportingNow);
   const currentMonthKey = `${edmontonDateParts.find((part) => part.type === "year")?.value}-${edmontonDateParts.find((part) => part.type === "month")?.value}`;
   const collectedThisMonthCents = months.find((month) => month.month === currentMonthKey)?.amountCents ?? analytics?.collectedThisMonthCents ?? 0;
+  // A new class with no subscriptions and no payments has a valid $0 ledger. Only
+  // flag synchronization when billing exists but its payment history is absent.
   const historyAvailable = Boolean(
     analytics && (
-      analytics.paymentRecordCount > 0
+      analytics.activePaidSubscriptions === 0
+      || analytics.paymentRecordCount > 0
       || analytics.totalCollectedCents > 0
       || analytics.monthlyRevenue.some((month) => month.amountCents > 0)
     )
