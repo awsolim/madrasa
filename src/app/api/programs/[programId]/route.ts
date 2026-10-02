@@ -516,6 +516,17 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ pr
     };
 
     const changedBillingDefaults = billingDefaultsChanged(existingProgram, updatePayload);
+    const billingAnchorChanged = existingProgram.monthly_billing_anchor !== updatePayload.monthly_billing_anchor;
+    if (billingAnchorChanged) {
+      const { count: stripeSubscriptionCount } = await supabase
+        .from("program_subscriptions")
+        .select("id", { count: "exact", head: true })
+        .eq("program_id", programId)
+        .not("stripe_subscription_id", "is", null);
+      if ((stripeSubscriptionCount ?? 0) > 0) {
+        return Response.json({ error: "The monthly billing date is locked because recurring billing has already begun for this class." }, { status: 409 });
+      }
+    }
     if (changedBillingDefaults) {
       const [{ count: paidApprovalCount }, { count: subscriptionCount }] = await Promise.all([
         supabase

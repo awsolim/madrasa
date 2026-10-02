@@ -216,7 +216,7 @@ async function loadAttendanceSessionContext(slug: string, programId: string, sea
 type AttendanceStatus = "present" | "absent";
 type AttendanceDraft = Record<string, { status: AttendanceStatus | null; reason: string }>;
 
-export function ProgramAttendanceMarkData({ slug, programId }: { slug: string; programId: string }) {
+export function ProgramAttendanceMarkData({ slug, programId, mode = "teacher" }: { slug: string; programId: string; mode?: "teacher" | "admin" }) {
   const readonlySearchParams = useSearchParams();
   const router = useRouter();
   const [context, setContext] = useState<AttendanceSessionContext>(emptyAttendanceSessionContext);
@@ -309,7 +309,8 @@ export function ProgramAttendanceMarkData({ slug, programId }: { slug: string; p
 
   function openStudentHistory(studentId: string) {
     const currentParams = new URLSearchParams(readonlySearchParams.toString());
-    const returnTo = `/m/${slug}/teacher/classes/${programId}/attendance/mark?${currentParams.toString()}`;
+    const programBasePath = mode === "admin" ? `/m/${slug}/admin/programs` : `/m/${slug}/teacher/classes`;
+    const returnTo = `${programBasePath}/${programId}/attendance/mark?${currentParams.toString()}`;
     const params = new URLSearchParams({
       studentId,
       from: "mark",
@@ -319,7 +320,7 @@ export function ProgramAttendanceMarkData({ slug, programId }: { slug: string; p
       start: context.start,
       end: context.end,
     });
-    router.push(`/m/${slug}/teacher/classes/${programId}/attendance?${params.toString()}`);
+    router.push(`${programBasePath}/${programId}/attendance?${params.toString()}`);
   }
 
   async function saveAttendance() {
@@ -398,7 +399,7 @@ export function ProgramAttendanceMarkData({ slug, programId }: { slug: string; p
       <div className="space-y-1">
         <h2 className="text-2xl font-semibold leading-7">{context.program.title}</h2>
         <p className="text-sm font-medium text-[#6B747B]">
-          {context.day}, {formatShortDate(context.sessionDate)} · {formatScheduleRange(context.start, context.end)}
+          {context.day}, {formatShortDate(`${context.sessionDate}T12:00:00`)} · {formatScheduleRange(context.start, context.end)}
         </p>
         {!isTodaySession ? <p className="text-sm font-semibold text-[#C0392B]">Attendance can only be marked on the day of this session.</p> : null}
       </div>

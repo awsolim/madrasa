@@ -15,7 +15,7 @@ export function useWizardExit(slug: string, values: unknown) {
   const capture = () => { if (baseline.current === null) baseline.current = snapshot; };
   const leave = (discard: boolean) => {
     if (discard) queueEditorToast({ tone: "neutral", message: "Unsaved changes discarded. Saved details are unchanged." });
-    router.push(`/m/${slug}/${window.location.pathname.includes("/admin/") ? "admin/programs" : "teacher/classes"}`);
+    router.replace(`/m/${slug}/${window.location.pathname.includes("/admin/") ? "admin/programs" : "teacher/classes"}`);
   };
   useEffect(() => {
     const onBack = (event: Event) => {

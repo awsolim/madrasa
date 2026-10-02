@@ -54,3 +54,14 @@ export function AdminProgramAttendancePage({ slug, programId }: { slug: string; 
     </>
   );
 }
+
+export function AdminProgramMarkAttendancePage({ slug, programId }: { slug: string; programId: string }) {
+  return (
+    <>
+      <PageTitleBar title="Mark Attendance" backHref={`/m/${slug}/admin`} backLabel="Home" tone="teal" />
+      <AttendanceWorkspace>
+        <ProgramAttendanceMarkData slug={slug} programId={programId} mode="admin" />
+      </AttendanceWorkspace>
+    </>
+  );
+}

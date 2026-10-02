@@ -4696,7 +4696,7 @@ export function AdminHomeData({ slug }: { slug: string }) {
     <div className="space-y-4 bg-[var(--workspace)] p-4">
       <AddToHomeScreenNudge slug={slug} settingsHref={`/m/${slug}/admin/settings`} />
       <HomeSectionTitle title="Upcoming" />
-      {programs.length ? <HomeUpcomingRows programs={programs} /> : <EmptyState title="No classes yet" text="All masjid class sessions will appear here after classes are created." />}
+      {programs.length ? <HomeUpcomingRows programs={programs} canCancelSessions slug={slug} managementBasePath={`/m/${slug}/admin/programs`} /> : <EmptyState title="No classes yet" text="All masjid class sessions will appear here after classes are created." />}
     </div>
   );
 }
@@ -6460,6 +6460,7 @@ export function TeacherProgramSettingsData({ slug, programId, returnHref }: { sl
   const [details, setDetails] = useState<ProgramDetails | null>(null);
   const [canEdit, setCanEdit] = useState(false);
   const [isAdminEditor, setIsAdminEditor] = useState(false);
+  const [billingPolicyLocked, setBillingPolicyLocked] = useState(false);
   const [directorOptions, setDirectorOptions] = useState<DirectorOption[]>([]);
   const [selectedDirectorId, setSelectedDirectorId] = useState("");
   const [loading, setLoading] = useState(true);
@@ -6554,6 +6555,7 @@ export function TeacherProgramSettingsData({ slug, programId, returnHref }: { sl
         setDetails(snapshot.details);
         setCanEdit(true);
         setIsAdminEditor(snapshot.isAdminEditor);
+        setBillingPolicyLocked(snapshot.billingPolicyLocked);
         const directorProfileId = programRow.director_profile_id ?? programRow.teacher_profile_id;
         setSelectedDirectorId(directorProfileId ?? "");
         loadedDirectorRef.current = directorProfileId ?? "";
@@ -7273,11 +7275,11 @@ export function TeacherProgramSettingsData({ slug, programId, returnHref }: { sl
             {builderStatus.paymentKind === "tareeqah" && offersMonthlyPayment && builderStatus.programType !== "event" ? (
               <label className="block">
                 <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-[#6B747B]">Monthly billing date</span>
-                <select value={builderStatus.monthlyBillingAnchor} onChange={(event) => setBuilderStatus((current) => ({ ...current, monthlyBillingAnchor: event.target.value as ProgramBuilderStatus["monthlyBillingAnchor"] }))} className="h-10 w-full rounded-[8px] border border-[#B9C3C8] bg-white px-3 text-sm font-medium text-[#26323A]">
+                <select disabled={billingPolicyLocked} value={builderStatus.monthlyBillingAnchor} onChange={(event) => setBuilderStatus((current) => ({ ...current, monthlyBillingAnchor: event.target.value as ProgramBuilderStatus["monthlyBillingAnchor"] }))} className="h-10 w-full rounded-[8px] border border-[#B9C3C8] bg-white px-3 text-sm font-medium text-[#26323A] disabled:cursor-not-allowed disabled:bg-[#F1F4F5] disabled:text-[#6B747B]">
                   <option value="signup_date">Each family’s signup date</option>
                   <option value="first_of_month">First of every month</option>
                 </select>
-                <p className="mt-1 text-xs text-[#6B747B]">For first-of-month billing, the first payment is prorated. Existing subscriptions keep their current dates.</p>
+                <p className="mt-1 text-xs text-[#6B747B]">{billingPolicyLocked ? "Locked because recurring billing has begun. This protects existing families from an accidental billing-date change." : "Choose the program policy before recurring billing begins. First-of-month billing prorates the initial payment."}</p>
               </label>
             ) : null}
             {builderStatus.paymentKind === "tareeqah" ? (
@@ -11240,6 +11242,23 @@ type CachedFinancesPage = {
   auditActorsById: Record<string, Profile>;
 };
 
+type ProgramFinanceAnalytics = {
+  totalCollectedCents: number;
+  paymentRecordCount: number;
+  collectedThisMonthCents: number;
+  projectedMonthlyCents: number;
+  activePaidSubscriptions: number;
+  activeStudents: number;
+  pendingApplications: number;
+  waitlistedStudents: number;
+  needsAttention: number;
+  waivedStudents: number;
+  monthlyRevenue: Array<{ month: string; amountCents: number }>;
+  launchedAt?: string | null;
+  reportingEndsAt?: string | null;
+  transactions?: Array<{ id: string; studentProfileId: string; studentName: string | null; amountCents: number; currency: string; paidAt: string; receiptUrl: string | null }>;
+};
+
 export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slug: string; programId: string; mode?: "teacher" | "admin" }) {
   const router = useRouter();
   const pathname = usePathname();
@@ -11250,6 +11269,8 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
   const [rows, setRows] = useState<FinanceEnrollmentRow[]>(initialPage?.rows ?? []);
   const [auditEvents, setAuditEvents] = useState<ProgramFinanceAuditEvent[]>(initialPage?.auditEvents ?? []);
   const [auditActorsById, setAuditActorsById] = useState<Record<string, Profile>>(initialPage?.auditActorsById ?? {});
+  const [view, setView] = useState<"overview" | "billing" | "transactions">("overview");
+  const [analytics, setAnalytics] = useState<ProgramFinanceAnalytics | null>(null);
   const [search, setSearch] = useState(searchParams.get("studentId") ?? "");
   const [statusFilter, setStatusFilter] = useState("all");
   const [paymentFilter, setPaymentFilter] = useState("all");
@@ -11381,6 +11402,11 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
     setAuditEvents(auditRows);
     const actorsById = Object.fromEntries(profileRows.filter((profile) => auditActorIds.includes(profile.id)).map((profile) => [profile.id, profile]));
     setAuditActorsById(actorsById);
+    const analyticsResult = await supabase.rpc("get_program_finance_analytics", { p_program_id: programId });
+    if (!analyticsResult.error) {
+      const nextAnalytics = analyticsResult.data as unknown as ProgramFinanceAnalytics & { hasAccess?: boolean };
+      if (nextAnalytics?.hasAccess !== false) setAnalytics(nextAnalytics);
+    }
     writePrivatePage<CachedFinancesPage>(`finances:${slug}:${programId}:${mode}:${userId}`, {
       program: programRow, rows: mappedRows, auditEvents: auditRows, auditActorsById: actorsById,
     });
@@ -11426,7 +11452,7 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
   }, [genderFilter, payStatusFilter, paymentFilter, program, rows, search, statusFilter, subStatusFilter, typeFilter]);
 
   const activeRows = rows.filter((row) => financeStatus(row) === "Active");
-  const monthlySumCents = activeRows.reduce((sum, row) => sum + financeMonthlyAmountCents(row, program), 0);
+  const estimatedMonthlyCents = analytics?.projectedMonthlyCents ?? activeRows.reduce((sum, row) => sum + financeMonthlyAmountCents(row, program), 0);
 
   if (loading) {
     return <DirectorySkeleton layout="management" />;
@@ -11455,10 +11481,23 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
           <div className="grid grid-cols-3 gap-4 text-center">
             <FinanceSummaryFigure value={rows.length.toString()} label="Total records" />
             <FinanceSummaryFigure value={activeRows.length.toString()} label="Active students" />
-            <FinanceSummaryFigure value={formatCurrencyAmount(monthlySumCents)} label="Monthly sum" />
+            <FinanceSummaryFigure value={formatCurrencyAmount(estimatedMonthlyCents)} label="Expected monthly" />
           </div>
         </div>
       </div>
+
+      <div className="flex items-center gap-3">
+      <div className="grid min-w-0 flex-1 grid-cols-3 rounded-full bg-[#EEF3F2] p-1 md:max-w-lg">
+        {([['overview', 'Overview'], ['billing', 'Billing'], ['transactions', 'Transactions']] as const).map(([value, label]) => (
+          <button key={value} type="button" onClick={() => setView(value)} className={cn("h-10 rounded-full text-sm font-semibold transition", view === value ? "bg-white text-[#17624F] shadow-sm" : "text-[#657178]")}>{label}</button>
+        ))}
+      </div>
+        <Link href={`${mode === "admin" ? `/m/${slug}/admin/programs` : `/m/${slug}/teacher/classes`}/${programId}/exports`} className="inline-flex h-10 shrink-0 items-center rounded-full border border-[#C7D6D1] bg-white px-4 text-sm font-semibold text-[#17624F] hover:bg-[#F5F9F7]">Export</Link>
+      </div>
+
+      {view === "overview" ? <ProgramFinanceOverview analytics={analytics} fallbackProjectedMonthlyCents={estimatedMonthlyCents} /> : view === "transactions" ? <ProgramFinanceTransactions transactions={analytics?.transactions ?? []} onOpenStudent={(studentProfileId) => { const row = rows.find((item) => item.enrollment.student_profile_id === studentProfileId); if (row) setDetailsTarget(row); }} /> : null}
+
+      {view === "billing" ? <>
 
       <div className="flex items-center gap-2">
         <label className="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-[14px] border border-[#D6DCE0] bg-[#F8FAFB] px-3 text-[#6B747B] md:max-w-xl">
@@ -11475,7 +11514,7 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
           <CompactFinanceSelect label="Enrollment" value={statusFilter} options={["active", "kicked", "withdrawn"]} onChange={setStatusFilter} />
           <CompactFinanceSelect label="Payment status" value={payStatusFilter} options={["paid", "awaiting payment", "no payment required", "waived", "paid externally", "past due", "payment failed", "checkout sent", "needs billing decision"]} onChange={setPayStatusFilter} />
           <CompactFinanceSelect label="Subscription" value={subStatusFilter} options={["n/a", "setup pending", "active", "paused", "ending", "past due", "payment failed", "ended"]} labels={{ "n/a": "N/A" }} onChange={setSubStatusFilter} />
-          <CompactFinanceSelect label="Payment type" value={paymentFilter} options={["waived", "paid externally", "monthly", program.is_ongoing ? "annual subscription" : "pay in full"]} labels={{ "pay in full": "Pay in Full", "annual subscription": "Annual Subscription" }} onChange={setPaymentFilter} />
+          <CompactFinanceSelect label="Payment type" value={paymentFilter} options={["waived", "paid externally", "monthly", program?.is_ongoing ? "annual subscription" : "pay in full"]} labels={{ "pay in full": "Pay in Full", "annual subscription": "Annual Subscription" }} onChange={setPaymentFilter} />
           <CompactFinanceSelect label="Type" value={typeFilter} options={["adult", "child"]} labels={{ adult: "Adult student", child: "Child student" }} onChange={setTypeFilter} />
           <CompactFinanceSelect label="Gender" value={genderFilter} options={["male", "female"]} labels={{ male: "Brothers", female: "Sisters" }} onChange={setGenderFilter} />
         </div>
@@ -11485,12 +11524,25 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
         <span>Showing {filteredRows.length} of {rows.length} records</span>
       </div>
 
-      <div className="overflow-hidden rounded-[24px] border border-[#E1E8EC] bg-white shadow-[0_14px_38px_rgba(38,50,58,0.08)]">
+      <div className="grid gap-3 md:hidden">
+        {filteredRows.map((row) => (
+          <button key={row.enrollment.id} type="button" onClick={() => setDetailsTarget(row)} className="rounded-[18px] border border-[#DFE7E5] bg-white p-4 text-left shadow-[0_8px_22px_rgba(38,50,58,0.06)]">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0"><p className="truncate font-semibold text-[#26323A]">{row.student?.full_name || "Student"}</p><p className="mt-1 text-xs text-[#6B747B]">{financePaymentType(row, program)} · {financePrice(row, program)}</p></div>
+              <span className={cn("shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold", programStatusBadgeToneClass(financeBadgeTone(financeSubscriptionStatus(row))))}>{financeSubscriptionStatus(row)}</span>
+            </div>
+            <div className="mt-3 grid grid-cols-2 gap-3 border-t border-[#EEF2F4] pt-3 text-xs"><div><p className="text-[#7B858C]">Payment</p><p className="mt-1 font-semibold text-[#52616A]">{financePaymentStatus(row, program)}</p></div><div><p className="text-[#7B858C]">Next billing</p><p className="mt-1 font-semibold text-[#52616A]">{financeNextBillingLabel(row)}</p></div></div>
+          </button>
+        ))}
+        {!filteredRows.length ? <p className="rounded-[18px] border border-[#DFE7E5] px-4 py-10 text-center text-sm font-semibold text-[#7B858C]">No matching billing records.</p> : null}
+      </div>
+
+      <div className="hidden overflow-hidden rounded-[24px] border border-[#E1E8EC] bg-white shadow-[0_14px_38px_rgba(38,50,58,0.08)] md:block">
         <div className="overflow-x-auto">
-          <table className="min-w-[1340px] w-full text-left text-sm">
+          <table className="min-w-[1040px] w-full text-left text-sm">
             <thead className="bg-[#F7FAFB] text-[11px] font-semibold uppercase tracking-wide text-[#7B858C]">
               <tr>
-                {["Student", "Parent", "Payment Type", "Price", "Enrollment Status", "Payment Status", "Subscription Status", "Current Period", "Next Billing / Ends On", "Date Joined", "Approved By", "Actions"].map((column) => (
+                {["Student", "Payment plan", "Price", "Enrollment", "Payment", "Subscription", "Current period", "Next billing"].map((column) => (
                   <th key={column} className="px-4 py-3">{column}</th>
                 ))}
               </tr>
@@ -11501,10 +11553,6 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
                   <td className="px-4 py-4">
                     <p className="font-semibold text-[#26323A]">{row.student?.full_name || "Student"}</p>
                     <p className="mt-0.5 text-xs text-[#7B858C]">{financeStudentSubtitle(row)}</p>
-                  </td>
-                  <td className="px-4 py-4">
-                    <p className="font-semibold text-[#26323A]">{row.parent?.full_name || "---"}</p>
-                    <p className="mt-0.5 text-xs text-[#7B858C]">{row.parent?.email || "---"}</p>
                   </td>
                   <td className="px-4 py-4 font-semibold text-[#52616A]">{financePaymentType(row, program)}</td>
                   <td className="px-4 py-4 font-semibold text-[#26323A]">{financePrice(row, program)}</td>
@@ -11525,29 +11573,11 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
                   </td>
                   <td className="px-4 py-4 text-[#52616A]">{financeCurrentPeriodLabel(row)}</td>
                   <td className="px-4 py-4 text-[#52616A]">{financeNextBillingLabel(row)}</td>
-                  <td className="px-4 py-4 text-[#52616A]">{formatFinanceDate(row.enrollment.created_at)}</td>
-                  <td className="px-4 py-4 text-[#52616A]">{row.approver?.full_name ?? row.approver?.email ?? "---"}</td>
-                  <td className="px-4 py-4" onClick={(event) => event.stopPropagation()}>
-                    <FinanceRowActionMenu
-                      row={row}
-                      onSelect={(action) => {
-                        if (action === "view_details") {
-                          setDetailsTarget(row);
-                          return;
-                        }
-                        if (action === "add_note") {
-                          setNoteTarget(row);
-                          return;
-                        }
-                        setActionTarget({ row, action });
-                      }}
-                    />
-                  </td>
                 </tr>
               ))}
               {!filteredRows.length ? (
                 <tr>
-                  <td colSpan={12} className="px-4 py-10 text-center text-sm font-semibold text-[#7B858C]">No matching finance rows.</td>
+                  <td colSpan={8} className="px-4 py-10 text-center text-sm font-semibold text-[#7B858C]">No matching billing records.</td>
                 </tr>
               ) : null}
             </tbody>
@@ -11558,6 +11588,7 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
       <Link href={`${mode === "admin" ? `/m/${slug}/admin/programs` : `/m/${slug}/teacher/classes`}/${programId}/finances/audit`} className="inline-flex min-h-11 items-center rounded-full bg-[#EEF6F7] px-4 text-sm font-semibold text-[#17624F]">
         View audit trail{auditEvents.length ? ` (${auditEvents.length})` : ""}
       </Link>
+      </> : null}
 
       {detailsTarget ? (
         <FinanceDetailsDrawer
@@ -11718,6 +11749,100 @@ function FinanceRowActionMenu({ row, onSelect }: { row: FinanceEnrollmentRow; on
         : null}
     </div>
   );
+}
+
+function ProgramFinanceOverview({ analytics, fallbackProjectedMonthlyCents }: {
+  analytics: ProgramFinanceAnalytics | null;
+  fallbackProjectedMonthlyCents: number;
+}) {
+  const [reportingNow] = useState(() => new Date());
+  const launchYear = Number((analytics?.launchedAt ?? "").slice(0, 4)) || reportingNow.getFullYear();
+  const currentYear = Number(new Intl.DateTimeFormat("en-CA", { timeZone: "America/Edmonton", year: "numeric" }).format(reportingNow));
+  const reportingEndYear = Number((analytics?.reportingEndsAt ?? "").slice(0, 4)) || currentYear;
+  const availableYears = Array.from({ length: Math.max(1, reportingEndYear - launchYear + 1) }, (_, index) => launchYear + index);
+  const [selectedYear, setSelectedYear] = useState(reportingEndYear);
+  const [selectedHalf, setSelectedHalf] = useState<"first" | "second">("second");
+  const [chartView, setChartView] = useState<"graph" | "table">("graph");
+  useEffect(() => {
+    if (!availableYears.includes(selectedYear)) setSelectedYear(reportingEndYear);
+  }, [availableYears, reportingEndYear, selectedYear]);
+  const months = analytics?.monthlyRevenue ?? [];
+  const yearMonths = Array.from({ length: 12 }, (_, index) => {
+    const key = `${selectedYear}-${String(index + 1).padStart(2, "0")}`;
+    return months.find((month) => month.month === key) ?? { month: key, amountCents: 0 };
+  });
+  const visibleMonths = selectedHalf === "first" ? yearMonths.slice(0, 6) : yearMonths.slice(6, 12);
+  const visibleMaxRevenue = Math.max(1, ...visibleMonths.map((month) => month.amountCents));
+  const paidStudents = analytics?.activePaidSubscriptions ?? 0;
+  const projected = analytics?.projectedMonthlyCents ?? fallbackProjectedMonthlyCents;
+  const average = paidStudents ? Math.round(projected / paidStudents) : 0;
+  const edmontonDateParts = new Intl.DateTimeFormat("en-CA", { timeZone: "America/Edmonton", year: "numeric", month: "2-digit" }).formatToParts(reportingNow);
+  const currentMonthKey = `${edmontonDateParts.find((part) => part.type === "year")?.value}-${edmontonDateParts.find((part) => part.type === "month")?.value}`;
+  const collectedThisMonthCents = months.find((month) => month.month === currentMonthKey)?.amountCents ?? analytics?.collectedThisMonthCents ?? 0;
+  const historyAvailable = Boolean(
+    analytics && (
+      analytics.paymentRecordCount > 0
+      || analytics.totalCollectedCents > 0
+      || analytics.monthlyRevenue.some((month) => month.amountCents > 0)
+    )
+  );
+
+  return (
+    <div className="space-y-5">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+        <FinanceMetric label="Total collected" value={historyAvailable ? formatCurrencyAmount(analytics!.totalCollectedCents) : "Not available"} note={historyAvailable ? "Recorded payments" : "Payment history needs synchronization"} />
+        <FinanceMetric label="This month" value={historyAvailable ? formatCurrencyAmount(collectedThisMonthCents) : "Not available"} note={historyAvailable ? "Collected revenue" : "Payment history needs synchronization"} />
+        <FinanceMetric label="Expected monthly" value={formatCurrencyAmount(projected)} note="Active recurring plans" />
+        <FinanceMetric label="Average per student" value={formatCurrencyAmount(average)} note="Per paid subscription" />
+      </div>
+
+      <section className="rounded-[22px] border border-[#DFE7E5] bg-white p-4 md:p-5">
+          <div className="flex flex-wrap items-end justify-between gap-3">
+            <div><h3 className="font-semibold text-[#26323A]">Revenue collected</h3><p className="mt-1 text-xs text-[#718078]">Successful recorded payments during {selectedYear}</p>{analytics?.launchedAt ? <p className="mt-2 text-xs font-semibold text-[#52616A]">Program launched {new Date(`${analytics.launchedAt.slice(0, 10)}T12:00:00`).toLocaleDateString("en-CA", { month: "long", day: "numeric", year: "numeric" })}</p> : null}</div>
+            <div className="flex flex-wrap items-center gap-2"><select aria-label="Revenue year" value={selectedYear} onChange={(event) => setSelectedYear(Number(event.target.value))} className="h-9 rounded-full border border-[#D8E1DF] bg-white px-3 text-sm font-semibold text-[#26323A]">{availableYears.map((year) => <option key={year} value={year}>{year}</option>)}</select><select aria-label="Six month range" value={selectedHalf} onChange={(event) => setSelectedHalf(event.target.value as "first" | "second")} className="h-9 rounded-full border border-[#D8E1DF] bg-white px-3 text-sm font-semibold text-[#26323A]"><option value="first">Jan–Jun</option><option value="second">Jul–Dec</option></select><div className="flex rounded-full bg-[#EEF3F2] p-0.5">{([['graph', 'Graph'], ['table', 'Table']] as const).map(([value, label]) => <button key={value} type="button" onClick={() => setChartView(value)} className={cn("h-8 rounded-full px-3 text-xs font-semibold", chartView === value ? "bg-white text-[#17624F] shadow-sm" : "text-[#657178]")}>{label}</button>)}</div></div>
+          </div>
+          {historyAvailable && chartView === "graph" ? (
+            <div className="mt-7 pb-1" aria-label="Monthly collected revenue line chart">
+              <svg viewBox="0 0 420 250" className="h-[230px] w-full" role="img">
+                <polyline fill="none" stroke="#2A8069" strokeWidth="2.5" strokeLinejoin="round" strokeLinecap="round" points={visibleMonths.map((month, index) => { const x = 35 + index * 70; const y = 190 - (month.amountCents / visibleMaxRevenue) * 140; return `${x},${y}`; }).join(" ")} />
+                {visibleMonths.map((month, index) => {
+                  const x = 35 + index * 70;
+                  const y = 190 - (month.amountCents / visibleMaxRevenue) * 140;
+                  return <g key={month.month}><circle cx={x} cy={y} r="4.5" fill="#17624F" /><text x={x} y={Math.max(22, y - 11)} textAnchor="middle" className="fill-[#26323A] text-[13px] font-semibold">{formatCurrencyAmount(month.amountCents)}</text><text x={x} y="232" textAnchor="middle" className="fill-[#7B858C] text-[12px] font-semibold uppercase">{new Date(`${month.month}-01T12:00:00`).toLocaleDateString(undefined, { month: "short" })}</text></g>;
+                })}
+              </svg>
+            </div>
+          ) : historyAvailable ? <div className="mt-5 overflow-hidden rounded-[16px] border border-[#E3E9E7]"><table className="w-full text-left text-sm"><thead className="bg-[#F5F8F7] text-xs uppercase text-[#657178]"><tr><th className="px-4 py-3">Month</th><th className="px-4 py-3 text-right">Collected</th></tr></thead><tbody className="divide-y divide-[#EDF1F0]">{visibleMonths.map((month) => <tr key={month.month}><td className="px-4 py-3 font-medium">{new Date(`${month.month}-01T12:00:00`).toLocaleDateString(undefined, { month: "long" })}</td><td className="px-4 py-3 text-right font-semibold">{formatCurrencyAmount(month.amountCents)}</td></tr>)}</tbody></table></div> : (
+            <div className="mt-6 rounded-[16px] bg-[#FFF6E8] px-4 py-4 text-sm text-[#79521B]"><p className="font-semibold">Payment history needs synchronization</p><p className="mt-1">Existing Stripe payments have not been fully copied into the reporting ledger yet.</p></div>
+          )}
+      </section>
+    </div>
+  );
+}
+
+function FinanceMetric({ label, value, note }: { label: string; value: string; note: string }) {
+  return <div className="rounded-[20px] border border-[#DFE7E5] bg-[#F7FAF9] p-4"><p className="text-xs font-semibold text-[#657178]">{label}</p><p className="mt-2 text-xl font-semibold text-[#26323A] md:text-2xl">{value}</p><p className="mt-1 text-[11px] text-[#7B858C]">{note}</p></div>;
+}
+
+function ProgramFinanceReports({ slug, programId, mode }: { slug: string; programId: string; mode: "teacher" | "admin" }) {
+  const base = mode === "admin" ? `/m/${slug}/admin/programs` : `/m/${slug}/teacher/classes`;
+  const [selectedReport, setSelectedReport] = useState("finance_summary");
+  const reports = [
+    { type: "finance_summary", title: "Finance summary", text: "Current payment plans, subscriptions, payment counts, and billing dates." },
+    { type: "payment_history", title: "Payment ledger", text: "Every recorded payment with dates, amounts, receipts, and student details." },
+    { type: "finance_exceptions", title: "Billing exceptions", text: "Only records that need staff attention, with the reason clearly identified." },
+  ];
+  return <div className="space-y-4"><div className="grid gap-3 md:grid-cols-3">{reports.map((report) => { const selected = selectedReport === report.type; return <button key={report.type} type="button" onClick={() => setSelectedReport(report.type)} aria-pressed={selected} className={cn("rounded-[20px] border bg-white p-4 text-left text-[#26323A] transition", selected ? "border-[#17624F] ring-2 ring-[#17624F]/15" : "border-[#DFE7E5] hover:border-[#9CCBBC]")}><span className="flex items-center justify-between gap-3"><span className="font-semibold">{report.title}</span><span className={cn("h-4 w-4 shrink-0 rounded-full border", selected ? "border-[5px] border-[#17624F]" : "border-[#AEB9B5]")} /></span><span className="mt-2 block text-sm font-normal leading-5 text-[#657178]">{report.text}</span></button>; })}</div><Link href={`${base}/${programId}/exports?type=${selectedReport}`} className="inline-flex min-h-11 items-center justify-center rounded-full bg-[#17624F] px-5 text-sm font-semibold !text-white no-underline hover:bg-[#124F40]">Prepare selected report</Link></div>;
+}
+
+function ProgramFinanceTransactions({ transactions, onOpenStudent }: { transactions: NonNullable<ProgramFinanceAnalytics["transactions"]>; onOpenStudent: (studentProfileId: string) => void }) {
+  const [query, setQuery] = useState("");
+  const filtered = transactions.filter((transaction) => !query.trim() || `${transaction.studentName ?? ""} ${transaction.amountCents} ${transaction.paidAt}`.toLowerCase().includes(query.trim().toLowerCase()));
+  return <div className="space-y-4"><label className="flex min-h-11 items-center gap-2 rounded-[14px] border border-[#D6DCE0] bg-[#F8FAFB] px-3 text-[#6B747B] md:max-w-xl"><SearchIcon /><input aria-label="Search transactions" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search student or payment" className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-[#26323A] outline-none" />{query ? <button type="button" aria-label="Clear search" onClick={() => setQuery("")} className="h-8 w-8 rounded-full text-lg hover:bg-black/5">×</button> : null}</label><div className="overflow-x-auto rounded-[20px] border border-[#DFE7E5]"><table className="min-w-[620px] w-full text-left text-sm"><thead className="bg-[#F5F8F7] text-xs uppercase text-[#657178]"><tr><th className="px-4 py-3">Student</th><th className="px-4 py-3">Date</th><th className="px-4 py-3 text-right">Amount</th><th className="px-4 py-3">Receipt</th></tr></thead><tbody className="divide-y divide-[#EDF1F0]">{filtered.map((transaction) => <tr key={transaction.id} role="button" tabIndex={0} onClick={() => onOpenStudent(transaction.studentProfileId)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpenStudent(transaction.studentProfileId); } }} className="cursor-pointer transition hover:bg-[#F5F9F8] focus-visible:bg-[#F5F9F8] focus-visible:outline-none"><td className="px-4 py-3 font-semibold">{transaction.studentName || "Student"}</td><td className="px-4 py-3 text-[#657178]">{new Date(transaction.paidAt).toLocaleDateString("en-CA", { month: "short", day: "numeric", year: "numeric" })}</td><td className="px-4 py-3 text-right font-semibold">{formatCurrencyAmount(transaction.amountCents)}</td><td className="px-4 py-3">{transaction.receiptUrl ? <a href={transaction.receiptUrl} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()} className="font-semibold text-[#17624F]">Open receipt</a> : <span className="text-[#9AA3A8]">—</span>}</td></tr>)}{!filtered.length ? <tr><td colSpan={4} className="px-4 py-10 text-center text-[#657178]">No matching transactions.</td></tr> : null}</tbody></table></div></div>;
+}
+
+function FinanceOverviewRow({ label, value, danger = false }: { label: string; value: number; danger?: boolean }) {
+  return <div className="flex items-center justify-between py-2.5"><span className="text-[#657178]">{label}</span><span className={cn("font-semibold", danger ? "text-[#B53A2E]" : "text-[#26323A]")}>{value}</span></div>;
 }
 
 function FinanceSummaryFigure({ value, label }: { value: string; label: string }) {
@@ -11968,9 +12093,9 @@ function FinanceActionModal({
   );
 }
 
-function FinanceRecordFact({ label, children, valueClassName }: { label: string; children: ReactNode; valueClassName?: string }) {
+function FinanceRecordFact({ label, children, valueClassName, className }: { label: string; children: ReactNode; valueClassName?: string; className?: string }) {
   return (
-    <div className="min-w-0 text-left">
+    <div className={cn("min-w-0 text-left", className)}>
       <dt className="whitespace-nowrap text-[10px] font-semibold uppercase tracking-[0.12em] text-[#7B858C]">{label}</dt>
       <dd className={cn("mt-1 min-w-0 text-left text-sm font-semibold leading-5 text-[#26323A]", valueClassName)}>{children}</dd>
     </div>
@@ -12089,7 +12214,7 @@ function FinanceDetailsDrawer({
 
         <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-5">
           {activeTab === "overview" ? <>
-            <dl className="grid grid-cols-2 gap-x-5 gap-y-4 rounded-[16px] border border-[#E1E8EC] bg-[#FAFCFC] p-4">
+            <dl className="grid grid-cols-2 gap-x-5 gap-y-2 rounded-[16px] border border-[#E1E8EC] bg-[#FAFCFC] p-3">
               <FinanceRecordFact label="Age">{displayAge(row.student)}</FinanceRecordFact>
               <FinanceRecordFact label="Gender">{formatStudentDetailGender(row.student?.gender ?? null)}</FinanceRecordFact>
               {row.parent ? <div className="col-span-2 space-y-1 text-sm text-[#52616A]">
@@ -12103,7 +12228,7 @@ function FinanceDetailsDrawer({
             {row.parent ? <dl className="grid grid-cols-2 gap-x-5 gap-y-4 rounded-[16px] border border-[#E1E8EC] bg-[#FAFCFC] p-4">
               <FinanceRecordFact label="Parent">{row.parent.full_name || "—"}</FinanceRecordFact>
               <FinanceRecordFact label="Parent phone">{row.parent.phone_number || "—"}</FinanceRecordFact>
-              <FinanceRecordFact label="Parent email" valueClassName="col-span-2 break-all">{row.parent.email || "—"}</FinanceRecordFact>
+              <FinanceRecordFact label="Parent email" className="col-span-2" valueClassName="break-words">{row.parent.email || "—"}</FinanceRecordFact>
             </dl> : null}
             <dl className="grid grid-cols-2 gap-x-5 gap-y-4 rounded-[16px] border border-[#E1E8EC] bg-[#FAFCFC] p-4">
               <FinanceRecordFact label="Class">{program.title}</FinanceRecordFact>
@@ -17155,6 +17280,7 @@ function HomeUpcomingRows({
   canCancelSessions = false,
   currentUserId = null,
   slug,
+  managementBasePath,
 }: {
   programs: ProgramScheduleSource[];
   ownerLabelsByProgramId?: Record<string, string[]>;
@@ -17162,6 +17288,7 @@ function HomeUpcomingRows({
   canCancelSessions?: boolean;
   currentUserId?: string | null;
   slug?: string;
+  managementBasePath?: string;
 }) {
   const [cancellations, setCancellations] = useState<ProgramSessionCancellation[]>([]);
   const [cancellationsLoadedKey, setCancellationsLoadedKey] = useState<string | null>(null);
@@ -17345,9 +17472,9 @@ function HomeUpcomingRows({
                       lesson={lesson}
                       canCancel={canCancelSessions}
                       onCancel={() => openCancelModal(lesson)}
-                      viewStudentsHref={canCancelSessions && slug ? homeLessonViewStudentsHref(slug, lesson) : undefined}
-                      markAttendanceHref={canCancelSessions && slug ? attendanceMarkHref(slug, lesson) : undefined}
-                      markAttendanceDisabled={false}
+                      viewStudentsHref={canCancelSessions && slug ? homeLessonViewStudentsHref(slug, lesson, managementBasePath) : undefined}
+                      markAttendanceHref={canCancelSessions && slug ? attendanceMarkHref(slug, lesson, managementBasePath) : undefined}
+                      markAttendanceDisabled={dayKey(lesson.date) !== dayKey(new Date())}
                     />
                   ))}
                 </div>
@@ -17372,9 +17499,9 @@ function HomeUpcomingRows({
                       lesson={lesson}
                       canCancel={canCancelSessions}
                       onCancel={() => openCancelModal(lesson)}
-                      viewStudentsHref={canCancelSessions && slug ? homeLessonViewStudentsHref(slug, lesson) : undefined}
-                      markAttendanceHref={canCancelSessions && slug ? attendanceMarkHref(slug, lesson) : undefined}
-                      markAttendanceDisabled={false}
+                      viewStudentsHref={canCancelSessions && slug ? homeLessonViewStudentsHref(slug, lesson, managementBasePath) : undefined}
+                      markAttendanceHref={canCancelSessions && slug ? attendanceMarkHref(slug, lesson, managementBasePath) : undefined}
+                      markAttendanceDisabled={dayKey(lesson.date) !== dayKey(new Date())}
                     />
                   ))}
                 </div>
@@ -17447,14 +17574,14 @@ function WeekCalendar({ days, lessonsByDay }: { days: Date[]; lessonsByDay: Map<
   );
 }
 
-function homeLessonViewStudentsHref(slug: string, lesson: HomeLesson) {
+function homeLessonViewStudentsHref(slug: string, lesson: HomeLesson, basePath?: string) {
   const params = new URLSearchParams({
     from: "home",
     day: weekdayName(lesson.date),
     start: normalizeScheduleTime(lesson.start) || lesson.start,
     end: normalizeScheduleTime(lesson.end) || lesson.end || lesson.start,
   });
-  return `/m/${slug}/teacher/classes/${lesson.program.id}/students?${params.toString()}`;
+  return `${basePath ?? `/m/${slug}/teacher/classes`}/${lesson.program.id}/students?${params.toString()}`;
 }
 
 function HomeUpcomingLesson({
@@ -17558,7 +17685,7 @@ function UpcomingLessonActionMenu({
           {markAttendanceHref ? (
             markAttendanceDisabled ? (
               <span className="flex w-full cursor-not-allowed items-center gap-2 rounded-[12px] px-3 py-2.5 text-left font-semibold text-[#A7B0B6]">
-                Mark Attendance
+                Available on session day
               </span>
             ) : (
               <Link
@@ -18885,11 +19012,11 @@ function InstructorPermissionEditor({ assignment, onSave }: { assignment: Progra
 
   return (
     <div className="mt-4 border-t border-[#E3E8EC] pt-3">
-      <div className="mb-2 flex items-center justify-between gap-3">
+      <div className="mb-2 flex items-center justify-between gap-2">
         <p className="text-xs font-semibold uppercase tracking-wide text-[#52616A]">Class permissions</p>
-        <div className="flex items-center gap-1 rounded-full bg-[#F1F5F4] p-1">
-          <button type="button" disabled={busy || allEnabled} onClick={() => setDraft(Object.fromEntries(fields.map(({ key }) => [key, true])) as InstructorPermissions)} className="rounded-full px-3 py-1.5 text-xs font-semibold text-[#17624F] transition hover:bg-white disabled:opacity-40">Add all</button>
-          <button type="button" disabled={busy || noneEnabled} onClick={() => setDraft(Object.fromEntries(fields.map(({ key }) => [key, false])) as InstructorPermissions)} className="rounded-full px-3 py-1.5 text-xs font-semibold text-[#52616A] transition hover:bg-white disabled:opacity-40">Remove all</button>
+        <div className="flex h-8 shrink-0 items-center gap-0.5 rounded-full border border-[#DDE6E3] bg-[#F4F7F6] p-0.5">
+          <button type="button" disabled={busy || allEnabled} onClick={() => setDraft(Object.fromEntries(fields.map(({ key }) => [key, true])) as InstructorPermissions)} className="h-7 whitespace-nowrap rounded-full px-2.5 text-[11px] font-semibold leading-none text-[#17624F] transition hover:bg-white disabled:opacity-40">Add all</button>
+          <button type="button" disabled={busy || noneEnabled} onClick={() => setDraft(Object.fromEntries(fields.map(({ key }) => [key, false])) as InstructorPermissions)} className="h-7 whitespace-nowrap rounded-full px-2.5 text-[11px] font-semibold leading-none text-[#52616A] transition hover:bg-white disabled:opacity-40">Remove all</button>
         </div>
       </div>
       <div className="divide-y divide-[#E3E8EC]">

@@ -11,14 +11,14 @@ export type AttendanceLinkLesson = {
   end: string;
 };
 
-export function attendanceMarkHref(slug: string, lesson: AttendanceLinkLesson) {
+export function attendanceMarkHref(slug: string, lesson: AttendanceLinkLesson, basePath?: string) {
   const params = new URLSearchParams({
     date: dayKey(lesson.date),
     day: weekdayName(lesson.date),
     start: normalizeScheduleTime(lesson.start) || lesson.start,
     end: normalizeScheduleTime(lesson.end) || lesson.end || lesson.start,
   });
-  return `/m/${slug}/teacher/classes/${lesson.program.id}/attendance/mark?${params.toString()}`;
+  return `${basePath ?? `/m/${slug}/teacher/classes`}/${lesson.program.id}/attendance/mark?${params.toString()}`;
 }
 
 export function attendanceHistoryHref(slug: string, programId: string, basePath?: string, from = "classes") {

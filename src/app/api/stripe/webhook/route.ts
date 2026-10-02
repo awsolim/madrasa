@@ -293,7 +293,9 @@ async function updateSubscription(subscription: Stripe.Subscription, stripeAccou
   const { error: subscriptionUpdateError } = await supabase
     .from("program_subscriptions")
     .update({
-      status: subscription.status,
+      // A temporary Stripe trial is used only as the no-charge bridge to the newly
+      // aligned billing date. Enrollment remains active in Madrasa throughout it.
+      status: subscription.status === "trialing" ? "active" : subscription.status,
       stripe_customer_id: typeof subscription.customer === "string" ? subscription.customer : subscription.customer.id,
       stripe_price_id: subscription.items.data[0]?.price.id ?? null,
       stripe_subscription_schedule_id: scheduleId,

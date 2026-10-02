@@ -9,7 +9,9 @@
     "lint": "eslint",
     "cleanup:fake-users": "node --env-file=.env.local scripts/cleanup-fake-users.mjs",
     "reconcile:stripe-billing": "node --env-file=.env.local scripts/reconcile-stripe-billing.mjs",
-    "repair:ongoing-billing": "node --env-file=.env.local scripts/repair-ongoing-billing.mjs"
+    "repair:ongoing-billing": "node --env-file=.env.local scripts/repair-ongoing-billing.mjs",
+    "audit:billing-alignment": "node --env-file=.env.local scripts/audit-billing-alignment.mjs --mosque=assiddiq",
+    "apply:billing-alignment": "node --env-file=.env.local scripts/audit-billing-alignment.mjs --mosque=assiddiq --apply --confirm-assiddiq-first-of-month"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.106.2",

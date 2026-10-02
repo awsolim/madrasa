@@ -27,7 +27,7 @@ export async function loadProgramEditor(slug: string, programId: string) {
     // PostgREST embeds related records under their existing RLS policies. All editor
     // fields, including inactive tracks, arrive together instead of ten requests
     // followed by several dependent profile/membership requests.
-    const [recordResult, permissionResult, access] = await Promise.all([
+    const [recordResult, permissionResult, billingPolicyLockedResult, access] = await Promise.all([
       supabase.from("programs").select(`
         *, mosque:mosques!inner(slug), details:program_details(*),
         outcomes:program_outcomes(*), contentSections:program_content_sections(*),
@@ -36,10 +36,12 @@ export async function loadProgramEditor(slug: string, programId: string) {
         sessions:program_sessions(*), transferRules:program_track_transfer_rules(*)
       `).eq("id", programId).eq("mosque.slug", slug).maybeSingle(),
       supabase.rpc("can_edit_program_details", { check_program_id: programId }),
+      supabase.rpc("is_program_billing_policy_locked", { check_program_id: programId }),
       loadCachedUserAccess(slug, session.user.id),
     ]);
     if (recordResult.error) throw recordResult.error;
     if (permissionResult.error) throw permissionResult.error;
+    if (billingPolicyLockedResult.error) throw billingPolicyLockedResult.error;
     const record = recordResult.data as unknown as EditorRecord | null;
     if (!record) throw new Error("Class not found.");
     if (!permissionResult.data) throw new Error("You do not have permission to edit this class.");
@@ -58,6 +60,7 @@ export async function loadProgramEditor(slug: string, programId: string) {
       sessions: [...(record.sessions ?? [])].sort((a, b) => `${a.session_date ?? "9999"}:${a.start_time}`.localeCompare(`${b.session_date ?? "9999"}:${b.start_time}`)),
       transferRules: record.transferRules ?? [], director: director as Director | null,
       isAdminEditor: access.isMosqueAdmin,
+      billingPolicyLocked: Boolean(billingPolicyLockedResult.data),
     };
   });
 }

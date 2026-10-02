@@ -271,7 +271,17 @@ export function useCachedQuery<T>(
     }
     try {
       await runFetch(key, () => fetcherRef.current(), options?.persist !== false);
-    } catch (err) {
+    } catch (initialError) {
+      let err = initialError;
+      if (!cache.has(key) && initialError instanceof TypeError) {
+        try {
+          await new Promise((resolve) => window.setTimeout(resolve, 250));
+          await runFetch(key, () => fetcherRef.current(), options?.persist !== false);
+          return;
+        } catch (retryError) {
+          err = retryError;
+        }
+      }
       // A failed background refresh must not replace an already useful page
       // with its initial error state. Cold loads still report the failure.
       if (!cache.has(key)) setError(err instanceof Error ? err.message : "Something went wrong.");

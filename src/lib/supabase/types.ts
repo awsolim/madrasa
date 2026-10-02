@@ -875,6 +875,10 @@ export type Database = {
         Args: { check_program_id: string; check_profile_id?: string };
         Returns: boolean;
       };
+      is_program_billing_policy_locked: {
+        Args: { check_program_id: string };
+        Returns: boolean;
+      };
       can_announce_program: {
         Args: { check_program_id: string; check_profile_id?: string };
         Returns: boolean;
@@ -929,6 +933,10 @@ export type Database = {
       };
       get_program_finances_snapshot: {
         Args: { p_slug: string; p_program_id: string };
+        Returns: Json;
+      };
+      get_program_finance_analytics: {
+        Args: { p_program_id: string };
         Returns: Json;
       };
       get_teacher_announcements_snapshot: {
