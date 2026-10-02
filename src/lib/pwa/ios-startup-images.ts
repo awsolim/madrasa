@@ -12,6 +12,7 @@ const portraitDevices = [
   [402, 874, 3],
   [414, 896, 2],
   [414, 896, 3],
+  [420, 912, 3],
   [428, 926, 3],
   [430, 932, 3],
   [440, 956, 3],
@@ -23,7 +24,9 @@ const portraitDevices = [
   [1024, 1366, 2],
 ] as const;
 
-export const iosStartupImages: StartupImage[] = portraitDevices.map(([width, height, pixelRatio]) => ({
-  url: `/api/pwa/startup?width=${width * pixelRatio}&height=${height * pixelRatio}`,
-  media: `(device-width: ${width}px) and (device-height: ${height}px) and (-webkit-device-pixel-ratio: ${pixelRatio}) and (orientation: portrait)`,
-}));
+export function iosStartupImages(version: string): StartupImage[] {
+  return portraitDevices.map(([width, height, pixelRatio]) => ({
+    url: `/api/pwa/startup?width=${width * pixelRatio}&height=${height * pixelRatio}&v=${version}`,
+    media: `(device-width: ${width}px) and (device-height: ${height}px) and (-webkit-device-pixel-ratio: ${pixelRatio}) and (orientation: portrait)`,
+  }));
+}

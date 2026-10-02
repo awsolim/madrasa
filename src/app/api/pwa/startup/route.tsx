@@ -14,6 +14,7 @@ const allowedSizes = new Set([
   "1179x2556",
   "1206x2622",
   "1242x2688",
+  "1260x2736",
   "1284x2778",
   "1290x2796",
   "1320x2868",
@@ -39,7 +40,7 @@ export async function GET(request: NextRequest) {
   const iconSize = Math.round(Math.min(width, height) * 0.29);
   const radius = Math.round(iconSize * 0.23);
 
-  return new ImageResponse(
+  const generatedImage = new ImageResponse(
     (
       <div
         style={{
@@ -71,9 +72,16 @@ export async function GET(request: NextRequest) {
     {
       width,
       height,
-      headers: {
-        "cache-control": "public, max-age=3600, stale-while-revalidate=86400",
-      },
     },
   );
+
+  const image = await generatedImage.arrayBuffer();
+
+  return new Response(image, {
+    headers: {
+      "cache-control": "public, max-age=31536000, immutable",
+      "content-length": String(image.byteLength),
+      "content-type": "image/png",
+    },
+  });
 }

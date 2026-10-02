@@ -57,11 +57,12 @@ export default async function RootLayout({
   const host = headerStore.get("x-forwarded-host") || headerStore.get("host") || "";
   const branding = await loadTenantBrandingFromHost(host);
   const iconVersion = iconCacheVersion(branding.iconUrl);
+  const startupVersion = iconCacheVersion(`${branding.iconUrl}:${branding.shortName}`);
 
   return (
     <html lang="en">
       <head>
-        {iosStartupImages.map((image) => (
+        {iosStartupImages(startupVersion).map((image) => (
           <link key={image.media} rel="apple-touch-startup-image" href={image.url} media={image.media} />
         ))}
       </head>
