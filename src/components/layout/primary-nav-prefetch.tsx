@@ -24,6 +24,8 @@ import { prefetchQuery } from "@/lib/query-cache";
 export function PrimaryNavPrefetch({ slug, section }: { slug: string; section: "public" | "portal" | "teacher" | "admin" }) {
   useEffect(() => {
     let cancelled = false;
+    let idleHandle: number | null = null;
+    let timeoutHandle: ReturnType<typeof setTimeout> | null = null;
 
     async function warm() {
       const session = await loadCachedSession();
@@ -63,9 +65,21 @@ export function PrimaryNavPrefetch({ slug, section }: { slug: string; section: "
       }
     }
 
-    void warm().catch(() => undefined); // Speculative work must not interrupt the current page.
+    // Give the visible screen, auth guard and browser paint priority. On constrained
+    // connections the destination can still warm from hover/touch intent.
+    const connection = (navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string } }).connection;
+    const constrained = connection?.saveData || connection?.effectiveType === "slow-2g" || connection?.effectiveType === "2g";
+    if (!constrained) {
+      if ("requestIdleCallback" in window) {
+        idleHandle = window.requestIdleCallback(() => { void warm().catch(() => undefined); }, { timeout: 1500 });
+      } else {
+        timeoutHandle = globalThis.setTimeout(() => { void warm().catch(() => undefined); }, 250);
+      }
+    }
     return () => {
       cancelled = true;
+      if (idleHandle !== null && "cancelIdleCallback" in window) window.cancelIdleCallback(idleHandle);
+      if (timeoutHandle !== null) globalThis.clearTimeout(timeoutHandle);
     };
   }, [slug, section]);
 

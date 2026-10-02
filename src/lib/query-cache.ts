@@ -28,6 +28,18 @@ const privateSnapshotCache = new Map<string, CacheEntry<unknown>>();
 const privateSnapshotInflight = new Map<string, Promise<unknown>>();
 let privateCacheEpoch = 0;
 
+type QueryTimingDetail = {
+  key: string;
+  source: "network" | "memory";
+  durationMs: number;
+  ok: boolean;
+};
+
+function reportQueryTiming(detail: QueryTimingDetail) {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent<QueryTimingDetail>("madrasa:query-timing", { detail }));
+}
+
 export function operationalSnapshotKey(kind: "applications" | "finances" | "students", slug: string, programId: string, userId: string) {
   return `${kind}:${slug}:${programId}:${userId}`;
 }
@@ -205,6 +217,7 @@ async function runFetch<T>(key: string, fetcher: () => Promise<T>, persist = tru
   }
 
   const epoch = privateCacheEpoch;
+  const startedAt = typeof performance === "undefined" ? Date.now() : performance.now();
   const promise = fetcher()
     .then((data) => {
       if (epoch !== privateCacheEpoch) return data;
@@ -213,7 +226,12 @@ async function runFetch<T>(key: string, fetcher: () => Promise<T>, persist = tru
       if (persist) persistEntry(key, entry);
       else removePersistedEntry(key);
       notify(key);
+      reportQueryTiming({ key, source: "network", durationMs: Math.round((typeof performance === "undefined" ? Date.now() : performance.now()) - startedAt), ok: true });
       return data;
+    })
+    .catch((error) => {
+      reportQueryTiming({ key, source: "network", durationMs: Math.round((typeof performance === "undefined" ? Date.now() : performance.now()) - startedAt), ok: false });
+      throw error;
     })
     .finally(() => {
       if (inflight.get(key) === promise) inflight.delete(key);
@@ -267,6 +285,7 @@ export function useCachedQuery<T>(
     }
     const entry = cache.get(key) as CacheEntry<T> | undefined;
     if (entry && !force && Date.now() - entry.updatedAt < staleTimeMs) {
+      reportQueryTiming({ key, source: "memory", durationMs: 0, ok: true });
       return;
     }
     try {

@@ -1,6 +1,9 @@
 "use client";
 
-import { PortalAccountData, ProgramApplicationsData, ProgramFinancesData, TeacherAnnouncementData, TeacherClassesData, TeacherHomeData, TeacherInstructorsData, TeacherProgramCreateData, TeacherProgramSettingsData, TeacherScheduleData, TeacherStudentNotesData, TeacherStudentsData } from "@/components/data/supabase-public-sections";
+import { PortalAccountData, TeacherAnnouncementData, TeacherClassesData, TeacherHomeData, TeacherInstructorsData, TeacherScheduleData, TeacherStudentNotesData, TeacherStudentsData } from "@/components/data/supabase-public-sections";
+import { ProgramApplicationsData } from "@/components/data/application-management-data";
+import { TeacherProgramCreateData, TeacherProgramSettingsData } from "@/components/data/program-builder-data";
+import { ProgramFinancesData } from "@/components/data/program-finances-data";
 import { TeacherInboxData } from "@/components/data/teacher-inbox";
 import { PageTitleBar } from "@/components/layout/page-title-bar";
 import { cn } from "@/lib/utils";

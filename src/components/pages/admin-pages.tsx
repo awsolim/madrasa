@@ -1,6 +1,9 @@
 "use client";
 
-import { AdminClassesData, AdminHomeData, AdminMasjidData, AdminMasjidFinancesData, AdminMasjidInformationData, AdminMembersData, PortalAccountData, ProgramApplicationsData, ProgramFinancesData, TeacherAnnouncementData, TeacherInstructorsData, TeacherProgramCreateData, TeacherProgramSettingsData, TeacherStudentNotesData, TeacherStudentsData } from "@/components/data/supabase-public-sections";
+import { AdminClassesData, AdminHomeData, AdminMasjidData, AdminMasjidFinancesData, AdminMasjidInformationData, AdminMembersData, PortalAccountData, TeacherAnnouncementData, TeacherInstructorsData, TeacherStudentNotesData, TeacherStudentsData } from "@/components/data/supabase-public-sections";
+import { ProgramApplicationsData } from "@/components/data/application-management-data";
+import { TeacherProgramCreateData, TeacherProgramSettingsData } from "@/components/data/program-builder-data";
+import { ProgramFinancesData } from "@/components/data/program-finances-data";
 import { PageTitleBar } from "@/components/layout/page-title-bar";
 import { cn } from "@/lib/utils";
 

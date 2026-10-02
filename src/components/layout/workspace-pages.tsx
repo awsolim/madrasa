@@ -1,4 +1,5 @@
 "use client";
+import { useState } from "react";
 import { useSearchParams } from "next/navigation";
 
 import { AdminProgramStudentsPage, AdminDashboardPage, AdminProgramsPage, AdminMasjidPage, AdminSettingsPage, AdminProgramDetailPage, AdminProgramCreatePage, AdminProgramApplicationsPage, AdminProgramFinancesPage } from "@/components/pages/admin-pages";
@@ -12,7 +13,9 @@ export function WorkspacePages({ slug, section, children }: { slug: string; sect
   const pathname = useWorkspacePathname();
   const searchParams = useSearchParams();
   const route = workspaceRoute(pathname, slug, section);
-  const [screen, programId] = route?.split(":") ?? [];
+  const [primaryPages, setPrimaryPages] = useState<Map<string, React.ReactNode>>(() => new Map());
+  if (!route) return <div data-workspace-page={pathname}>{children}</div>;
+  const [screen, programId] = route.split(":");
   let page: React.ReactNode = children;
   if (section === "admin") {
     if (screen === "home") page = <AdminDashboardPage slug={slug} />;
@@ -44,5 +47,27 @@ export function WorkspacePages({ slug, section, children }: { slug: string; sect
     if (screen === "classes") page = <PublicProgramsPage slug={slug} />;
     if (screen === "account") page = <PublicAccountPage slug={slug} />;
   }
-  return <div key={pathname} data-workspace-page={pathname}>{page}</div>;
+
+  // Keep only the small primary destinations mounted after their first visit. This
+  // preserves their rendered lists, local filters and scrollable content so returning
+  // to a tab is a synchronous reveal. Operational screens remain single-use and unmount
+  // normally; retaining builders or large student/finance files would waste memory.
+  const primaryScreens = new Set(["home", "classes", "inbox", "account", "masjid"]);
+  let renderedPrimaryPages = primaryPages;
+  if (primaryScreens.has(screen) && !primaryPages.has(screen)) {
+    renderedPrimaryPages = new Map(primaryPages);
+    renderedPrimaryPages.set(screen, page);
+    setPrimaryPages(renderedPrimaryPages);
+  }
+
+  return (
+    <div data-workspace-page={pathname}>
+      {Array.from(renderedPrimaryPages.entries()).map(([cachedScreen, cachedPage]) => (
+        <div key={cachedScreen} hidden={cachedScreen !== screen} aria-hidden={cachedScreen !== screen || undefined}>
+          {cachedPage}
+        </div>
+      ))}
+      {!primaryScreens.has(screen) ? <div key={pathname}>{page}</div> : null}
+    </div>
+  );
 }
