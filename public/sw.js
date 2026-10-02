@@ -1,4 +1,4 @@
-const CACHE_NAME = "madrasa-shell-v5";
+const CACHE_NAME = "madrasa-shell-v6";
 const OFFLINE_URL = "/offline.html";
 const SHELL_ASSETS = [OFFLINE_URL, "/favicon.svg"];
 
@@ -33,24 +33,13 @@ self.addEventListener("fetch", (event) => {
   }
 
   if (request.mode === "navigate") {
-    // Network-first: pages are gated behind login and render per-session content, so a
-    // stale cached shell (e.g. from before a user was signed out, or from an older
-    // deploy) must never be painted first. Only fall back to the last-cached shell (or
-    // the offline page) when the network is actually unavailable.
+    // Authenticated HTML must never be written to Cache Storage. Replaying an old
+    // document can expose stale profile or role information after an app reinstall.
     event.respondWith(
-      fetch(request)
-        .then((response) => {
-          if (response.ok) {
-            const copy = response.clone();
-            caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
-          }
-          return response;
-        })
-        .catch(async () => {
-          const cache = await caches.open(CACHE_NAME);
-          const cached = await cache.match(request);
-          return cached || cache.match(OFFLINE_URL);
-        }),
+      fetch(request).catch(async () => {
+        const cache = await caches.open(CACHE_NAME);
+        return (await cache.match(OFFLINE_URL)) || new Response("Offline", { status: 503, headers: { "content-type": "text/plain" } });
+      }),
     );
     return;
   }
