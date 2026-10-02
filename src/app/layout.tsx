@@ -4,6 +4,7 @@ import { BootScreen } from "@/components/pwa/boot-screen";
 import { PwaRegistrar } from "@/components/pwa/pwa-registrar";
 import { GlobalErrorReporter } from "@/components/monitoring/global-error-reporter";
 import { iconCacheVersion, loadTenantBrandingFromHost } from "@/lib/tenant-branding";
+import { iosStartupImages } from "@/lib/pwa/ios-startup-images";
 import "./globals.css";
 
 export async function generateMetadata(): Promise<Metadata> {
@@ -47,16 +48,26 @@ export const viewport: Viewport = {
   themeColor: "#6FB7B2",
 };
 
-export default function RootLayout({
+export default async function RootLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const headerStore = await headers();
+  const host = headerStore.get("x-forwarded-host") || headerStore.get("host") || "";
+  const branding = await loadTenantBrandingFromHost(host);
+  const iconVersion = iconCacheVersion(branding.iconUrl);
+
   return (
     <html lang="en">
+      <head>
+        {iosStartupImages.map((image) => (
+          <link key={image.media} rel="apple-touch-startup-image" href={image.url} media={image.media} />
+        ))}
+      </head>
       <body>
         <PwaRegistrar />
-        <BootScreen />
+        <BootScreen name={branding.shortName} iconUrl={`/api/pwa/icon?size=192&v=${iconVersion}`} />
         <GlobalErrorReporter />
         {children}
       </body>

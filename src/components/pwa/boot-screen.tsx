@@ -12,7 +12,7 @@ import { useEffect, useState } from "react";
 const maxVisibleMs = 4000;
 const fadeMs = 260;
 
-export function BootScreen() {
+export function BootScreen({ name, iconUrl }: { name: string; iconUrl: string }) {
   const [dismissed, setDismissed] = useState(false);
   const [removed, setRemoved] = useState(false);
 
@@ -47,8 +47,8 @@ export function BootScreen() {
         transitionDuration: `${fadeMs}ms`,
       }}
     >
-      <Image src="/icon-192x192.png" alt="" width={112} height={112} priority className="rounded-[26px] shadow-[0_18px_44px_rgba(23,98,79,0.22)]" />
-      <span className="text-xl font-semibold tracking-tight text-[#17624F]">Madrasa</span>
+      <Image src={iconUrl} alt="" width={112} height={112} priority unoptimized className="rounded-[26px] shadow-[0_18px_44px_rgba(23,98,79,0.22)]" />
+      <span className="text-xl font-semibold tracking-tight text-[#17624F]">{name}</span>
     </div>
   );
 }

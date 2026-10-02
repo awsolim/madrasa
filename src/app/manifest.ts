@@ -9,7 +9,7 @@ export default async function manifest(): Promise<MetadataRoute.Manifest> {
   const host = headerStore.get("x-forwarded-host") || headerStore.get("host") || "";
   const branding = await loadTenantBrandingFromHost(host);
   const v = iconCacheVersion(branding.iconUrl);
-  const iconSrc = `/api/pwa/icon?v=${v}`;
+  const iconSrc = "/api/pwa/icon";
 
   return {
     name: branding.name,
@@ -24,67 +24,67 @@ export default async function manifest(): Promise<MetadataRoute.Manifest> {
     categories: ["education", "productivity"],
     icons: [
       {
-        src: `${iconSrc}?size=16`,
+        src: `${iconSrc}?size=16&v=${v}`,
         sizes: "16x16",
         type: "image/png",
         purpose: "any",
       },
       {
-        src: `${iconSrc}?size=32`,
+        src: `${iconSrc}?size=32&v=${v}`,
         sizes: "32x32",
         type: "image/png",
         purpose: "any",
       },
       {
-        src: `${iconSrc}?size=72`,
+        src: `${iconSrc}?size=72&v=${v}`,
         sizes: "72x72",
         type: "image/png",
         purpose: "any",
       },
       {
-        src: `${iconSrc}?size=96`,
+        src: `${iconSrc}?size=96&v=${v}`,
         sizes: "96x96",
         type: "image/png",
         purpose: "any",
       },
       {
-        src: `${iconSrc}?size=128`,
+        src: `${iconSrc}?size=128&v=${v}`,
         sizes: "128x128",
         type: "image/png",
         purpose: "any",
       },
       {
-        src: `${iconSrc}?size=144`,
+        src: `${iconSrc}?size=144&v=${v}`,
         sizes: "144x144",
         type: "image/png",
         purpose: "any",
       },
       {
-        src: `${iconSrc}?size=192`,
+        src: `${iconSrc}?size=192&v=${v}`,
         sizes: "192x192",
         type: "image/png",
         purpose: "any",
       },
       {
-        src: `${iconSrc}?size=384`,
+        src: `${iconSrc}?size=384&v=${v}`,
         sizes: "384x384",
         type: "image/png",
         purpose: "any",
       },
       {
-        src: `${iconSrc}?size=512`,
+        src: `${iconSrc}?size=512&v=${v}`,
         sizes: "512x512",
         type: "image/png",
         purpose: "any",
       },
       {
-        src: `${iconSrc}?size=192&purpose=maskable`,
+        src: `${iconSrc}?size=192&purpose=maskable&v=${v}`,
         sizes: "192x192",
         type: "image/png",
         purpose: "maskable",
       },
       {
-        src: `${iconSrc}?size=512&purpose=maskable`,
+        src: `${iconSrc}?size=512&purpose=maskable&v=${v}`,
         sizes: "512x512",
         type: "image/png",
         purpose: "maskable",
