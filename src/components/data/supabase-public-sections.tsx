@@ -193,7 +193,7 @@ type StudentNoteWithContext = ProgramStudentNote & {
 type StudentInboxThread =
   | { kind: "announcements"; programId: string; programTitle?: string | null }
   | { kind: "notes"; programId: string; studentId: string; programTitle?: string | null; studentName?: string | null };
-type ProgramScheduleSource = (Program | ProgramWithTeacher) & { scheduleTracks?: ProgramTrack[] };
+type ProgramScheduleSource = ProgramWithTeacher & { scheduleTracks?: ProgramTrack[] };
 type EnrollmentTrackSelection = Pick<Enrollment, "id" | "program_id" | "student_profile_id" | "program_track_id" | "created_at" | "status">;
 
 function getAnnouncementTargetTrackIds(announcement: Pick<AnnouncementWithContext, "target_program_track_ids">) {
@@ -772,6 +772,7 @@ export function ProgramDetailData({ slug, programId, section = "public" }: { slu
 
   const teacherName = details?.instructor_display_name?.trim() || program.teacher?.full_name || "Teacher to be announced";
   const isTeacherContext = section === "teacher";
+  const isStudentPreview = searchParams.get("preview") === "student";
   const teacherCredentials = details?.instructor_credentials?.trim() ?? "";
   const age = formatAgeRange(program.age_range_text);
   const gender = formatGender(program.audience_gender);
@@ -959,7 +960,34 @@ export function ProgramDetailData({ slug, programId, section = "public" }: { slu
              
 
               <div className="mt-4 border-t border-[#E6ECEF] pt-4">
-                {isTeacherContext || isStaffForProgram ? (
+                {isStudentPreview ? (
+                  primaryCta.kind === "pill" ? (
+                    <div
+                      className={cn(
+                        "mt-2 flex min-h-12 w-full items-center justify-center rounded-full px-4 text-sm font-semibold ring-1 md:w-auto md:px-10",
+                        primaryCta.tone === "positive"
+                          ? "bg-[#E8F7F2] text-[#17624F] ring-[#B9E4D7]"
+                          : primaryCta.tone === "warning"
+                            ? "bg-[#FFF7E6] text-[#8A5A00] ring-[#F3D28A]"
+                            : "bg-[#F6F8F9] text-[#52616A] ring-[#DDE6EA]",
+                      )}
+                    >
+                      {primaryCta.label}
+                    </div>
+                  ) : primaryCta.kind === "disabled" ? (
+                    <div className="mt-2 flex min-h-12 w-full items-center justify-center rounded-full bg-[#F6F8F9] px-4 text-center text-sm font-semibold text-[#52616A] ring-1 ring-[#DDE6EA] md:w-auto md:px-10">
+                      {primaryCta.label}
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      disabled
+                      className="mt-2 flex min-h-12 w-full items-center justify-center rounded-full bg-[#248B72] px-4 text-sm font-semibold text-white shadow-[0_10px_22px_rgba(36,139,114,0.24)] md:w-auto md:px-10"
+                    >
+                      {primaryCta.label}
+                    </button>
+                  )
+                ) : isTeacherContext || isStaffForProgram ? (
                   <div className="mt-2">
                     <button
                       type="button"
@@ -3459,6 +3487,7 @@ export function TeacherAnnouncementData({ slug, programId }: { slug: string; pro
   const [currentUserId, setCurrentUserId] = useState<string | null>(getCachedSessionSnapshot()?.user.id ?? null);
   const [loading, setLoading] = useState(!initialPage);
   const [error, setError] = useState<string | null>(null);
+  const announcementFeedRef = useRef<HTMLDivElement>(null);
 
   // One RPC call instead of mosque -> program -> [announcements+tracks] -> [authors+receipts]
   // -> reader profiles, as six sequential stages.
@@ -3518,9 +3547,9 @@ export function TeacherAnnouncementData({ slug, programId }: { slug: string; pro
     setTracks(activeTracks);
     setSelectedAnnouncementFeedValue((current) => {
       const target = parseAnnouncementTargetValue(current);
-      return target.programId === programRow.id && target.trackId && activeTracks.some((track) => track.id === target.trackId)
+      return target.programId === programRow.id && (!target.trackId || activeTracks.some((track) => track.id === target.trackId))
         ? current
-        : announcementTargetValue(programRow.id, activeTracks[0]?.id ?? null);
+        : announcementTargetValue(programRow.id, null);
     });
     setSelectedAnnouncementTrackIds((current) => {
       const activeTrackIds = activeTracks.map((track) => track.id);
@@ -3589,6 +3618,14 @@ export function TeacherAnnouncementData({ slug, programId }: { slug: string; pro
     await loadAnnouncements();
   }
 
+  useEffect(() => {
+    const frame = window.requestAnimationFrame(() => {
+      const feed = announcementFeedRef.current;
+      if (feed) feed.scrollTop = feed.scrollHeight;
+    });
+    return () => window.cancelAnimationFrame(frame);
+  }, [announcements.length, selectedAnnouncementFeedValue]);
+
   if (loading) {
     return <InboxLoadingPanel label="Loading announcements" />;
   }
@@ -3608,65 +3645,6 @@ export function TeacherAnnouncementData({ slug, programId }: { slug: string; pro
   return (
     <section className="space-y-6 bg-[var(--workspace)] p-4 pb-28 text-[#26323A]">
       {error ? <p role="status" className="rounded-xl bg-[#FFF6E8] px-4 py-3 text-sm text-[#79521B]">Could not refresh announcements. Showing the last loaded messages.</p> : null}
-      <div className="px-1">
-        {!canAnnounce ? <p className="text-sm text-[#6B747B]">You can view class announcements. Sending announcements requires permission from the Director.</p> : !composeOpen ? (
-          <button
-            type="button"
-            onClick={() => setComposeOpen(true)}
-            className="flex min-h-12 w-full items-center justify-center rounded-[12px] bg-[#17624F] px-4 text-sm font-semibold text-white shadow-[0_10px_22px_rgba(23,98,79,0.16)]"
-          >
-            Compose New Announcement
-          </button>
-        ) : (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between gap-3">
-              <h2 className="text-lg font-semibold">Compose New Announcement</h2>
-              <button type="button" onClick={() => setComposeOpen(false)} className="rounded-full bg-[#EEF3F5] px-3 py-1.5 text-xs font-semibold text-[#52616A]">
-                Close
-              </button>
-            </div>
-            {tracks.length ? (
-              <div className="rounded-[18px] bg-[#F7FAFB] p-2">
-                <div className="mb-2 grid grid-cols-2 gap-1.5">
-                  <button type="button" onClick={() => setSelectedAnnouncementTrackIds(tracks.map((track) => track.id))} className="min-h-8 rounded-[10px] bg-[#EAF7F1] px-2 text-xs font-semibold text-[#17624F]">
-                    Select all
-                  </button>
-                  <button type="button" onClick={() => setSelectedAnnouncementTrackIds([])} className="min-h-8 rounded-[10px] bg-[#EEF2F4] px-2 text-xs font-semibold text-[#52616A]">
-                    Deselect all
-                  </button>
-                </div>
-                <div className="grid gap-1">
-                  {tracks.map((track) => (
-                    <RosterTrackOption
-                      key={track.id}
-                      checked={selectedAnnouncementTrackIds.includes(track.id)}
-                      label={track.name}
-                      onClick={() =>
-                        setSelectedAnnouncementTrackIds((current) =>
-                          current.includes(track.id) ? current.filter((trackId) => trackId !== track.id) : [...current, track.id],
-                        )
-                      }
-                    />
-                  ))}
-                </div>
-              </div>
-            ) : null}
-            <textarea
-              value={message}
-              onChange={(event) => setMessage(event.target.value)}
-              placeholder="Write an announcement..."
-              className="min-h-28 w-full resize-none rounded-[16px] border border-[#B9C3C8] bg-white px-3 py-2 text-sm text-[#26323A] outline-none focus:border-[#2F8FB3]"
-            />
-            <MessageAttachmentComposer programId={programId} attachments={attachments} onChange={setAttachments} onError={(nextError) => setError(nextError || null)} />
-            <div className="flex justify-end">
-              <button type="button" onClick={sendAnnouncement} disabled={(!message.trim() && attachments.length === 0) || (tracks.length > 0 && selectedAnnouncementTrackIds.length === 0)} className="inline-flex min-h-10 items-center justify-center rounded-lg bg-[#17624F] px-5 text-sm font-semibold text-white hover:bg-[#0F4537] disabled:opacity-50">
-                Send
-              </button>
-            </div>
-          </div>
-        )}
-      </div>
-
       <div className="space-y-3">
         <h2 className="px-1 text-2xl font-semibold leading-8">Announcements History</h2>
         {tracks.length ? (
@@ -3675,6 +3653,7 @@ export function TeacherAnnouncementData({ slug, programId }: { slug: string; pro
             onChange={(event) => setSelectedAnnouncementFeedValue(event.target.value)}
             className="h-12 w-full rounded-[14px] border border-[#D6DCE0] bg-white px-4 text-sm font-semibold text-[#52616A] outline-none focus:border-[#2F8FB3]"
           >
+            <option value={announcementTargetValue(program?.id ?? programId, null)}>All tracks</option>
             {tracks.map((track) => (
               <option key={track.id} value={announcementTargetValue(program?.id ?? programId, track.id)}>
                 {track.name}
@@ -3682,7 +3661,42 @@ export function TeacherAnnouncementData({ slug, programId }: { slug: string; pro
             ))}
           </select>
         ) : null}
-        <ProgramAnnouncementFeed program={program} announcements={visibleAnnouncements} readersByAnnouncementId={readersByAnnouncementId} viewer="teacher" />
+        <div ref={announcementFeedRef} className="max-h-[min(55vh,520px)] overflow-y-auto overscroll-contain rounded-[18px] border border-[#D6DCE0] bg-white p-3 [touch-action:pan-y]">
+          <ProgramAnnouncementFeed program={program} announcements={visibleAnnouncements} readersByAnnouncementId={readersByAnnouncementId} viewer="teacher" />
+        </div>
+      </div>
+
+      <div className="px-1">
+        {!canAnnounce ? <p className="text-sm text-[#6B747B]">You can view class announcements. Sending announcements requires permission from the Director.</p> : !composeOpen ? (
+          <button type="button" onClick={() => setComposeOpen(true)} className="flex min-h-12 w-full items-center justify-center rounded-[12px] bg-[#17624F] px-4 text-sm font-semibold text-white shadow-[0_10px_22px_rgba(23,98,79,0.16)]">
+            New Announcement
+          </button>
+        ) : (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between gap-3">
+              <h2 className="text-lg font-semibold">New Announcement</h2>
+              <button type="button" onClick={() => setComposeOpen(false)} className="rounded-full bg-[#EEF3F5] px-3 py-1.5 text-xs font-semibold text-[#52616A]">Close</button>
+            </div>
+            {tracks.length ? (
+              <div className="rounded-[18px] bg-[#F7FAFB] p-2">
+                <div className="mb-2 grid grid-cols-2 gap-1.5">
+                  <button type="button" onClick={() => setSelectedAnnouncementTrackIds(tracks.map((track) => track.id))} className="min-h-8 rounded-[10px] bg-[#EAF7F1] px-2 text-xs font-semibold text-[#17624F]">Select all</button>
+                  <button type="button" onClick={() => setSelectedAnnouncementTrackIds([])} className="min-h-8 rounded-[10px] bg-[#EEF2F4] px-2 text-xs font-semibold text-[#52616A]">Deselect all</button>
+                </div>
+                <div className="grid gap-1">
+                  {tracks.map((track) => (
+                    <RosterTrackOption key={track.id} checked={selectedAnnouncementTrackIds.includes(track.id)} label={track.name} onClick={() => setSelectedAnnouncementTrackIds((current) => current.includes(track.id) ? current.filter((trackId) => trackId !== track.id) : [...current, track.id])} />
+                  ))}
+                </div>
+              </div>
+            ) : null}
+            <textarea value={message} onChange={(event) => setMessage(event.target.value)} placeholder="Write an announcement..." className="min-h-28 w-full resize-none rounded-[16px] border border-[#B9C3C8] bg-white px-3 py-2 text-sm text-[#26323A] outline-none focus:border-[#2F8FB3]" />
+            <MessageAttachmentComposer programId={programId} attachments={attachments} onChange={setAttachments} onError={(nextError) => setError(nextError || null)} />
+            <div className="flex justify-end">
+              <button type="button" onClick={sendAnnouncement} disabled={(!message.trim() && attachments.length === 0) || (tracks.length > 0 && selectedAnnouncementTrackIds.length === 0)} className="inline-flex min-h-10 items-center justify-center rounded-lg bg-[#17624F] px-5 text-sm font-semibold text-white hover:bg-[#0F4537] disabled:opacity-50">Send</button>
+            </div>
+          </div>
+        )}
       </div>
     </section>
   );
@@ -6927,11 +6941,20 @@ export async function fetchTeacherPrograms(slug: string): Promise<TeacherProgram
   const activeEnrollmentRows = snapshot.activeEnrollments;
   const pendingRequestRows = snapshot.pendingRequests;
   const instructorRows = snapshot.instructorRows;
+  const directorProfileIds = Array.from(new Set((mosquePrograms ?? []).map((program) => program.director_profile_id ?? program.teacher_profile_id).filter((id): id is string => Boolean(id))));
+  const programIds = (mosquePrograms ?? []).map((program) => program.id);
+  const [{ data: directorProfiles }, { data: programDetailRows }] = await Promise.all([
+    directorProfileIds.length
+      ? supabase.from("profiles").select("id, full_name, email, phone_number, avatar_url, teacher_credentials, teacher_whatsapp_number").in("id", directorProfileIds)
+      : Promise.resolve({ data: [] as TeacherDisplay[] }),
+    programIds.length
+      ? supabase.from("program_details").select("program_id, instructor_display_name, cover_director_visibility").in("program_id", programIds)
+      : Promise.resolve({ data: [] as Array<{ program_id: string; instructor_display_name: string | null; cover_director_visibility: string | null }> }),
+  ]);
 
   const assignmentRoleByProgramId = Object.fromEntries(
     (assignments ?? []).map((assignment) => [assignment.program_id, assignment.role === "director" ? "director" : "instructor" as TeacherProgramRole]),
   ) as Record<string, TeacherProgramRole>;
-  const programIds = (mosquePrograms ?? []).map((program) => program.id);
   const nextProgramCounts: Record<string, { students: number; applications: number; instructors: number }> = {};
   for (const programId of programIds) {
     nextProgramCounts[programId] = { students: 0, applications: 0, instructors: 0 };
@@ -6954,6 +6977,9 @@ export async function fetchTeacherPrograms(slug: string): Promise<TeacherProgram
     .map((program) => ({
       ...program,
       scheduleTracks: hydratedTrackRows.filter((track) => track.program_id === program.id),
+      teacher: (directorProfiles ?? []).find((profile) => profile.id === (program.director_profile_id ?? program.teacher_profile_id)) ?? null,
+      coverDirectorDisplayName: (programDetailRows ?? []).find((details) => details.program_id === program.id)?.instructor_display_name ?? null,
+      coverDirectorVisibility: (programDetailRows ?? []).find((details) => details.program_id === program.id)?.cover_director_visibility ?? "name_and_photo",
     }));
 
   const nextRoleByProgramId: Record<string, TeacherProgramRole> = {};
@@ -10780,7 +10806,7 @@ function TeacherClassCard({
   onDeleted,
   onDeleteError,
 }: {
-  program: Program;
+  program: ProgramScheduleSource;
   mosqueSlug: string;
   role: TeacherProgramRole;
   basePath?: string;
@@ -10801,7 +10827,7 @@ function TeacherClassCard({
   const isDirector = role === "director";
   const classBasePath = basePath ?? `/m/${mosqueSlug}/teacher/classes`;
   const teacherClassesReturnTo = encodeURIComponent(classBasePath);
-  const publicHref = `/m/${mosqueSlug}/programs/${program.id}?returnTo=${teacherClassesReturnTo}`;
+  const publicHref = `/m/${mosqueSlug}/programs/${program.id}?preview=student&returnTo=${teacherClassesReturnTo}`;
   // The cover/title always opens the public view, for directors and instructors alike --
   // "Edit Class" stays reachable as its own row below, not overloaded onto the cover tap.
   const primaryHref = publicHref;
@@ -10867,14 +10893,24 @@ function TeacherClassCard({
           </TransitionLink>
         </div>
         <AudienceDetails age={age} gender={gender} />
+        {program.teacher && program.coverDirectorVisibility !== "hidden" ? (
+          <div className="flex items-center gap-3 rounded-[14px] bg-[#F5F9F8] px-3 py-2.5">
+            {program.coverDirectorVisibility !== "name_only" ? <Avatar src={program.teacher.avatar_url ?? null} name={program.coverDirectorDisplayName ?? program.teacher.full_name ?? "Program Director"} /> : null}
+            <div className="min-w-0">
+              <p className="text-[10px] font-semibold uppercase tracking-wide text-[#6B747B]">Program Director</p>
+              <p className="truncate text-sm font-semibold text-[#26323A]">{program.coverDirectorDisplayName ?? program.teacher.full_name ?? "To be announced"}</p>
+            </div>
+          </div>
+        ) : null}
+        <p className="pt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#6B747B]">Teacher Actions</p>
         <div className="divide-y divide-[#E3E8EC] border-t border-[#E3E8EC]">
           <TeacherActionLink href={publicHref} icon={<ExternalLinkIcon />} label="View Public Page" previewLabel="Class Details" />
           <TeacherActionLink href={`${classBasePath}/${program.id}/students`} icon={<StudentsIcon />} label="Students" count={counts?.students} />
-          {isDirector || permissions?.can_view_applications || permissions?.can_decide_applications ? <TeacherActionLink href={`${classBasePath}/${program.id}/applications`} icon={<ClipboardIcon />} label="Manage Applications" count={counts?.applications} urgent /> : null}
+          {isDirector || permissions?.can_view_applications || permissions?.can_decide_applications ? <TeacherActionLink href={`${classBasePath}/${program.id}/applications`} icon={<ClipboardIcon />} label="Applications" count={counts?.applications} urgent /> : null}
+          {isDirector || permissions?.can_manage_finances ? <TeacherActionLink href={`${classBasePath}/${program.id}/finances`} icon={<FinanceIcon />} label="Finances" /> : null}
           {isDirector ? <TeacherActionLink href={`${classBasePath}/${program.id}/instructors`} icon={<InstructorManageIcon />} label="Instructors" count={counts?.instructors} /> : null}
-          {isDirector || permissions?.can_announce ? <TeacherActionLink href={`${classBasePath}/${program.id}/announcement`} icon={<MegaphoneIcon />} label="Announcement" /> : null}
+          {isDirector || permissions?.can_announce ? <TeacherActionLink href={`${classBasePath}/${program.id}/announcement`} icon={<MegaphoneIcon />} label="Make Announcement" /> : null}
           <TeacherActionLink href={attendanceHistoryHref(mosqueSlug, program.id, classBasePath)} icon={<AttendanceIcon />} label="Attendance History" />
-          {permissions?.can_manage_finances ? <TeacherActionLink href={`${classBasePath}/${program.id}/finances`} icon={<FinanceIcon />} label="Manage Finances" /> : null}
           {isDirector || permissions?.can_view_student_records || permissions?.can_view_applications || permissions?.can_decide_applications || permissions?.can_manage_finances ? <TeacherActionLink href={`${classBasePath}/${program.id}/exports`} icon={<ClipboardIcon />} label="Reports" /> : null}
           {isDirector || permissions?.can_edit_class ? <TeacherActionLink href={`${classBasePath}/${program.id}`} icon={<EditClassIcon />} label="Edit Class" /> : null}
           {!isDirector ? <TeacherActionButton icon={<XIcon />} label="Resign from Class" onClick={() => setResignOpen(true)} /> : null}

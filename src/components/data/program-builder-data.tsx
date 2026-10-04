@@ -114,6 +114,7 @@ export function TeacherProgramSettingsData({ slug, programId, returnHref }: { sl
   const [thumbnailCropFile, setThumbnailCropFile] = useState<File | null>(null);
   const wizardExit = useWizardExit(slug, { builderStatus, title, description, thumbnailUrl, allAges, ageStart, ageEnd, noRegistrationDeadline, audienceGender, price, offersMonthlyPayment, offersAnnualPayment, annualPrice, eventDate, learningVisible, learningTitle, learningIntro, topicsIntro, requirementsText, policiesText, outcomeRows, faqVisible, faqRows, contentSectionsVisible, contentSectionRows, mediaVisible, mediaRows, trackRows, transferRules, trackSelectionMode, trackSelectionCount, selectedDirectorId, instructorDisplayName, instructorCredentials, instructorContactPhone, coverDirectorVisibility, contactPhoneOmitted, contactEmailOmitted });
   const loadedDirectorRef = useRef<string | null>(null);
+  const loadedTrackIdsRef = useRef<Set<string>>(new Set());
   const startDateChangeModalRef = useRef<HTMLDivElement>(null);
   useModalFocusTrap(startDateChangeModalRef, startDateChangeConfirmOpen, () => setStartDateChangeConfirmOpen(false));
   // Annual pricing is compared against one year of monthly payments: 12 months for an
@@ -224,11 +225,13 @@ export function TeacherProgramSettingsData({ slug, programId, returnHref }: { sl
         const nextMediaRows = (mediaResult.data ?? []).map((row) => ({ id: row.id, url: row.url, title: row.title ?? "", mediaType: row.media_type }));
         const storedSessions: ProgramScheduleRow[] = (sessionResult.data ?? []).map(scheduleRowFromProgramSession);
         const defaultSession: ProgramScheduleRow = firstRow ?? { day: "Monday", start: "18:00", end: "20:00" };
+        loadedTrackIdsRef.current = new Set((trackResult.data ?? []).map((track) => track.id));
+        const storedPrimaryTrack = (trackResult.data ?? [])[0];
         const nextTrackRows: ProgramEditorTrackRow[] =
           programRow.program_type === "event"
-            ? [{ id: "event", name: "Event", sessions: [storedSessions[0] ?? defaultSession] }]
+            ? [{ id: storedPrimaryTrack?.id ?? "event", name: storedPrimaryTrack?.name ?? "Event", sessions: [storedSessions[0] ?? defaultSession], capacity: storedPrimaryTrack?.capacity ? String(storedPrimaryTrack.capacity) : "" }]
             : programRow.schedule_pattern === "custom_dates"
-              ? [{ id: "sessions", name: "Sessions", sessions: storedSessions.length ? storedSessions : [{ ...defaultSession, date: "" }] }]
+              ? [{ id: storedPrimaryTrack?.id ?? "sessions", name: storedPrimaryTrack?.name ?? "Sessions", sessions: storedSessions.length ? storedSessions : [{ ...defaultSession, date: "" }], capacity: storedPrimaryTrack?.capacity ? String(storedPrimaryTrack.capacity) : "" }]
               : (trackResult.data ?? []).length
             ? linkedEditorTrackRows(trackResult.data ?? [], sessionResult.data ?? [], trackSessionLinks ?? [], defaultSession)
             : [
@@ -663,32 +666,12 @@ export function TeacherProgramSettingsData({ slug, programId, returnHref }: { sl
       }
     }
 
-    await supabase.from("program_sessions").delete().eq("program_id", program.id);
-    await supabase.from("program_tracks").delete().eq("program_id", program.id);
     if (trackRows.length) {
-      const { data: insertedTracks, error: tracksError } = await supabase.from("program_tracks").insert(
-        trackRows.map((track, index) => ({
-          program_id: program.id,
-          sort_order: index + 1,
-          name: track.name.trim(),
-          description: null,
-          schedule: track.sessions as unknown as Json,
-          location: track.location?.trim() || effectiveBuilderStatus.location.trim() || null,
-          room: track.room?.trim() || effectiveBuilderStatus.room.trim() || null,
-          capacity: track.capacity ? Number(track.capacity) : null,
-          pricing_override_enabled: Boolean(track.pricingOverrideEnabled),
-          price_monthly_cents: track.pricingOverrideEnabled && track.priceMonthly ? Math.max(0, Math.round(Number(track.priceMonthly) * 100)) : null,
-          price_annual_cents: track.pricingOverrideEnabled && track.priceAnnual ? Math.max(0, Math.round(Number(track.priceAnnual) * 100)) : null,
-          ...trackEligibilityOverrideColumns(track),
-          is_active: true,
-        })),
-      ).select("id, sort_order");
-      if (tracksError) {
-        setToast({ tone: "error", message: friendlyErrorMessage(tracksError, "Could not save tracks.") });
-        setBusy(false);
-        return;
-      }
       try {
+        const insertedTracks = await synchronizeExistingProgramTracks(supabase, program.id, trackRows, loadedTrackIdsRef.current, {
+          location: effectiveBuilderStatus.location.trim() || null,
+          room: effectiveBuilderStatus.room.trim() || null,
+        });
         await saveCanonicalProgramSessions(supabase, program.id, insertedTracks ?? [], trackRows, {
           programType: effectiveBuilderStatus.programType,
           schedulePattern: effectiveBuilderStatus.schedulePattern,
@@ -2224,9 +2207,9 @@ function ProgramEditorFields({
                   </div>
                   <div className="mt-3 grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
                     <EditBox label="Track name" required value={track.name} onChange={(value) => setTrackRows((current) => current.map((item) => item.id === track.id ? { ...item, name: value } : item))} />
-                    <label className="block">
+                    <div className="block">
                       <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-[#6B747B]">Capacity</span>
-                      <div className="flex items-center gap-2">
+                      {track.capacity ? <div className="flex items-center gap-2">
                         <div className="flex h-10 items-center overflow-hidden rounded-lg border border-[#B9C3C8] bg-white">
                           <button
                             type="button"
@@ -2251,8 +2234,13 @@ function ProgramEditorFields({
                           </button>
                         </div>
                         <span className="shrink-0 text-sm font-semibold text-[#52616A]">students</span>
-                      </div>
-                    </label>
+                        <button type="button" onClick={() => setTrackRows((current) => current.map((item) => item.id === track.id ? { ...item, capacity: "" } : item))} className="text-xs font-semibold text-[#C0392B]">Disable</button>
+                      </div> : (
+                        <button type="button" onClick={() => setTrackRows((current) => current.map((item) => item.id === track.id ? { ...item, capacity: "20" } : item))} className="flex h-10 items-center rounded-lg border border-dashed border-[#9EB4BD] bg-white px-3 text-sm font-semibold text-[#2F6F83]">
+                          Add capacity limit
+                        </button>
+                      )}
+                    </div>
                   </div>
                   <div className="mt-3">
                     <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-[#6B747B]">Sessions in this track</p>
@@ -3405,6 +3393,55 @@ function programAlreadyStarted(program: Program | null) {
   return new Date(`${program.start_date}T00:00:00`).getTime() < startOfToday().getTime();
 }
 
+async function synchronizeExistingProgramTracks(
+  supabase: ReturnType<typeof createSupabaseBrowserClient>,
+  programId: string,
+  trackRows: ProgramEditorTrackRow[],
+  loadedTrackIds: Set<string>,
+  fallback: { location: string | null; room: string | null },
+) {
+  const savedTracks: Array<{ id: string; sort_order: number | null }> = [];
+  const retainedTrackIds = new Set<string>();
+
+  for (const [index, track] of trackRows.entries()) {
+    const payload = {
+      program_id: programId,
+      sort_order: index + 1,
+      name: track.name.trim(),
+      description: null,
+      schedule: track.sessions as unknown as Json,
+      location: track.location?.trim() || fallback.location,
+      room: track.room?.trim() || fallback.room,
+      capacity: track.capacity ? Number(track.capacity) : null,
+      pricing_override_enabled: Boolean(track.pricingOverrideEnabled),
+      price_monthly_cents: track.pricingOverrideEnabled && track.priceMonthly ? Math.max(0, Math.round(Number(track.priceMonthly) * 100)) : null,
+      price_annual_cents: track.pricingOverrideEnabled && track.priceAnnual ? Math.max(0, Math.round(Number(track.priceAnnual) * 100)) : null,
+      ...trackEligibilityOverrideColumns(track),
+      is_active: true,
+    };
+
+    if (loadedTrackIds.has(track.id)) {
+      const { data, error } = await supabase.from("program_tracks").update(payload).eq("id", track.id).eq("program_id", programId).select("id, sort_order").single();
+      if (error || !data) throw new Error(friendlyErrorMessage(error, "Could not update this track."));
+      retainedTrackIds.add(data.id);
+      savedTracks.push(data);
+    } else {
+      const { data, error } = await supabase.from("program_tracks").insert(payload).select("id, sort_order").single();
+      if (error || !data) throw new Error(friendlyErrorMessage(error, "Could not add this track."));
+      retainedTrackIds.add(data.id);
+      savedTracks.push(data);
+    }
+  }
+
+  const removedTrackIds = Array.from(loadedTrackIds).filter((trackId) => !retainedTrackIds.has(trackId));
+  if (removedTrackIds.length) {
+    const { error } = await supabase.from("program_tracks").update({ is_active: false }).eq("program_id", programId).in("id", removedTrackIds);
+    if (error) throw new Error(friendlyErrorMessage(error, "Could not safely archive a removed track."));
+  }
+
+  return savedTracks;
+}
+
 async function saveTrackTransferRules(
   supabase: ReturnType<typeof createSupabaseBrowserClient>,
   programId: string,
@@ -3505,22 +3542,29 @@ async function saveCanonicalProgramSessions(
   if (!sessionEntries.length) {
     return;
   }
+  const sessionIdByKey = new Map<string, string>();
+  const { data: existingSessions, error: existingSessionsError } = await supabase.from("program_sessions").select("*").eq("program_id", programId);
+  if (existingSessionsError) throw new Error(friendlyErrorMessage(existingSessionsError, "Could not load existing sessions."));
+  const existingSessionByKey = new Map((existingSessions ?? []).map((session) => [scheduleRowKey(scheduleRowFromProgramSession(session)), session]));
 
-  const { data: insertedSessions, error: sessionsError } = await supabase
-    .from("program_sessions")
-    .insert(sessionEntries.map(([, payload]) => payload))
-    .select("id");
-  if (sessionsError) {
-    throw new Error(friendlyErrorMessage(sessionsError, "Could not save sessions."));
+  for (const [key, payload] of sessionEntries) {
+    const existing = existingSessionByKey.get(key);
+    if (existing) {
+      const { error } = await supabase.from("program_sessions").update(payload).eq("id", existing.id).eq("program_id", programId);
+      if (error) throw new Error(friendlyErrorMessage(error, "Could not update a class session."));
+      sessionIdByKey.set(key, existing.id);
+    } else {
+      const { data, error } = await supabase.from("program_sessions").insert(payload).select("id").single();
+      if (error || !data) throw new Error(friendlyErrorMessage(error, "Could not add a class session."));
+      sessionIdByKey.set(key, data.id);
+    }
   }
 
-  const sessionIdByKey = new Map<string, string>();
-  sessionEntries.forEach(([key], index) => {
-    const insertedSessionId = insertedSessions?.[index]?.id;
-    if (insertedSessionId) {
-      sessionIdByKey.set(key, insertedSessionId);
-    }
-  });
+  const savedTrackIds = insertedTracks.map((track) => track.id);
+  if (savedTrackIds.length) {
+    const { error } = await supabase.from("program_track_sessions").delete().in("program_track_id", savedTrackIds);
+    if (error) throw new Error(friendlyErrorMessage(error, "Could not refresh track schedules."));
+  }
 
   const linkRows = Array.from(linkKeysByTrackId.entries()).flatMap(([programTrackId, keys]) =>
     Array.from(keys).flatMap((key) => {

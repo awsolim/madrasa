@@ -284,6 +284,14 @@ export function ProgramAttendanceMarkData({ slug, programId, mode = "teacher" }:
         groups.unmarked.push(student);
       }
     }
+    const byStudentName = (left: AttendanceStudentRow, right: AttendanceStudentRow) =>
+      (left.profile?.full_name ?? left.profile?.email ?? "Student").localeCompare(
+        right.profile?.full_name ?? right.profile?.email ?? "Student",
+        undefined,
+        { sensitivity: "base" },
+      );
+    groups.marked.sort(byStudentName);
+    groups.unmarked.sort(byStudentName);
     return groups;
   }, [context.students, savedStateByStudentId]);
 
