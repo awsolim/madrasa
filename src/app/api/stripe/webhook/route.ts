@@ -342,6 +342,14 @@ async function handleInvoicePaid(invoice: Stripe.Invoice, stripeAccountId: strin
     .maybeSingle();
   if (subscriptionLookupError) throw subscriptionLookupError;
   if (!subscriptionRow?.program_id || !subscriptionRow.student_profile_id) {
+    // Stripe does not guarantee that checkout.session.completed arrives before the
+    // first invoice.paid event. A 2xx response here would permanently discard the
+    // payment because Stripe would consider it handled. Ask Stripe to retry only
+    // for Madrasa-owned subscriptions; unrelated account invoices remain ignored.
+    const metadata = invoice.parent?.subscription_details?.metadata ?? {};
+    if (metadata.program_id && metadata.student_profile_id) {
+      throw new Error(`Subscription ${subscriptionId} is not available locally yet. Retry this invoice after checkout completion.`);
+    }
     return;
   }
   const stripeRequestOptions = shouldUseStripeConnect() && stripeAccountId ? { stripeAccount: stripeAccountId } : undefined;
@@ -422,6 +430,10 @@ async function handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
     .maybeSingle();
   if (subscriptionLookupError) throw subscriptionLookupError;
   if (!subscriptionRow?.program_id || !subscriptionRow.student_profile_id) {
+    const metadata = invoice.parent?.subscription_details?.metadata ?? {};
+    if (metadata.program_id && metadata.student_profile_id) {
+      throw new Error(`Subscription ${subscriptionId} is not available locally yet. Retry this failed-payment event after checkout completion.`);
+    }
     return;
   }
 
