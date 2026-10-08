@@ -1883,7 +1883,7 @@ export function RegistrationConfirmationData({ slug, requestId }: { slug: string
               ) : state === "payment_required_annual_subscription" ? (
                 <p className="text-sm leading-6 text-[#52616A]">Your registration has been approved. Start your annual subscription to complete registration — {listedPrice}/year, renews automatically until cancelled.</p>
               ) : (
-                <p className="text-sm leading-6 text-[#52616A]">Your registration has been approved. Start your monthly subscription to complete registration — {listedPrice}/month. {monthlyPlan?.firstRecurringChargeAt ? monthlyPlan.chargeFullMonthToday ? `The full ${openingMonth} payment is due today. Recurring payments begin ${firstRecurringDate}.` : `Nothing is due today. Your first payment is ${listedPrice} on ${firstRecurringDate}.` : "Payments renew monthly from today."}</p>
+                <p className="text-sm leading-6 text-[#52616A]">Your registration has been approved. Start your monthly subscription to complete registration — {listedPrice}/month. {monthlyPlan?.prorateOpeningPeriod ? `Today you will pay only for the remaining days of ${openingMonth}. Stripe shows the exact amount before payment. The full monthly price begins ${firstRecurringDate}.` : "The full monthly price is due today and renews monthly."}</p>
               )}
               {state !== "completed" ? (
                 <div className="rounded-[14px] bg-[#F7FAFB] p-3 text-sm">
@@ -1894,7 +1894,7 @@ export function RegistrationConfirmationData({ slug, requestId }: { slug: string
                   {monthlyPlan?.firstRecurringChargeAt ? <>
                     <div className="mt-2 flex items-center justify-between border-t border-[#E3E9EB] pt-2">
                       <span className="text-[#6B747B]">Due today</span>
-                      <span className="font-semibold text-[#26323A]">{monthlyPlan.chargeFullMonthToday ? listedPrice : "$0"}</span>
+                      <span className="font-semibold text-[#26323A]">{monthlyPlan.prorateOpeningPeriod ? "Prorated amount shown at checkout" : listedPrice}</span>
                     </div>
                     <div className="mt-2 flex items-center justify-between gap-4">
                       <span className="text-[#6B747B]">Recurring billing</span>

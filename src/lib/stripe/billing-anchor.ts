@@ -30,32 +30,32 @@ function localFirstAtNine(year: number, monthIndex: number, timeZone: string) {
 
 export type MonthlyCheckoutPlan = {
   billingAnchor: number | undefined;
-  chargeFullMonthToday: boolean;
+  prorateOpeningPeriod: boolean;
   firstRecurringChargeAt: number | undefined;
 };
 
 /**
  * Calendar-month policy for first-of-month programs:
  * - the 1st charges normally through the recurring item;
- * - the 2nd through 15th charges a full opening month, then renews on the 1st;
- * - the 16th onward has no opening charge and first bills on the next 1st.
+ * - every later signup pays only for the remaining portion of that month;
+ * - the full approved monthly price then renews on the next 1st.
  */
 export function monthlyCheckoutPlan(
   program: { monthly_billing_anchor: string; schedule_timezone?: string | null },
   now = new Date(),
 ): MonthlyCheckoutPlan {
   if (program.monthly_billing_anchor !== "first_of_month") {
-    return { billingAnchor: undefined, chargeFullMonthToday: true, firstRecurringChargeAt: undefined };
+    return { billingAnchor: undefined, prorateOpeningPeriod: false, firstRecurringChargeAt: undefined };
   }
   const timeZone = validTimeZone(program.schedule_timezone);
   const current = localParts(now, timeZone);
   const nextFirst = localFirstAtNine(current.year, current.month, timeZone);
   if (current.day === 1) {
-    return { billingAnchor: undefined, chargeFullMonthToday: true, firstRecurringChargeAt: nextFirst };
+    return { billingAnchor: undefined, prorateOpeningPeriod: false, firstRecurringChargeAt: nextFirst };
   }
   return {
     billingAnchor: nextFirst,
-    chargeFullMonthToday: current.day <= 15,
+    prorateOpeningPeriod: true,
     firstRecurringChargeAt: nextFirst,
   };
 }
