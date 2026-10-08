@@ -13,6 +13,19 @@ const db = createClient(url, key, { auth: { autoRefreshToken: false, persistSess
 const stripe = new Stripe(stripeKey);
 const useConnect = process.env.STRIPE_CONNECT_PLATFORM === "true";
 const correctionKey = "assiddiq_october_2026_calendar_month";
+// This is a closed one-time correction cohort reviewed before October 7. New
+// registrations follow the permanent prorated-opening-month policy and must never
+// be swept into this historical correction merely because they paid a proration.
+const reviewedSubscriptionIds = new Set([
+  "sub_1UC7W9PwBs25qQGPoXP03O82", "sub_1UKyDWPwBs25qQGPKac4lrZz", "sub_1UBfJVPwBs25qQGPw5p0tGW4",
+  "sub_1UKl5cPwBs25qQGPDcWQ1bSt", "sub_1UHoHmPwBs25qQGPmSu1fpe7", "sub_1UBDNpPwBs25qQGP61ny5YgH",
+  "sub_1UJPwjPwBs25qQGPNvgIHgUV", "sub_1UJPxlPwBs25qQGPh6uc85rt", "sub_1UHoGXPwBs25qQGPt3qGxNXk",
+  "sub_1UBfKMPwBs25qQGPeAY4QOTe", "sub_1UMDvdPwBs25qQGPrvvUrWIy", "sub_1UMTQyPwBs25qQGPMSUXHm4Y",
+  "sub_1UMah7PwBs25qQGPZ9izFleh", "sub_1UMqnPPwBs25qQGPScg89Y2M", "sub_1UEygdPwBs25qQGPXJcZr793",
+  "sub_1UMub2PwBs25qQGPOqjIhpPB", "sub_1UCNFSPwBs25qQGPQXMCzN0e", "sub_1UEyiHPwBs25qQGPtuEszlpE",
+  "sub_1UKl6sPwBs25qQGPHeVJSdDW", "sub_1UMDuQPwBs25qQGPc6K9vIkI", "sub_1UMDwXPwBs25qQGPy3T7NTfG",
+  "sub_1UMTRfPwBs25qQGPF59s07Cs",
+]);
 
 function localParts(date, timeZone) {
   const parts = new Intl.DateTimeFormat("en-US", { timeZone, year: "numeric", month: "numeric", day: "numeric", hour: "numeric", hourCycle: "h23" }).formatToParts(date);
@@ -76,6 +89,16 @@ for (const row of subscriptions ?? []) {
   const target = localFirstAtNine(2026, 10, timeZone); // November 1, monthIndex is zero-based.
   const options = useConnect && row.stripe_account_id ? { stripeAccount: row.stripe_account_id } : undefined;
   try {
+    if (!reviewedSubscriptionIds.has(row.stripe_subscription_id)) {
+      report.push({
+        student: person?.full_name || person?.email || row.student_profile_id,
+        parent: parent?.full_name || parent?.email || null,
+        program: program?.title,
+        action: "skip",
+        reason: "Subscription began after the one-time correction cohort was closed; its legitimate first-month proration is preserved.",
+      });
+      continue;
+    }
     const subscription = await stripe.subscriptions.retrieve(row.stripe_subscription_id, undefined, options);
     if (!["active", "trialing"].includes(subscription.status) || subscription.cancel_at_period_end) {
       report.push({ student: person?.full_name || person?.email || row.student_profile_id, parent: parent?.full_name || parent?.email || null, program: program?.title, action: "skip", reason: `Subscription is ${subscription.status}${subscription.cancel_at_period_end ? " and ending" : ""}.` });
@@ -183,6 +206,18 @@ for (const row of subscriptions ?? []) {
   }
 }
 
-console.log(JSON.stringify({ mode: apply ? "APPLY" : "DRY_RUN", mosque: mosque.name, correctionKey, records: report }, null, 2));
+const chargeRecords = report.filter((entry) => Number(entry.proposedOctoberChargeCents ?? 0) > 0);
+console.log(JSON.stringify({
+  mode: apply ? "APPLY" : "DRY_RUN",
+  mosque: mosque.name,
+  correctionKey,
+  summary: {
+    proposedChargeCount: chargeRecords.length,
+    proposedChargeTotalCents: chargeRecords.reduce((sum, entry) => sum + Number(entry.proposedOctoberChargeCents ?? 0), 0),
+    skippedCount: report.filter((entry) => entry.action === "skip").length,
+    errorCount: report.filter((entry) => entry.action === "error").length,
+  },
+  records: report,
+}, null, 2));
 console.log(apply ? "Correction run finished. Review every error before retrying." : "No Stripe or database data was changed.");
 if (report.some((entry) => entry.action === "error")) process.exitCode = 1;
