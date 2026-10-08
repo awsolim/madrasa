@@ -7,10 +7,8 @@ export type ProgramAuthResult = { ok: true } | { ok: false; status: number; erro
 
 /**
  * Server-side check for application-decision authority: admin, or a director
- * assigned to this program. Deliberately broader than
- * requireProgramFinanceAccess (which additionally requires the
- * can_manage_finances flag) — approving/waitlisting/rejecting applications is
- * ordinary director authority, not a finance-specific permission.
+ * assigned to this program. Instructors can also receive application decision
+ * and finance permissions independently through their class assignment.
  */
 export async function requireProgramManageAccess(
   supabase: SupabaseClient<Database>,

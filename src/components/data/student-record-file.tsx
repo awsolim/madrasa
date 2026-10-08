@@ -247,6 +247,7 @@ export function FinanceActionModal({
 export function FinanceDetailsDrawer({
   row,
   program,
+  initialTab = "overview",
   canViewFinances = true,
   canManageEnrollments = true,
   childDialogOpen,
@@ -255,6 +256,7 @@ export function FinanceDetailsDrawer({
 }: {
   row: FinanceEnrollmentRow;
   program: Program;
+  initialTab?: "overview" | "history" | "finances" | "actions";
   canViewFinances?: boolean;
   canManageEnrollments?: boolean;
   childDialogOpen: boolean;
@@ -263,7 +265,7 @@ export function FinanceDetailsDrawer({
 }) {
   const studentProfileId = row.enrollment.student_profile_id;
   const drawerPathname = usePathname();
-  const [activeTab, setActiveTab] = useState<"overview" | "history" | "finances" | "actions">("overview");
+  const [activeTab, setActiveTab] = useState<"overview" | "history" | "finances" | "actions">(initialTab);
   const [trackNames, setTrackNames] = useState<string[]>([]);
   const [history, setHistory] = useState<FinanceChargeRow[] | null>(null);
   const [historyLoading, setHistoryLoading] = useState(true);
@@ -389,7 +391,7 @@ export function FinanceDetailsDrawer({
             </dl> : null}
             <section className="space-y-2">
               <h3 className="text-sm font-semibold text-[#26323A]">Student History</h3>
-              {eventsLoading ? <div className="rounded-[14px] border border-dashed border-[#D6DCE0] bg-[#F8FAFB] p-3 text-sm font-semibold text-[#6B747B]">Loading history...</div> : eventsError ? <p role="alert" className="text-sm text-red-700">{eventsError}</p> : !studentEvents?.length ? <div className="rounded-[14px] border border-dashed border-[#D6DCE0] bg-[#F8FAFB] p-3 text-sm font-semibold text-[#6B747B]">No history recorded yet.</div> : <div className="divide-y divide-[#EEF2F4]">{studentEvents.map((event) => <div key={event.id} className="py-2.5"><p className="text-sm font-semibold text-[#26323A]">{event.summary}</p><p className="mt-0.5 text-xs text-[#7B858C]">{formatFinanceDate(event.created_at)} · {event.actor_name}</p>{event.context ? <p className="mt-0.5 text-xs font-medium text-[#52616A]">{event.context}</p> : null}</div>)}</div>}
+              {eventsLoading ? <div className="rounded-[14px] border border-dashed border-[#D6DCE0] bg-[#F8FAFB] p-3 text-sm font-semibold text-[#6B747B]">Loading history...</div> : eventsError ? <p role="alert" className="text-sm text-red-700">{eventsError}</p> : !studentEvents?.length ? <div className="rounded-[14px] border border-dashed border-[#D6DCE0] bg-[#F8FAFB] p-3 text-sm font-semibold text-[#6B747B]">No history recorded yet.</div> : <div className="divide-y divide-[#EEF2F4]">{studentEvents.map((event) => <div key={event.id} className="py-3"><p className="text-sm font-semibold leading-5 text-[#26323A]">{event.summary}</p><div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[#7B858C]"><span>{formatFinanceDate(event.created_at)}</span><span aria-hidden>·</span><span>{event.actor_name === "System" ? "Recorded automatically by the system" : `Performed by ${event.actor_name}`}</span></div>{event.context ? <p className="mt-1 text-xs font-medium text-[#52616A]">{event.context}</p> : null}</div>)}</div>}
             </section>
             <TransitionLink label="Attendance history" href={`${drawerPathname.replace(/\/finances$/, "")}/attendance?from=students&studentId=${encodeURIComponent(studentProfileId)}`} className="flex min-h-11 items-center justify-between rounded-[14px] border border-[#DDE6E9] bg-[#F7FAFB] px-4 text-sm font-semibold text-[#17624F]">
               <span>View attendance history</span><span aria-hidden="true">→</span>

@@ -54,6 +54,7 @@ import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { Database, Json } from "@/lib/supabase/types";
 import { cn } from "@/lib/utils";
 import { downloadStudentHistory } from "@/lib/student-history-export";
+import { monthlyCheckoutPlan } from "@/lib/stripe/billing-anchor";
 import { deriveLifecycleStatus, getApplicationButtonState, getProgramPrimaryCta, getProgramStatusBadges, isPubliclyListed, toProgramStatusFields, validateProgramStatusCombination, type ApplicationStatus as ProgramApplicationStatus, type LifecycleStatus as ProgramLifecycleStatus, type PublicationStatus as ProgramPublicationStatus, type ProgramStatusFields } from "@/lib/programs/status";
 import {
   dayFromSessionDate,
@@ -1804,6 +1805,14 @@ export function RegistrationConfirmationData({ slug, requestId }: { slug: string
       : "Dates to be announced";
   const listedPriceCents = request.payment_type === "annual" ? request.approved_price_annual_cents : request.approved_price_monthly_cents;
   const listedPrice = request.payment_bypassed ? "Waived" : listedPriceCents != null ? formatPrice(listedPriceCents) : "Payment terms not set";
+  const monthlyPlan = state === "payment_required_monthly"
+    ? monthlyCheckoutPlan({ monthly_billing_anchor: program.monthly_billing_anchor, schedule_timezone: program.schedule_timezone })
+    : null;
+  const monthlyTimeZone = program.schedule_timezone || "America/Edmonton";
+  const openingMonth = new Intl.DateTimeFormat("en-US", { month: "long", timeZone: monthlyTimeZone }).format(new Date());
+  const firstRecurringDate = monthlyPlan?.firstRecurringChargeAt
+    ? new Intl.DateTimeFormat("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: monthlyTimeZone }).format(new Date(monthlyPlan.firstRecurringChargeAt * 1000))
+    : null;
   const programHref = `/m/${slug}/programs/${program.id}`;
 
   return (
@@ -1874,7 +1883,7 @@ export function RegistrationConfirmationData({ slug, requestId }: { slug: string
               ) : state === "payment_required_annual_subscription" ? (
                 <p className="text-sm leading-6 text-[#52616A]">Your registration has been approved. Start your annual subscription to complete registration — {listedPrice}/year, renews automatically until cancelled.</p>
               ) : (
-                <p className="text-sm leading-6 text-[#52616A]">Your registration has been approved. Start your monthly subscription to complete registration — {listedPrice}/month. {program.monthly_billing_anchor === "first_of_month" ? "If you join after the first, the initial payment is prorated; later payments are due on the first." : ""}</p>
+                <p className="text-sm leading-6 text-[#52616A]">Your registration has been approved. Start your monthly subscription to complete registration — {listedPrice}/month. {monthlyPlan?.firstRecurringChargeAt ? monthlyPlan.chargeFullMonthToday ? `The full ${openingMonth} payment is due today. Recurring payments begin ${firstRecurringDate}.` : `Nothing is due today. Your first payment is ${listedPrice} on ${firstRecurringDate}.` : "Payments renew monthly from today."}</p>
               )}
               {state !== "completed" ? (
                 <div className="rounded-[14px] bg-[#F7FAFB] p-3 text-sm">
@@ -1882,6 +1891,16 @@ export function RegistrationConfirmationData({ slug, requestId }: { slug: string
                     <span className="text-[#6B747B]">{state === "payment_required_monthly" ? "Monthly amount" : "Amount"}</span>
                     <span className="font-semibold text-[#26323A]">{listedPrice}</span>
                   </div>
+                  {monthlyPlan?.firstRecurringChargeAt ? <>
+                    <div className="mt-2 flex items-center justify-between border-t border-[#E3E9EB] pt-2">
+                      <span className="text-[#6B747B]">Due today</span>
+                      <span className="font-semibold text-[#26323A]">{monthlyPlan.chargeFullMonthToday ? listedPrice : "$0"}</span>
+                    </div>
+                    <div className="mt-2 flex items-center justify-between gap-4">
+                      <span className="text-[#6B747B]">Recurring billing</span>
+                      <span className="text-right font-semibold text-[#26323A]">{firstRecurringDate}</span>
+                    </div>
+                  </> : null}
                 </div>
               ) : null}
             </section>

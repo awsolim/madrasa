@@ -28,15 +28,41 @@ function localFirstAtNine(year: number, monthIndex: number, timeZone: string) {
   return Math.floor(instant.getTime() / 1000);
 }
 
-/** Align new monthly subscriptions to 9 am on the next first in the class time zone. */
-export function monthlyBillingAnchor(program: { monthly_billing_anchor: string; schedule_timezone?: string | null }, now = new Date()): number | undefined {
+export type MonthlyCheckoutPlan = {
+  billingAnchor: number | undefined;
+  chargeFullMonthToday: boolean;
+  firstRecurringChargeAt: number | undefined;
+};
+
+/**
+ * Calendar-month policy for first-of-month programs:
+ * - the 1st charges normally through the recurring item;
+ * - the 2nd through 15th charges a full opening month, then renews on the 1st;
+ * - the 16th onward has no opening charge and first bills on the next 1st.
+ */
+export function monthlyCheckoutPlan(
+  program: { monthly_billing_anchor: string; schedule_timezone?: string | null },
+  now = new Date(),
+): MonthlyCheckoutPlan {
   if (program.monthly_billing_anchor !== "first_of_month") {
-    return undefined;
+    return { billingAnchor: undefined, chargeFullMonthToday: true, firstRecurringChargeAt: undefined };
   }
   const timeZone = validTimeZone(program.schedule_timezone);
   const current = localParts(now, timeZone);
-  if (current.day === 1) return undefined;
-  return localFirstAtNine(current.year, current.month, timeZone);
+  const nextFirst = localFirstAtNine(current.year, current.month, timeZone);
+  if (current.day === 1) {
+    return { billingAnchor: undefined, chargeFullMonthToday: true, firstRecurringChargeAt: nextFirst };
+  }
+  return {
+    billingAnchor: nextFirst,
+    chargeFullMonthToday: current.day <= 15,
+    firstRecurringChargeAt: nextFirst,
+  };
+}
+
+/** Align new monthly subscriptions to 9 am on the next first in the class time zone. */
+export function monthlyBillingAnchor(program: { monthly_billing_anchor: string; schedule_timezone?: string | null }, now = new Date()): number | undefined {
+  return monthlyCheckoutPlan(program, now).billingAnchor;
 }
 
 /** End after the prorated opening month plus the remaining full billing months. */

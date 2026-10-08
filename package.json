@@ -11,7 +11,9 @@
     "reconcile:stripe-billing": "node --env-file=.env.local scripts/reconcile-stripe-billing.mjs",
     "repair:ongoing-billing": "node --env-file=.env.local scripts/repair-ongoing-billing.mjs",
     "audit:billing-alignment": "node --env-file=.env.local scripts/audit-billing-alignment.mjs --mosque=assiddiq",
-    "apply:billing-alignment": "node --env-file=.env.local scripts/audit-billing-alignment.mjs --mosque=assiddiq --apply --confirm-assiddiq-first-of-month"
+    "apply:billing-alignment": "node -e \"throw new Error('Retired: use audit:october-billing-correction and the reviewed correction workflow.')\"",
+    "audit:october-billing-correction": "node --env-file=.env.local scripts/correct-october-2026-billing.mjs",
+    "apply:october-billing-correction": "node --env-file=.env.local scripts/correct-october-2026-billing.mjs --apply --confirm-assiddiq-october-2026"
   },
   "dependencies": {
     "@supabase/supabase-js": "^2.106.2",

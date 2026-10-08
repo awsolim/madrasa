@@ -328,7 +328,13 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
         .join(" ")
         .toLowerCase()
         .includes(query);
-    });
+    }).sort((left, right) =>
+      (left.student?.full_name ?? left.student?.email ?? "Student").localeCompare(
+        right.student?.full_name ?? right.student?.email ?? "Student",
+        undefined,
+        { sensitivity: "base" },
+      ),
+    );
   }, [genderFilter, payStatusFilter, paymentFilter, program, rows, search, statusFilter, subStatusFilter, typeFilter]);
 
   const activeRows = rows.filter((row) => financeStatus(row) === "Active");
@@ -408,7 +414,7 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
         {filteredRows.map((row) => (
           <button key={row.enrollment.id} type="button" onClick={() => setDetailsTarget(row)} className="rounded-[18px] border border-[#DFE7E5] bg-white p-4 text-left shadow-[0_8px_22px_rgba(38,50,58,0.06)]">
             <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0"><p className="truncate font-semibold text-[#26323A]">{row.student?.full_name || "Student"}</p><p className="mt-1 text-xs text-[#6B747B]">{financePaymentType(row, program)} · {financePrice(row, program)}</p></div>
+              <div className="min-w-0"><p className="truncate font-semibold text-[#26323A]">{row.student?.full_name || "Student"}</p>{row.parent?.full_name ? <p className="mt-0.5 truncate text-xs text-[#7B858C]">Parent: {row.parent.full_name}</p> : null}<p className="mt-1 text-xs text-[#6B747B]">{financePaymentType(row, program)} · {financePrice(row, program)}</p></div>
               <span className={cn("shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold", programStatusBadgeToneClass(financeBadgeTone(financeSubscriptionStatus(row))))}>{financeSubscriptionStatus(row)}</span>
             </div>
             <div className="mt-3 grid grid-cols-2 gap-3 border-t border-[#EEF2F4] pt-3 text-xs"><div><p className="text-[#7B858C]">Payment</p><p className="mt-1 font-semibold text-[#52616A]">{financePaymentStatus(row, program)}</p></div><div><p className="text-[#7B858C]">Next billing</p><p className="mt-1 font-semibold text-[#52616A]">{financeNextBillingLabel(row)}</p></div></div>
@@ -432,7 +438,7 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
                 <tr onPointerEnter={() => { void loadStudentActivity(programId, row.enrollment.student_profile_id, "finance").catch(() => undefined); void callFinanceAction(programId, "payment-history", { studentProfileId: row.enrollment.student_profile_id }); }} key={row.enrollment.id} className="cursor-pointer align-middle hover:bg-[#F8FAFB]" tabIndex={0} aria-label={`Open finance file for ${row.student?.full_name ?? "student"}`} onClick={() => setDetailsTarget(row)} onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); setDetailsTarget(row); } }}>
                   <td className="px-4 py-4">
                     <p className="font-semibold text-[#26323A]">{row.student?.full_name || "Student"}</p>
-                    <p className="mt-0.5 text-xs text-[#7B858C]">{financeStudentSubtitle(row)}</p>
+                    <p className="mt-0.5 text-xs text-[#7B858C]">{row.parent?.full_name ? `Parent: ${row.parent.full_name}` : financeStudentSubtitle(row)}</p>
                   </td>
                   <td className="px-4 py-4 font-semibold text-[#52616A]">{financePaymentType(row, program)}</td>
                   <td className="px-4 py-4 font-semibold text-[#26323A]">{financePrice(row, program)}</td>
@@ -474,6 +480,7 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
         <FinanceDetailsDrawer
           row={detailsTarget}
           program={program}
+          initialTab={searchParams.get("from") === "students" ? "overview" : "finances"}
           childDialogOpen={Boolean(actionTarget || noteTarget || removeTarget)}
           onClose={() => {
             setDetailsTarget(null);
