@@ -46,6 +46,21 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
 
     if (paymentsError) throw paymentsError;
 
+    const { data: refundEvents, error: refundEventsError } = await supabase
+      .from("program_finance_audit_events")
+      .select("metadata")
+      .eq("program_id", programId)
+      .eq("student_profile_id", body.studentProfileId)
+      .in("event_type", ["payment_refund_issued", "withdrawal_refund_issued"]);
+    if (refundEventsError) throw refundEventsError;
+    const refundedByPayment = new Map<string, number>();
+    for (const event of refundEvents ?? []) {
+      const metadata = event.metadata && typeof event.metadata === "object" && !Array.isArray(event.metadata) ? event.metadata : {};
+      const paymentId = typeof metadata.programPaymentId === "string" ? metadata.programPaymentId : null;
+      const amount = typeof metadata.amountCents === "number" ? metadata.amountCents : 0;
+      if (paymentId && amount > 0) refundedByPayment.set(paymentId, (refundedByPayment.get(paymentId) ?? 0) + amount);
+    }
+
     return Response.json({
       charges: (payments ?? []).map((payment) => ({
         id: payment.id,
@@ -53,6 +68,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
         currency: payment.currency,
         createdAt: payment.paid_at,
         receiptUrl: payment.receipt_url,
+        refundedAmountCents: refundedByPayment.get(payment.id) ?? 0,
         taxReceiptStatus: "not_applicable",
         taxReceiptEligibleAmountCents: null,
         taxReceiptNumber: null,

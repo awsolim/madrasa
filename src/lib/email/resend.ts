@@ -41,6 +41,12 @@ export function renderEmailShell(input: {
 export async function sendEmail({ to, subject, html, text, replyTo, idempotencyKey }: SendEmailInput): Promise<SendEmailResult> {
   const apiKey = process.env.RESEND_API_KEY;
   const from = process.env.RESEND_FROM_EMAIL;
+  const isTestEnvironment = process.env.MADRASA_TEST_ENVIRONMENT === "true";
+  const testRecipient = process.env.EMAIL_TEST_RECIPIENT?.trim();
+
+  if (isTestEnvironment && !testRecipient) {
+    return { ok: true, skipped: true, reason: "Test email delivery is disabled until EMAIL_TEST_RECIPIENT is configured." };
+  }
 
   if (!apiKey) {
     return { ok: true, skipped: true, reason: "Missing RESEND_API_KEY." };
@@ -59,8 +65,8 @@ export async function sendEmail({ to, subject, html, text, replyTo, idempotencyK
     },
     body: JSON.stringify({
       from,
-      to,
-      subject,
+      to: isTestEnvironment ? testRecipient : to,
+      subject: isTestEnvironment ? `[TEST] ${subject}` : subject,
       html,
       text,
       reply_to: replyTo || undefined,

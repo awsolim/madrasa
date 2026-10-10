@@ -22,7 +22,7 @@ export async function sendProfileNotificationEmails(
   email: NotificationEmail,
 ) {
   const ids = Array.from(new Set(profileIds.filter((id): id is string => Boolean(id))));
-  if (!ids.length) return { sent: 0, skipped: 0 };
+  if (!ids.length) return { sent: 0, skipped: 0, failed: 0, reasons: [] as string[] };
 
   const { data: profiles, error } = await supabase.from("profiles").select("id, email, account_type").in("id", ids);
   if (error) throw new Error(error.message);
@@ -48,8 +48,10 @@ export async function sendProfileNotificationEmails(
     idempotencyKey: `${email.eventKey}:${profile.id}`,
   }); }));
 
-  return {
-    sent: results.filter((result) => result.status === "fulfilled" && !result.value.skipped).length,
-    skipped: ids.length - results.filter((result) => result.status === "fulfilled" && !result.value.skipped).length,
-  };
+  const sent = results.filter((result) => result.status === "fulfilled" && !result.value.skipped).length;
+  const reasons = Array.from(new Set(results.flatMap((result) => {
+    if (result.status === "rejected") return [result.reason instanceof Error ? result.reason.message : "Email delivery failed."];
+    return result.value.skipped ? [result.value.reason] : [];
+  })));
+  return { sent, skipped: ids.length - sent, failed: results.filter((result) => result.status === "rejected").length, reasons };
 }

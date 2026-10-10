@@ -1,36 +1,31 @@
 "use client";
 
-import { ChevronIcon, ClassesLoadingPlaceholders, DetailSection, ImageCropModal, PhotoIcon, ProgramFaqSection, ProgramHero, ProgramPaymentOptionsDisplay, ProgramScheduleOptionsDisplay, TrackPayInFullPriceCaption, TrackPriceNumber, TrackPricingDealCaption, TrashIcon, applyLinkedSessionsToTracks, formatDurationDate, getCurrentAccessToken, invalidateProgramCaches, mediaType, mosqueProgramsQueryKey, programPayInFullDurationMonths, programPaymentOptions, programStatusBadgeToneClass, scheduleRowFromProgramSession, scheduleSessionLines, scheduleSummary, scheduleTimeOptions, startOfToday, titleCase, trackCapacityBadge, trackPriceLine, trackPricingDeal, trackSelectionRuleText } from "@/components/data/program-builder-shared";
-import type { Mosque, PaymentType, Profile, Program, ProgramBuilderStatus, ProgramDetails, ProgramFaq, ProgramMedia, ProgramSession, ProgramTrack, ProgramTrackSession } from "@/components/data/program-builder-shared";
-import { loadStudentActivity, type StudentActivity } from "@/lib/student-activity";
+import { ChevronIcon, programStatusBadgeToneClass, titleCase } from "@/components/data/program-builder-shared";
+import type { Profile, Program, ProgramTrack } from "@/components/data/program-builder-shared";
+import { loadStudentActivity } from "@/lib/student-activity";
 import Link from "@/components/layout/workspace-link";
-import { ApplicationDecisionModal, ApplicationReviewOverlay, type ApplicationRow } from "@/components/data/application-review";
+import { ApplicationReviewOverlay, type ApplicationRow } from "@/components/data/application-review";
 import { useSearchParams } from "next/navigation";
 import { useWorkspacePathname as usePathname, useWorkspaceRouter as useRouter } from "@/components/layout/workspace-navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { EmptyState } from "@/components/data/empty-state";
-import { DirectorySkeleton, GenericLoadingState, QuietPageLoadingState } from "@/components/data/data-loading";
-import { EditorToast, queueEditorToast, readQueuedEditorToast, type EditorToastState } from "@/components/data/editor-toast";
-import { getCachedMosqueChrome, getCachedProfileSummary, getCachedSessionSnapshot, getCachedUserAccess, loadCachedSession, loadCachedUserAccess, loadMosqueChrome, performClientLogout, setCachedProfileName, setCachedProfileSummary, subscribeCachedSession } from "@/lib/client-cache";
+import { DirectorySkeleton } from "@/components/data/data-loading";
+import { EditorToast, type EditorToastState } from "@/components/data/editor-toast";
+import { getCachedSessionSnapshot, loadCachedSession } from "@/lib/client-cache";
 import { friendlyErrorMessage } from "@/lib/errors";
-import { clearPrivatePage, invalidatePrivateSnapshots, invalidateQuery, invalidateQueryPrefix, loadPrivateSnapshot, operationalSnapshotKey, prefetchQuery, readPrivatePage, useCachedQuery, writePrivatePage } from "@/lib/query-cache";
+import { clearPrivatePage, loadPrivateSnapshot, operationalSnapshotKey, readPrivatePage, writePrivatePage } from "@/lib/query-cache";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
-import type { Database, Json } from "@/lib/supabase/types";
+import type { Database } from "@/lib/supabase/types";
 import { cn } from "@/lib/utils";
 import {
   applicationNeedsAction,
   applicationStatusTone,
   getApplicationPaymentStatus,
-  getApplicationRowActions,
   getApplicationRowStatusLabel,
   getApplicationStatus,
-  isPaymentStatusMeaningful,
-  paymentStatusTone,
-  PAYMENT_STATUS_LABELS,
-  type ApplicationRowAction,
   type ApplicationStatus as RequestApplicationStatus,
 } from "@/lib/programs/applications";
-import { ChevronRightIcon, DefaultProfileIcon, EnrollmentRequest, ParentDisplay, ProgramFinanceAuditEvent, ProgramSubscription, SearchIcon, StudentDisplay, applicationListedPrice, applicationPaymentPlanLabel, formatFinanceDate, resolveRequestTrack } from "@/components/data/application-management-shared";
+import { ChevronRightIcon, DefaultProfileIcon, EnrollmentRequest, ParentDisplay, ProgramFinanceAuditEvent, ProgramSubscription, SearchIcon, StudentDisplay, formatFinanceDate, resolveRequestTrack } from "@/components/data/application-management-shared";
 
 export function ProgramApplicationsData({ slug, programId, mode = "teacher" }: { slug: string; programId: string; mode?: "teacher" | "admin" }) {
   const router = useRouter();
@@ -43,9 +38,7 @@ export function ProgramApplicationsData({ slug, programId, mode = "teacher" }: {
   const [auditEvents, setAuditEvents] = useState<ProgramFinanceAuditEvent[]>(initialPage?.auditEvents ?? []);
   const [search, setSearch] = useState(searchParams.get("studentId") ?? "");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [payStatusFilter, setPayStatusFilter] = useState("all");
   const [trackFilter, setTrackFilter] = useState("all");
-  const [planFilter, setPlanFilter] = useState("all");
   const [needsActionOnly, setNeedsActionOnly] = useState(false);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [tracks, setTracks] = useState<ProgramTrack[]>(initialPage?.tracks ?? []);
@@ -56,6 +49,15 @@ export function ProgramApplicationsData({ slug, programId, mode = "teacher" }: {
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<EditorToastState | null>(null);
   const [canDecide, setCanDecide] = useState(initialPage?.canDecide ?? true);
+  const [reminderBusy, setReminderBusy] = useState<string | null>(null);
+  const [reminderTarget, setReminderTarget] = useState<"all" | string | null>(null);
+  const [remindedToday, setRemindedToday] = useState<Set<string>>(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    return new Set((initialPage?.auditEvents ?? []).filter((event) => {
+      const metadata = event.metadata as Record<string, unknown> | null;
+      return event.event_type === "application_payment_reminder_sent" && event.created_at.slice(0, 10) === today && Number(metadata?.sent ?? 0) > 0 && typeof metadata?.enrollmentRequestId === "string";
+    }).map((event) => String((event.metadata as Record<string, unknown>).enrollmentRequestId)));
+  });
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
@@ -198,20 +200,15 @@ export function ProgramApplicationsData({ slug, programId, mode = "teacher" }: {
     return rows.filter((row) => {
       const status = getApplicationStatus(row.request);
       const payStatus = getApplicationPaymentStatus(row.request, program, row.subscription);
-      const plan = applicationPaymentPlanLabel(row, program);
       if (needsActionOnly && !applicationNeedsAction(status)) {
         return false;
       }
-      if (statusFilter !== "all" && status !== statusFilter) {
-        return false;
-      }
-      if (payStatusFilter !== "all" && payStatus !== payStatusFilter) {
+      const waitingForPayment = status === "approved_confirmation_required" && ["payment_required", "checkout_pending"].includes(payStatus);
+      const waitingForConfirmation = status === "approved_confirmation_required" && !waitingForPayment;
+      if (statusFilter !== "all" && statusFilter !== status && !(statusFilter === "waiting_payment" && waitingForPayment) && !(statusFilter === "waiting_confirmation" && waitingForConfirmation) && !(statusFilter === "closed" && ["rejected", "cancelled"].includes(status))) {
         return false;
       }
       if (trackFilter !== "all" && (row.request.program_track_id ?? "none") !== trackFilter) {
-        return false;
-      }
-      if (planFilter !== "all" && plan.toLowerCase() !== planFilter) {
         return false;
       }
       if (!query) {
@@ -223,15 +220,16 @@ export function ProgramApplicationsData({ slug, programId, mode = "teacher" }: {
         .toLowerCase()
         .includes(query);
     });
-  }, [needsActionOnly, payStatusFilter, planFilter, program, rows, search, statusFilter, trackFilter]);
+  }, [needsActionOnly, program, rows, search, statusFilter, trackFilter]);
 
   const countByStatus = (status: RequestApplicationStatus) => rows.filter((row) => getApplicationStatus(row.request) === status).length;
   const approvedRows = rows.filter((row) => getApplicationStatus(row.request) === "approved_confirmation_required");
   const waitingConfirmationCount = approvedRows.filter((row) => {
     const payStatus = getApplicationPaymentStatus(row.request, program, row.subscription);
-    return payStatus === "not_required" || payStatus === "waived";
+    return !["payment_required", "checkout_pending"].includes(payStatus);
   }).length;
-  const waitingPaymentCount = approvedRows.length - waitingConfirmationCount;
+  const waitingPaymentRows = approvedRows.filter((row) => ["payment_required", "checkout_pending"].includes(getApplicationPaymentStatus(row.request, program, row.subscription)));
+  const waitingPaymentCount = waitingPaymentRows.length;
   const tracksById = Object.fromEntries(tracks.map((track) => [track.id, track]));
   const pendingSwitchRequests = trackSwitchRequests.filter((request) => request.status === "pending");
 
@@ -248,6 +246,38 @@ export function ProgramApplicationsData({ slug, programId, mode = "teacher" }: {
     }
     setToast({ tone: "success", message: decision === "approved" ? "Switch approved." : "Switch rejected." });
     void loadApplications();
+  }
+
+  async function sendPaymentReminder(requestId: string | undefined, message: string) {
+    setReminderBusy(requestId ?? "all");
+    try {
+      const session = await loadCachedSession();
+      const token = session?.access_token;
+      if (!token) throw new Error("Log in required.");
+      const response = await fetch(`/api/programs/${programId}/applications/payment-reminders`, {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${token}` },
+        body: JSON.stringify({ ...(requestId ? { requestId } : {}), message }),
+      });
+      const result = await response.json() as { error?: string; applications?: number; sent?: number; skipped?: number; failed?: number; reasons?: string[]; requestIds?: string[] };
+      if (!response.ok) throw new Error(result.error || "Could not send the payment reminder.");
+      const sent = result.sent ?? 0;
+      const toastMessage = sent > 0
+        ? requestId
+          ? "Payment reminder sent."
+          : `Payment reminders sent for ${result.applications ?? 0} applications.`
+        : result.reasons?.length
+          ? `No email was sent: ${result.reasons.join(" ")}`
+          : "No email was sent. It may have already been sent today, or no recipient email is available.";
+      setToast({ tone: sent > 0 ? "success" : "error", message: toastMessage });
+      if (sent > 0) setRemindedToday((current) => new Set([...current, ...(result.requestIds ?? [])]));
+      return true;
+    } catch (reminderError) {
+      setToast({ tone: "error", message: friendlyErrorMessage(reminderError, "Could not send the payment reminder.") });
+      return false;
+    } finally {
+      setReminderBusy(null);
+    }
   }
 
   if (loading) {
@@ -307,36 +337,18 @@ export function ProgramApplicationsData({ slug, programId, mode = "teacher" }: {
         </div>
         {filtersOpen ? <div className="divide-y divide-[#EEF2F4] rounded-[16px] border border-[#DDE5E9] bg-white px-3">
           <CompactFinanceSelect
-            label="Application status"
+            label="Stage"
             value={statusFilter}
-            options={["pending_review", "waitlisted", "rejected", "approved_confirmation_required", "completed_enrolled", "cancelled"]}
+            options={["pending_review", "waiting_payment", "waiting_confirmation", "waitlisted", "completed_enrolled", "closed"]}
             labels={{
               pending_review: "Pending Review",
+              waiting_payment: "Waiting Payment",
+              waiting_confirmation: "Waiting Confirmation",
               waitlisted: "Waitlisted",
-              rejected: "Rejected",
-              approved_confirmation_required: "Approved",
               completed_enrolled: "Completed / Enrolled",
-              cancelled: "Cancelled",
+              closed: "Rejected / Cancelled",
             }}
             onChange={setStatusFilter}
-          />
-          <CompactFinanceSelect
-            label="Payment status"
-            value={payStatusFilter}
-            options={["not_required", "waived", "paid_externally", "payment_required", "checkout_pending", "paid", "active_subscription", "past_due", "failed", "ended"]}
-            labels={{
-              not_required: "Not required",
-              waived: "Waived",
-              paid_externally: "Paid Externally",
-              payment_required: "Payment required",
-              checkout_pending: "Awaiting payment",
-              paid: "Paid",
-              active_subscription: "Subscription active",
-              past_due: "Past due",
-              failed: "Failed",
-              ended: "Ended",
-            }}
-            onChange={setPayStatusFilter}
           />
           {tracks.length ? (
             <CompactFinanceSelect
@@ -347,35 +359,58 @@ export function ProgramApplicationsData({ slug, programId, mode = "teacher" }: {
               onChange={setTrackFilter}
             />
           ) : null}
-          <CompactFinanceSelect
-            label="Payment plan"
-            value={planFilter}
-            options={["free", "monthly subscription", program.is_ongoing ? "annual subscription" : "pay in full", "waived", "paid externally"]}
-            labels={{ "pay in full": "Pay in Full", "annual subscription": "Annual subscription" }}
-            onChange={setPlanFilter}
-          />
         </div> : null}
       </div>
+
+      {canDecide && waitingPaymentCount > 0 ? (
+        <div className="flex items-center justify-between gap-3 border-y border-[#E7ECEF] px-1 py-2.5">
+          <p className="text-xs font-medium text-[#6B747B]">{waitingPaymentCount} waiting for payment</p>
+          <button type="button" disabled={reminderBusy !== null} onClick={() => setReminderTarget("all")} className="min-h-9 shrink-0 rounded-full bg-[#17624F] px-3.5 text-xs font-semibold text-white transition-colors hover:bg-[#125240] disabled:opacity-60">
+            {reminderBusy === "all" ? "Sending…" : "Send reminders"}
+          </button>
+        </div>
+      ) : null}
 
       <div className="flex items-center justify-between px-1 text-sm font-semibold text-[#6B747B]">
         <span>Showing {filteredRows.length} of {rows.length} applications</span>
       </div>
 
-      <div className="overflow-hidden rounded-[24px] border border-[#E1E8EC] bg-white shadow-[0_14px_38px_rgba(38,50,58,0.08)]">
-        <div className="overflow-x-auto">
-          <table className="min-w-[1240px] w-full text-left text-sm">
+      <div className="space-y-2 md:hidden">
+        {filteredRows.map((row) => {
+          const status = getApplicationStatus(row.request);
+          const payStatus = getApplicationPaymentStatus(row.request, program, row.subscription);
+          return (
+            <article key={row.request.id} className="overflow-hidden rounded-[16px] border border-[#E1E8EC] bg-white">
+              <button type="button" onClick={() => setDetailsTarget(row)} onPointerEnter={() => { void loadStudentActivity(programId, row.request.student_profile_id, "application").catch(() => undefined); }} className="flex w-full items-start gap-3 px-4 py-3.5 text-left">
+                <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#EEF6F7] text-[#17624F]" aria-hidden><DefaultProfileIcon className="h-5 w-5" compact /></span>
+                <span className="min-w-0 flex-1">
+                  <span className="block break-words text-[15px] font-semibold leading-5 text-[#26323A]">{row.student?.full_name || "Student"}</span>
+                  <span className="mt-1 block text-xs leading-4 text-[#6B747B]">{row.track?.name || "No track"}{row.parent ? ` · ${row.parent.full_name || "Parent"}` : ""}</span>
+                  <span className={cn("mt-2 inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold leading-4", programStatusBadgeToneClass(applicationStatusTone(status)))}>{getApplicationRowStatusLabel(status, payStatus)}</span>
+                </span>
+                <span className="mt-2"><ChevronRightIcon /></span>
+              </button>
+            </article>
+          );
+        })}
+        {!filteredRows.length ? <div className="rounded-[18px] border border-[#E1E8EC] bg-white px-4 py-10 text-center text-sm font-semibold text-[#7B858C]">No matching applications.</div> : null}
+      </div>
+
+      <div className="hidden overflow-hidden rounded-[20px] border border-[#E1E8EC] bg-white md:block">
+          <table className="w-full table-fixed text-left text-sm">
             <thead className="bg-[#F7FAFB] text-[11px] font-semibold uppercase tracking-wide text-[#7B858C]">
               <tr>
-                {["Applicant / Student", "Parent / Guardian", "Track / Schedule", "Payment Plan", "Listed Price", "Application Status", "Payment Status", "Submitted", "Actions"].map((column) => (
-                  <th key={column} className="px-4 py-3">{column}</th>
-                ))}
+                <th className="w-[31%] px-4 py-3">Student</th>
+                <th className="w-[23%] px-4 py-3">Track</th>
+                <th className="w-[26%] px-4 py-3">Status</th>
+                <th className="w-[14%] px-4 py-3">Submitted</th>
+                <th className="w-[6%] px-3 py-3"><span className="sr-only">Open</span></th>
               </tr>
             </thead>
             <tbody className="divide-y divide-[#EEF2F4]">
               {filteredRows.map((row) => {
                 const status = getApplicationStatus(row.request);
                 const payStatus = getApplicationPaymentStatus(row.request, program, row.subscription);
-                const needsAction = applicationNeedsAction(status);
                 return (
                   <tr
                     key={row.request.id}
@@ -383,35 +418,20 @@ export function ProgramApplicationsData({ slug, programId, mode = "teacher" }: {
                     onPointerEnter={() => { void loadStudentActivity(programId, row.request.student_profile_id, "application").catch(() => undefined); }}
                     onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); setDetailsTarget(row); } }}
                     onClick={() => setDetailsTarget(row)}
-                    className={cn("cursor-pointer align-middle transition-colors hover:bg-[#F7FAFB]", needsAction ? "bg-[#EEF7FA]" : "")}
+                    className="cursor-pointer align-middle transition-colors hover:bg-[#F7FAFB]"
                   >
                     <td className="px-4 py-4">
                       <p className="font-semibold text-[#26323A]">{row.student?.full_name || "Student"}</p>
-                      <p className="mt-0.5 text-xs text-[#7B858C]">{row.parent ? "Child Student" : "Adult Student"}{row.student?.age ? ` · Age ${row.student.age}` : ""}</p>
+                      <p className="mt-0.5 truncate text-xs text-[#7B858C]">{row.parent ? row.parent.full_name || "Parent" : "Adult student"}</p>
                     </td>
-                    <td className="px-4 py-4">
-                      <p className="font-semibold text-[#26323A]">{row.parent?.full_name || "Self"}</p>
-                      <p className="mt-0.5 text-xs text-[#7B858C]">{row.parent?.email || "---"}</p>
-                    </td>
-                    <td className="px-4 py-4 text-[#52616A]">{row.track ? row.track.name : "—"}</td>
-                    <td className="px-4 py-4 font-semibold text-[#52616A]">{applicationPaymentPlanLabel(row, program)}</td>
-                    <td className="px-4 py-4 font-semibold text-[#26323A]">{applicationListedPrice(row, program)}</td>
+                    <td className="truncate px-4 py-4 text-[#52616A]">{row.track ? row.track.name : "—"}</td>
                     <td className="px-4 py-4">
                       <span className={cn("rounded-full px-2.5 py-1 text-xs font-semibold", programStatusBadgeToneClass(applicationStatusTone(status)))}>
                         {getApplicationRowStatusLabel(status, payStatus)}
                       </span>
                     </td>
-                    <td className="px-4 py-4">
-                      {isPaymentStatusMeaningful(row.request, program) ? (
-                        <span className={cn("rounded-full px-2.5 py-1 text-xs font-semibold", programStatusBadgeToneClass(paymentStatusTone(payStatus)))}>
-                          {PAYMENT_STATUS_LABELS[payStatus]}
-                        </span>
-                      ) : (
-                        <span className="text-[#9AA4AA]">—</span>
-                      )}
-                    </td>
                     <td className="px-4 py-4 text-[#52616A]">{formatFinanceDate(row.request.requested_at)}</td>
-                    <td className="px-4 py-4">
+                    <td className="px-3 py-4">
                       <ChevronRightIcon />
                     </td>
                   </tr>
@@ -419,12 +439,11 @@ export function ProgramApplicationsData({ slug, programId, mode = "teacher" }: {
               })}
               {!filteredRows.length ? (
                 <tr>
-                  <td colSpan={9} className="px-4 py-10 text-center text-sm font-semibold text-[#7B858C]">No matching applications.</td>
+                  <td colSpan={5} className="px-4 py-10 text-center text-sm font-semibold text-[#7B858C]">No matching applications.</td>
                 </tr>
               ) : null}
             </tbody>
           </table>
-        </div>
       </div>
 
       {pendingSwitchRequests.length ? (
@@ -461,6 +480,8 @@ export function ProgramApplicationsData({ slug, programId, mode = "teacher" }: {
           initialRow={detailsTarget}
           initialProgram={program ?? undefined}
           canDecide={canDecide}
+          onSendPaymentReminder={() => setReminderTarget(detailsTarget.request.id)}
+          paymentReminderBusy={reminderBusy === detailsTarget.request.id}
           onClose={() => {
             setDetailsTarget(null);
             if (searchParams.get("from") === "students") {
@@ -477,7 +498,61 @@ export function ProgramApplicationsData({ slug, programId, mode = "teacher" }: {
           onChanged={loadApplications}
         />
       ) : null}
+      {reminderTarget ? (
+        <PaymentReminderConfirmModal
+          programTitle={program.title}
+          rows={reminderTarget === "all" ? waitingPaymentRows : waitingPaymentRows.filter((row) => row.request.id === reminderTarget)}
+          remindedToday={remindedToday}
+          busy={reminderBusy !== null}
+          onClose={() => { if (reminderBusy === null) setReminderTarget(null); }}
+          onConfirm={async (message) => {
+            const completed = await sendPaymentReminder(reminderTarget === "all" ? undefined : reminderTarget, message);
+            if (completed) setReminderTarget(null);
+          }}
+        />
+      ) : null}
     </section>
+  );
+}
+
+function PaymentReminderConfirmModal({ programTitle, rows, remindedToday, busy, onClose, onConfirm }: { programTitle: string; rows: ApplicationRow[]; remindedToday: Set<string>; busy: boolean; onClose: () => void; onConfirm: (message: string) => Promise<void> | void }) {
+  const [message, setMessage] = useState(`Your application to ${programTitle} has been approved and is waiting for payment. Complete payment in Madrasa to finish registration and activate enrollment.`);
+  const recipients = rows.map((row) => ({
+    requestId: row.request.id,
+    student: row.student?.full_name || "Student",
+    emails: Array.from(new Set([row.parent?.email, row.student?.email].filter((email): email is string => Boolean(email?.trim())).map((email) => email.trim().toLowerCase()))),
+  }));
+  const sendable = recipients.filter((recipient) => !remindedToday.has(recipient.requestId) && recipient.emails.length > 0);
+
+  return (
+    <div className="fixed inset-0 z-[2147483647] flex items-center justify-center bg-[#26323A]/40 px-4 backdrop-blur-sm">
+      <div role="dialog" aria-modal="true" aria-labelledby="payment-reminder-title" className="flex max-h-[88vh] w-full max-w-md flex-col overflow-hidden rounded-[24px] bg-white text-[#26323A] shadow-[0_24px_70px_rgba(38,50,58,0.24)]">
+        <div className="border-b border-[#E7ECEF] px-5 py-4">
+          <h2 id="payment-reminder-title" className="text-lg font-semibold">Send payment reminder{rows.length === 1 ? "" : "s"}</h2>
+          <p className="mt-1 text-sm text-[#6B747B]">Review the recipients and message before sending.</p>
+        </div>
+        <div className="min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4">
+          <section>
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-[#7B858C]">Recipients</h3>
+            <div className="mt-2 divide-y divide-[#EEF2F4] rounded-[14px] border border-[#E1E8EC] px-3">
+              {recipients.map((recipient) => <div key={recipient.requestId} className="py-2.5">
+                <div className="flex items-center justify-between gap-3"><p className="text-sm font-semibold">{recipient.student}</p>{remindedToday.has(recipient.requestId) ? <span className="shrink-0 rounded-full bg-[#EEF3F5] px-2 py-1 text-[10px] font-semibold text-[#6B747B]">Sent today</span> : null}</div>
+                <p className="mt-1 break-all text-xs text-[#6B747B]">{recipient.emails.join(", ") || "No email address available"}</p>
+              </div>)}
+            </div>
+          </section>
+          <label className="block">
+            <span className="text-xs font-semibold uppercase tracking-wide text-[#7B858C]">Email message</span>
+            <textarea value={message} onChange={(event) => setMessage(event.target.value)} maxLength={1200} rows={5} className="mt-2 w-full resize-none rounded-[14px] border border-[#C9D3D7] px-3 py-2.5 text-sm leading-6 outline-none focus:border-[#17624F]" />
+          </label>
+          {sendable.length === 0 ? <p className="rounded-[12px] bg-[#F4F7F8] px-3 py-2.5 text-xs font-medium text-[#52616A]">No new emails can be sent. Each available recipient was already emailed today, or has no email address.</p> : <p className="text-xs text-[#6B747B]">This will send to {sendable.length} application{sendable.length === 1 ? "" : "s"}. A reminder can only be sent once per application each day.</p>}
+        </div>
+        <div className="flex items-center justify-end gap-2 border-t border-[#E7ECEF] px-5 py-4">
+          <button type="button" disabled={busy} onClick={onClose} className="min-h-10 px-3 text-sm font-semibold text-[#6B747B] disabled:opacity-50">Cancel</button>
+          <button type="button" disabled={busy || sendable.length === 0 || !message.trim()} onClick={() => void onConfirm(message.trim())} className="min-h-10 rounded-[11px] bg-[#17624F] px-4 text-sm font-semibold text-white disabled:opacity-50">{busy ? "Sending…" : `Send ${sendable.length || ""} reminder${sendable.length === 1 ? "" : "s"}`}</button>
+        </div>
+      </div>
+    </div>
   );
 }
 

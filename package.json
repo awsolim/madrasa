@@ -4,6 +4,13 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
+    "test-env:check": "node --env-file=.env.test.local scripts/validate-test-environment.mjs",
+    "dev:test": "npm run test-env:check && node scripts/start-test-dev.mjs",
+    "test-db:start": "supabase start --workdir test-environment",
+    "test-db:status": "supabase status --workdir test-environment",
+    "test-db:stop": "supabase stop --workdir test-environment",
+    "test-db:configure": "node scripts/sync-local-test-env.mjs",
+    "test-admin:promote": "node scripts/promote-local-test-admin.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",

@@ -233,11 +233,14 @@ function TeacherInboxMessageDrawer({
   busyWithdrawalId: string | null;
   busySwitchRequestId: string | null;
   onClose: () => void;
-  onApproveWithdrawal: (request: WithdrawalRequestWithContext) => void;
+  onApproveWithdrawal: (request: WithdrawalRequestWithContext, refundAmountCents: number) => void;
   onRejectWithdrawal: (request: WithdrawalRequestWithContext) => void;
   onApproveTrackSwitch: (request: ProgramTrackSwitchRequestWithContext) => void;
   onRejectTrackSwitch: (request: ProgramTrackSwitchRequestWithContext) => void;
 }) {
+  const [approvalOptionsOpen, setApprovalOptionsOpen] = useState(false);
+  const [refundEnabled, setRefundEnabled] = useState(false);
+  const [refundAmount, setRefundAmount] = useState("");
   const containerRef = useRef<HTMLDivElement>(null);
   useModalFocusTrap(containerRef, true, onClose);
   useEffect(() => {
@@ -305,14 +308,13 @@ function TeacherInboxMessageDrawer({
 
         {item.kind === "withdrawal" && item.request.status === "pending" ? (
           <div className="mt-4 grid gap-2">
-            <button
-              type="button"
-              onClick={() => onApproveWithdrawal(item.request)}
-              disabled={busyWithdrawalId === item.request.id}
-              className="min-h-11 rounded-full bg-[#17624F] px-4 text-sm font-semibold text-white disabled:bg-[#D8E2E5] disabled:text-[#8A949B]"
-            >
-              {busyWithdrawalId === item.request.id ? "Working..." : "Accept withdrawal and remove student"}
-            </button>
+            {!approvalOptionsOpen ? <button type="button" onClick={() => setApprovalOptionsOpen(true)} disabled={busyWithdrawalId === item.request.id} className="min-h-11 rounded-full bg-[#17624F] px-4 text-sm font-semibold text-white disabled:bg-[#D8E2E5] disabled:text-[#8A949B]">Review withdrawal approval</button> : <div className="rounded-[16px] border border-[#DDE5E9] bg-[#F8FAFB] p-4">
+              <p className="text-sm font-semibold">Approve withdrawal</p>
+              <p className="mt-1 text-xs leading-5 text-[#6B747B]">The active subscription and enrollment will end. A refund is optional.</p>
+              <label className="mt-3 flex items-center gap-2 text-sm font-semibold"><input type="checkbox" checked={refundEnabled} onChange={(event) => setRefundEnabled(event.target.checked)} /> Issue a custom refund</label>
+              {refundEnabled ? <label className="mt-3 block"><span className="text-xs font-semibold uppercase tracking-wide text-[#7B858C]">Refund amount (CAD)</span><input value={refundAmount} onChange={(event) => setRefundAmount(event.target.value)} inputMode="decimal" placeholder="0.00" className="mt-1 h-11 w-full rounded-[10px] border border-[#B9C3C8] bg-white px-3 text-sm font-semibold outline-none focus:border-[#17624F]" /><span className="mt-1 block text-xs leading-5 text-[#7B858C]">Refunds the original payment method. The amount cannot exceed the latest refundable Stripe payment.</span></label> : null}
+              <div className="mt-4 flex justify-end gap-2"><button type="button" disabled={busyWithdrawalId === item.request.id} onClick={() => setApprovalOptionsOpen(false)} className="min-h-10 px-3 text-sm font-semibold text-[#6B747B]">Cancel</button><button type="button" disabled={busyWithdrawalId === item.request.id || (refundEnabled && !(Number(refundAmount) > 0))} onClick={() => onApproveWithdrawal(item.request, refundEnabled ? Math.round(Number(refundAmount) * 100) : 0)} className="min-h-10 rounded-[10px] bg-[#17624F] px-4 text-sm font-semibold text-white disabled:opacity-50">{busyWithdrawalId === item.request.id ? "Working…" : refundEnabled ? "Approve and refund" : "Approve without refund"}</button></div>
+            </div>}
             <button
               type="button"
               onClick={() => onRejectWithdrawal(item.request)}
@@ -718,7 +720,7 @@ export function TeacherInboxData({ slug }: { slug: string }) {
     window.dispatchEvent(new Event("tareeqah:notifications-changed"));
   }
 
-  async function reviewWithdrawal(request: WithdrawalRequestWithContext, status: "approved" | "rejected") {
+  async function reviewWithdrawal(request: WithdrawalRequestWithContext, status: "approved" | "rejected", refundAmountCents = 0) {
     setBusyWithdrawalId(request.id);
     const supabase = createSupabaseBrowserClient();
     const { data: sessionData } = await supabase.auth.getSession();
@@ -736,7 +738,7 @@ export function TeacherInboxData({ slug }: { slug: string }) {
           "content-type": "application/json",
           authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ withdrawalRequestId: request.id, status }),
+        body: JSON.stringify({ withdrawalRequestId: request.id, status, refundAmountCents }),
         signal: AbortSignal.timeout(20000),
       });
       const result = (await response.json().catch(() => ({}))) as { error?: string };
@@ -1108,8 +1110,8 @@ export function TeacherInboxData({ slug }: { slug: string }) {
           busyWithdrawalId={busyWithdrawalId}
           busySwitchRequestId={switchRequestBusyId}
           onClose={closeInboxDrawer}
-          onApproveWithdrawal={(request) => {
-            void reviewWithdrawal(request, "approved").then((ok) => {
+          onApproveWithdrawal={(request, refundAmountCents) => {
+            void reviewWithdrawal(request, "approved", refundAmountCents).then((ok) => {
               if (ok) closeInboxDrawer();
             });
           }}

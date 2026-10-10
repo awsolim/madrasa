@@ -4,12 +4,15 @@ import { createSupabaseServiceClient } from "@/lib/supabase/service";
 import { getAppBaseUrl } from "@/lib/email/resend";
 import { sendProfileNotificationEmails } from "@/lib/email/notifications";
 import { logServerError } from "@/lib/monitoring/log-error";
+import { getStripe, shouldUseStripeConnect } from "@/lib/stripe/server";
+import { recordFinanceAuditEvent } from "@/lib/finance/audit";
 
 export const runtime = "nodejs";
 
 type ReviewWithdrawalBody = {
   withdrawalRequestId?: string;
   status?: "approved" | "rejected";
+  refundAmountCents?: number;
 };
 
 export async function POST(request: Request) {
@@ -27,6 +30,10 @@ export async function POST(request: Request) {
 
     if (!["approved", "rejected"].includes(body.status)) {
       return Response.json({ error: "Invalid withdrawal decision." }, { status: 400 });
+    }
+    const refundAmountCents = Math.round(Number(body.refundAmountCents ?? 0));
+    if (!Number.isFinite(refundAmountCents) || refundAmountCents < 0) {
+      return Response.json({ error: "Refund amount is invalid." }, { status: 400 });
     }
 
     const supabase = createSupabaseServiceClient();
@@ -108,7 +115,48 @@ export async function POST(request: Request) {
       .eq("student_profile_id", withdrawalRequest.student_profile_id)
       .maybeSingle();
 
+    if (refundAmountCents > 0) {
+      const { data: canManageFinances, error: financeAccessError } = await supabase.rpc("can_manage_program_finances", {
+        check_program_id: withdrawalRequest.program_id,
+        check_profile_id: user.id,
+      });
+      if (financeAccessError || !canManageFinances) {
+        return Response.json({ error: financeAccessError?.message ?? "Finance access is required to issue a refund." }, { status: 403 });
+      }
+    }
+
     await cancelProgramSubscription(supabase, subscription);
+
+    let refundId: string | null = null;
+    if (refundAmountCents > 0) {
+      const { data: payment, error: paymentError } = await supabase
+        .from("program_payments")
+        .select("id,amount_cents,currency,stripe_charge_id,stripe_payment_intent_id,stripe_invoice_id")
+        .eq("program_id", withdrawalRequest.program_id)
+        .eq("student_profile_id", withdrawalRequest.student_profile_id)
+        .order("paid_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (paymentError || !payment) throw new Error(paymentError?.message ?? "No refundable payment was found for this student.");
+      if (refundAmountCents > payment.amount_cents) throw new Error("The refund cannot exceed the student's latest recorded payment.");
+      if (!payment.stripe_charge_id && !payment.stripe_payment_intent_id) throw new Error("The latest payment is not linked to a refundable Stripe charge.");
+      const stripeOptions = shouldUseStripeConnect() && subscription?.stripe_account_id ? { stripeAccount: subscription.stripe_account_id } : undefined;
+      const refund = await getStripe().refunds.create({
+        ...(payment.stripe_charge_id ? { charge: payment.stripe_charge_id } : { payment_intent: payment.stripe_payment_intent_id! }),
+        amount: refundAmountCents,
+        reason: "requested_by_customer",
+        metadata: { withdrawal_request_id: withdrawalRequest.id, program_id: withdrawalRequest.program_id, student_profile_id: withdrawalRequest.student_profile_id, program_payment_id: payment.id },
+      }, { ...stripeOptions, idempotencyKey: `withdrawal-refund:${withdrawalRequest.id}:${refundAmountCents}` });
+      refundId = refund.id;
+      await recordFinanceAuditEvent(supabase, {
+        programId: withdrawalRequest.program_id,
+        studentProfileId: withdrawalRequest.student_profile_id,
+        actorProfileId: user.id,
+        eventType: "withdrawal_refund_issued",
+        summary: `A ${payment.currency.toUpperCase()} ${(refundAmountCents / 100).toFixed(2)} refund was issued when the withdrawal was approved.`,
+        metadata: { withdrawalRequestId: withdrawalRequest.id, programPaymentId: payment.id, stripeRefundId: refund.id, amountCents: refundAmountCents, currency: payment.currency },
+      });
+    }
 
     const { error: updateError } = await supabase
       .from("withdrawal_requests")
@@ -116,7 +164,7 @@ export async function POST(request: Request) {
         status: "approved",
         reviewed_by: user.id,
         reviewed_at: now,
-        decision_note: "Withdrawal approved. Enrollment ended immediately.",
+        decision_note: refundAmountCents > 0 ? `Withdrawal approved. Enrollment ended immediately and a ${(refundAmountCents / 100).toFixed(2)} refund was issued.` : "Withdrawal approved. Enrollment ended immediately without a refund.",
       })
       .eq("id", withdrawalRequest.id);
 
@@ -135,7 +183,7 @@ export async function POST(request: Request) {
     }
 
     if (program && mosque) {
-      const message = `Your withdrawal request for ${program.title} was approved. Enrollment has ended.`;
+      const message = `Your withdrawal request for ${program.title} was approved. Enrollment has ended.${refundAmountCents > 0 ? ` A ${(refundAmountCents / 100).toFixed(2)} refund was issued to the original payment method.` : ""}`;
       void sendPushNotification(supabase, {
         recipientProfileIds: [withdrawalRequest.parent_profile_id, withdrawalRequest.student_profile_id],
         title: "Withdrawal request approved",
@@ -151,7 +199,7 @@ export async function POST(request: Request) {
       }).catch(() => null);
     }
 
-    return Response.json({ ok: true });
+    return Response.json({ ok: true, refundId, refundAmountCents });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not review withdrawal request.";
     await logServerError(createSupabaseServiceClient(), {

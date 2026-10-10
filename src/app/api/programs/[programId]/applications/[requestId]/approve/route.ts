@@ -2,6 +2,8 @@ import { requireProgramApplicationDecisionAccess } from "@/lib/programs/auth";
 import { recordFinanceAuditEvent } from "@/lib/finance/audit";
 import { createApprovedPaymentTerms } from "@/lib/finance/payment-terms";
 import { sendPushNotification } from "@/lib/push/send-push";
+import { sendProfileNotificationEmails } from "@/lib/email/notifications";
+import { getAppBaseUrl } from "@/lib/email/resend";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
 import { logServerError } from "@/lib/monitoring/log-error";
 
@@ -127,11 +129,26 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
 
     const { data: mosque } = await supabase.from("mosques").select("slug").eq("id", program.mosque_id).maybeSingle();
     if (mosque) {
+      const portalPath = `/m/${mosque.slug}/portal/classes?tab=applications`;
+      const approvalMessage = `${label}'s application to ${program.title} was approved. Open Madrasa to complete the remaining registration steps${program.is_paid && !paymentBypassed ? ", including payment" : ""}.`;
       void sendPushNotification(supabase, {
         recipientProfileIds: [enrollmentRequest.parent_profile_id, enrollmentRequest.student_profile_id],
         title: "Application approved",
-        body: `${label}'s application to ${program.title} was approved.`,
-        url: `/m/${mosque.slug}/portal/classes?tab=applications`,
+        body: approvalMessage,
+        url: portalPath,
+      });
+      await sendProfileNotificationEmails(supabase, [enrollmentRequest.parent_profile_id, enrollmentRequest.student_profile_id], {
+        eventKey: `application-approved:${requestId}`,
+        subject: `Application approved: ${program.title}`,
+        title: "Application Approved",
+        message: approvalMessage,
+        action: { label: "Complete Registration", href: `${getAppBaseUrl()}${portalPath}` },
+      }).catch(async (emailError) => {
+        await logServerError(supabase, {
+          source: "programs.applications.approve.email",
+          message: emailError instanceof Error ? emailError.message : "Could not send application approval email.",
+          context: { programId, requestId },
+        });
       });
     }
 

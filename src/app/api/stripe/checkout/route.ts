@@ -156,7 +156,6 @@ export async function POST(request: Request) {
     const monthlyPlan = isRecurringMonthly
       ? monthlyCheckoutPlan({ monthly_billing_anchor: paymentTerms.monthly_billing_anchor, schedule_timezone: program.schedule_timezone })
       : null;
-
     const session = await stripe.checkout.sessions.create(
       {
         mode: isRecurring ? "subscription" : "payment",

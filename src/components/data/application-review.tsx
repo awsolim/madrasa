@@ -111,6 +111,8 @@ export function ApplicationReviewOverlay({
   requestId,
   initialRow, initialProgram,
   canDecide = true,
+  onSendPaymentReminder,
+  paymentReminderBusy = false,
   onClose,
   onChanged,
 }: {
@@ -121,6 +123,8 @@ export function ApplicationReviewOverlay({
   initialRow?: ApplicationRow;
   initialProgram?: Program;
   canDecide?: boolean;
+  onSendPaymentReminder?: () => Promise<void> | void;
+  paymentReminderBusy?: boolean;
   onClose: () => void;
   onChanged: () => Promise<void> | void;
 }) {
@@ -276,7 +280,7 @@ export function ApplicationReviewOverlay({
   return (
     <>
       <EditorToast toast={toast} onClose={() => setToast(null)} />
-      <ApplicationDetailsDrawer row={row} program={program} slug={slug} mode={mode} trackEnrolledCount={trackEnrolledCount} canDecide={canDecide} onClose={onClose} onAction={handleAction} />
+      <ApplicationDetailsDrawer row={row} program={program} slug={slug} mode={mode} trackEnrolledCount={trackEnrolledCount} canDecide={canDecide} onSendPaymentReminder={onSendPaymentReminder} paymentReminderBusy={paymentReminderBusy} onClose={onClose} onAction={handleAction} />
       {decisionAction ? (
         <ApplicationDecisionModal
           target={{ request: { ...row.request, program, student: row.student, parent: row.parent, track: row.track }, action: decisionAction }}
@@ -345,6 +349,8 @@ function ApplicationDetailsDrawer({
   mode,
   trackEnrolledCount = null,
   canDecide = true,
+  onSendPaymentReminder,
+  paymentReminderBusy = false,
   onClose,
   onAction,
 }: {
@@ -354,6 +360,8 @@ function ApplicationDetailsDrawer({
   mode: "teacher" | "admin";
   trackEnrolledCount?: number | null;
   canDecide?: boolean;
+  onSendPaymentReminder?: () => Promise<void> | void;
+  paymentReminderBusy?: boolean;
   onClose: () => void;
   onAction: (action: ApplicationRowAction) => void;
 }) {
@@ -378,6 +386,7 @@ function ApplicationDetailsDrawer({
 
   const status = getApplicationStatus(row.request);
   const payStatus = getApplicationPaymentStatus(row.request, program, row.subscription);
+  const canSendPaymentReminder = canDecide && status === "approved_confirmation_required" && ["payment_required", "checkout_pending"].includes(payStatus) && Boolean(onSendPaymentReminder);
   const basePath = mode === "admin" ? `/m/${slug}/admin/programs` : `/m/${slug}/teacher/classes`;
   const availableActions = canDecide ? getApplicationRowActions(status).filter((action) => action !== "view") : [];
   const recordActions: StudentRecordAction[] = [...availableActions.map((action): StudentRecordAction => ({
@@ -560,6 +569,11 @@ function ApplicationDetailsDrawer({
               )}
             </section>
           </div> : <div className="divide-y divide-[#E7ECEF]">
+            {canSendPaymentReminder ? (
+              <button type="button" disabled={paymentReminderBusy} onClick={() => void onSendPaymentReminder?.()} className="group flex min-h-14 w-full items-center justify-between gap-4 rounded-[10px] px-2 text-left text-[#26323A] transition-colors hover:bg-[#F4F7F8] active:bg-[#EAF0F2] disabled:opacity-60">
+                <span className="text-sm font-semibold">Email payment reminder</span><span aria-hidden="true" className="text-lg text-[#9AA6AC]">{paymentReminderBusy ? "…" : "›"}</span>
+              </button>
+            ) : null}
             {recordActions.length ? recordActions.map((action) => action.id === "manage_enrollment" ? (
               <Link key={action.id} href={`${basePath}/${program.id}/students?from=applications&studentSearch=${row.request.student_profile_id}`} className="group flex min-h-14 w-full items-center justify-between gap-4 rounded-[10px] px-2 text-left text-[#26323A] transition-colors hover:bg-[#F4F7F8] active:bg-[#EAF0F2]">
                 <span className="text-sm font-semibold">{action.label}</span><span aria-hidden="true" className="text-lg text-[#9AA6AC]">›</span>
@@ -568,7 +582,7 @@ function ApplicationDetailsDrawer({
               <button key={action.id} type="button" onClick={() => onAction(action.id as ApplicationRowAction)} className={cn("group flex min-h-14 w-full items-center justify-between gap-4 rounded-[10px] px-2 text-left transition-colors hover:bg-[#F4F7F8] active:bg-[#EAF0F2]", action.tone === "danger" ? "text-[#B42318]" : action.tone === "warning" ? "text-[#8A5A12]" : action.tone === "positive" ? "text-[#17624F]" : "text-[#26323A]")}>
                 <span className="text-sm font-semibold">{action.label}</span><span aria-hidden="true" className="text-lg text-[#9AA6AC]">›</span>
               </button>
-            )) : <p className="py-6 text-center text-sm text-[#6B747B]">No actions are available for this application.</p>}
+            )) : !canSendPaymentReminder ? <p className="py-6 text-center text-sm text-[#6B747B]">No actions are available for this application.</p> : null}
           </div>}
         </div>
       </div>
