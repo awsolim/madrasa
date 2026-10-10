@@ -1,6 +1,6 @@
-import type Stripe from "stripe";
 import { requireProgramFinanceAccess } from "@/lib/finance/auth";
 import { recordFinanceAuditEvent } from "@/lib/finance/audit";
+import { resolveRefundableCharge } from "@/lib/finance/refundable-charge";
 import { logServerError } from "@/lib/monitoring/log-error";
 import { getStripe, shouldUseStripeConnect } from "@/lib/stripe/server";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
@@ -14,20 +14,6 @@ type RefundPaymentBody = {
   requestId?: string;
   preview?: boolean;
 };
-
-async function refundableCharge(
-  payment: { stripe_charge_id: string | null; stripe_payment_intent_id: string | null },
-  stripeOptions: Stripe.RequestOptions | undefined,
-) {
-  const stripe = getStripe();
-  if (payment.stripe_charge_id) return stripe.charges.retrieve(payment.stripe_charge_id, {}, stripeOptions);
-  if (!payment.stripe_payment_intent_id) throw new Error("This payment is not linked to a refundable Stripe charge.");
-  const intent = await stripe.paymentIntents.retrieve(payment.stripe_payment_intent_id, { expand: ["latest_charge"] }, stripeOptions);
-  if (!intent.latest_charge) throw new Error("Stripe does not show a completed charge for this payment.");
-  return typeof intent.latest_charge === "string"
-    ? stripe.charges.retrieve(intent.latest_charge, {}, stripeOptions)
-    : intent.latest_charge;
-}
 
 export async function POST(request: Request, { params }: { params: Promise<{ programId: string }> }) {
   const { programId } = await params;
@@ -59,7 +45,15 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
     const stripeOptions = shouldUseStripeConnect() && subscription?.stripe_account_id
       ? { stripeAccount: subscription.stripe_account_id }
       : undefined;
-    const charge = await refundableCharge(payment, stripeOptions);
+    const resolved = await resolveRefundableCharge(getStripe(), payment, stripeOptions);
+    const charge = resolved.charge;
+    if (payment.stripe_charge_id !== charge.id || payment.stripe_payment_intent_id !== resolved.paymentIntentId) {
+      const { error: linkError } = await supabase.from("program_payments").update({
+        stripe_charge_id: charge.id,
+        stripe_payment_intent_id: resolved.paymentIntentId,
+      }).eq("id", payment.id);
+      if (linkError) throw linkError;
+    }
     if (charge.currency.toLowerCase() !== payment.currency.toLowerCase()) throw new Error("The Stripe charge currency does not match the payment record.");
     const refundedAmountCents = charge.amount_refunded;
     const refundableAmountCents = Math.max(0, charge.amount - refundedAmountCents);

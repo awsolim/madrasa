@@ -6,6 +6,7 @@ import { sendProfileNotificationEmails } from "@/lib/email/notifications";
 import { logServerError } from "@/lib/monitoring/log-error";
 import { getStripe, shouldUseStripeConnect } from "@/lib/stripe/server";
 import { recordFinanceAuditEvent } from "@/lib/finance/audit";
+import { resolveRefundableCharge } from "@/lib/finance/refundable-charge";
 
 export const runtime = "nodejs";
 
@@ -139,10 +140,19 @@ export async function POST(request: Request) {
         .maybeSingle();
       if (paymentError || !payment) throw new Error(paymentError?.message ?? "No refundable payment was found for this student.");
       if (refundAmountCents > payment.amount_cents) throw new Error("The refund cannot exceed the student's latest recorded payment.");
-      if (!payment.stripe_charge_id && !payment.stripe_payment_intent_id) throw new Error("The latest payment is not linked to a refundable Stripe charge.");
       const stripeOptions = shouldUseStripeConnect() && subscription?.stripe_account_id ? { stripeAccount: subscription.stripe_account_id } : undefined;
+      const resolved = await resolveRefundableCharge(getStripe(), payment, stripeOptions);
+      const remainingRefundable = Math.max(0, resolved.charge.amount - resolved.charge.amount_refunded);
+      if (refundAmountCents > remainingRefundable) throw new Error("The refund exceeds the latest payment's remaining refundable balance.");
+      if (payment.stripe_charge_id !== resolved.charge.id || payment.stripe_payment_intent_id !== resolved.paymentIntentId) {
+        const { error: linkError } = await supabase.from("program_payments").update({
+          stripe_charge_id: resolved.charge.id,
+          stripe_payment_intent_id: resolved.paymentIntentId,
+        }).eq("id", payment.id);
+        if (linkError) throw linkError;
+      }
       const refund = await getStripe().refunds.create({
-        ...(payment.stripe_charge_id ? { charge: payment.stripe_charge_id } : { payment_intent: payment.stripe_payment_intent_id! }),
+        charge: resolved.charge.id,
         amount: refundAmountCents,
         reason: "requested_by_customer",
         metadata: { withdrawal_request_id: withdrawalRequest.id, program_id: withdrawalRequest.program_id, student_profile_id: withdrawalRequest.student_profile_id, program_payment_id: payment.id },

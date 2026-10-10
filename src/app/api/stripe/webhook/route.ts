@@ -2,6 +2,7 @@ import Stripe from "stripe";
 import { getStripe, getStripeWebhookSecret, shouldUseStripeConnect } from "@/lib/stripe/server";
 import { finalizePaidEnrollment } from "@/lib/finance/finalize-paid-enrollment";
 import { recordFinanceAuditEvent } from "@/lib/finance/audit";
+import { resolveRefundableCharge } from "@/lib/finance/refundable-charge";
 import { getProgramManagerProfileIds } from "@/lib/push/program-recipients";
 import { sendPushNotification } from "@/lib/push/send-push";
 import { logServerError } from "@/lib/monitoring/log-error";
@@ -367,6 +368,14 @@ async function handleInvoicePaid(invoice: Stripe.Invoice, stripeAccountId: strin
   if (periodUpdateError) throw periodUpdateError;
 
   if (subscriptionRow.mosque_id) {
+    const refundable = invoice.amount_paid > 0
+      ? await resolveRefundableCharge(getStripe(), {
+          amount_cents: invoice.amount_paid,
+          stripe_charge_id: null,
+          stripe_payment_intent_id: null,
+          stripe_invoice_id: invoice.id,
+        }, stripeRequestOptions).catch(() => null)
+      : null;
     await insertProgramPayment(supabase, {
       mosqueId: subscriptionRow.mosque_id,
       programId: subscriptionRow.program_id,
@@ -374,6 +383,8 @@ async function handleInvoicePaid(invoice: Stripe.Invoice, stripeAccountId: strin
       studentProfileId: subscriptionRow.student_profile_id,
       parentProfileId: subscriptionRow.parent_profile_id,
       stripeInvoiceId: invoice.id,
+      stripeChargeId: refundable?.charge.id ?? null,
+      stripePaymentIntentId: refundable?.paymentIntentId ?? null,
       paymentTermsId: subscriptionRow.payment_terms_id,
       amountCents: invoice.amount_paid,
       currency: invoice.currency,
