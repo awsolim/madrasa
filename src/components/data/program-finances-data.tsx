@@ -150,6 +150,9 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
   const [, setAuditActorsById] = useState<Record<string, Profile>>(initialPage?.auditActorsById ?? {});
   const [view, setView] = useState<"overview" | "billing" | "transactions">("overview");
   const [analytics, setAnalytics] = useState<ProgramFinanceAnalytics | null>(null);
+  const [refundEvents, setRefundEvents] = useState<ProgramFinanceAuditEvent[]>([]);
+  const [refundsError, setRefundsError] = useState(false);
+  const [sortBy, setSortBy] = useState<"student" | "parent">("student");
   const [search, setSearch] = useState(searchParams.get("studentId") ?? "");
   const [statusFilter, setStatusFilter] = useState("all");
   const [paymentFilter, setPaymentFilter] = useState("all");
@@ -282,6 +285,19 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
     setAuditEvents(auditRows);
     const actorsById = Object.fromEntries(profileRows.filter((profile) => auditActorIds.includes(profile.id)).map((profile) => [profile.id, profile]));
     setAuditActorsById(actorsById);
+    // The snapshot includes only the latest 20 audit events. Load all recorded
+    // refunds separately so older outgoing transactions are not omitted.
+    const refunds: ProgramFinanceAuditEvent[] = [];
+    setRefundsError(false);
+    for (let offset = 0; ; offset += 500) {
+      const result = await supabase.from("program_finance_audit_events").select("*")
+        .eq("program_id", programId).in("event_type", ["payment_refund_issued", "withdrawal_refund_issued"])
+        .order("created_at", { ascending: false }).order("id").range(offset, offset + 499);
+      if (result.error) { setRefundsError(true); break; }
+      refunds.push(...(result.data ?? []));
+      if ((result.data?.length ?? 0) < 500) break;
+    }
+    setRefundEvents(refunds);
     const analyticsResult = await supabase.rpc("get_program_finance_analytics", { p_program_id: programId });
     if (!analyticsResult.error) {
       const nextAnalytics = analyticsResult.data as unknown as ProgramFinanceAnalytics & { hasAccess?: boolean };
@@ -329,13 +345,13 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
         .toLowerCase()
         .includes(query);
     }).sort((left, right) =>
-      (left.student?.full_name ?? left.student?.email ?? "Student").localeCompare(
-        right.student?.full_name ?? right.student?.email ?? "Student",
+      ((sortBy === "parent" ? left.parent?.full_name : null) ?? left.student?.full_name ?? left.student?.email ?? "Student").localeCompare(
+        (sortBy === "parent" ? right.parent?.full_name : null) ?? right.student?.full_name ?? right.student?.email ?? "Student",
         undefined,
         { sensitivity: "base" },
       ),
     );
-  }, [genderFilter, payStatusFilter, paymentFilter, program, rows, search, statusFilter, subStatusFilter, typeFilter]);
+  }, [genderFilter, payStatusFilter, paymentFilter, program, rows, search, sortBy, statusFilter, subStatusFilter, typeFilter]);
 
   const activeRows = rows.filter((row) => financeStatus(row) === "Active");
   const estimatedMonthlyCents = analytics?.projectedMonthlyCents ?? activeRows.reduce((sum, row) => sum + financeMonthlyAmountCents(row, program), 0);
@@ -381,7 +397,7 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
         <Link href={`${mode === "admin" ? `/m/${slug}/admin/programs` : `/m/${slug}/teacher/classes`}/${programId}/exports`} className="inline-flex h-10 shrink-0 items-center rounded-full border border-[#C7D6D1] bg-white px-4 text-sm font-semibold text-[#17624F] hover:bg-[#F5F9F7]">Export</Link>
       </div>
 
-      {view === "overview" ? <ProgramFinanceOverview analytics={analytics} fallbackProjectedMonthlyCents={estimatedMonthlyCents} /> : view === "transactions" ? <ProgramFinanceTransactions transactions={analytics?.transactions ?? []} onOpenStudent={(studentProfileId) => { const row = rows.find((item) => item.enrollment.student_profile_id === studentProfileId); if (row) setDetailsTarget(row); }} /> : null}
+      {view === "overview" ? <ProgramFinanceOverview analytics={analytics} fallbackProjectedMonthlyCents={estimatedMonthlyCents} /> : view === "transactions" ? <ProgramFinanceTransactions transactions={analytics?.transactions ?? []} refundEvents={refundEvents} rows={rows} refundsError={refundsError} onOpenStudent={(studentProfileId) => { const row = rows.find((item) => item.enrollment.student_profile_id === studentProfileId); if (row) setDetailsTarget(row); }} /> : null}
 
       {view === "billing" ? <>
 
@@ -395,6 +411,11 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
           <FilterSlidersIcon />
         </button>
       </div>
+      <label className="flex items-center justify-end gap-2 text-xs text-[#657178]">Sort by
+        <select aria-label="Sort billing records" value={sortBy} onChange={(event) => setSortBy(event.target.value as "student" | "parent")} className="min-h-9 rounded-lg border border-[#D6DCE0] bg-white px-2 text-xs font-semibold text-[#26323A]">
+          <option value="student">Child / student name</option><option value="parent">Parent name</option>
+        </select>
+      </label>
       {filtersOpen ? (
         <div className="divide-y divide-[#EEF2F4] rounded-[16px] border border-[#DDE5E9] bg-white px-3">
           <CompactFinanceSelect label="Enrollment" value={statusFilter} options={["active", "kicked", "withdrawn"]} onChange={setStatusFilter} />
@@ -625,12 +646,42 @@ function FinanceMetric({ label, value, note }: { label: string; value: string; n
 }
 
 
-function ProgramFinanceTransactions({ transactions, onOpenStudent }: { transactions: NonNullable<ProgramFinanceAnalytics["transactions"]>; onOpenStudent: (studentProfileId: string) => void }) {
+function ProgramFinanceTransactions({ transactions, refundEvents, rows, refundsError, onOpenStudent }: {
+  transactions: NonNullable<ProgramFinanceAnalytics["transactions"]>;
+  refundEvents: ProgramFinanceAuditEvent[];
+  rows: FinanceEnrollmentRow[];
+  refundsError: boolean;
+  onOpenStudent: (studentProfileId: string) => void;
+}) {
   const [query, setQuery] = useState("");
-  const filtered = transactions.filter((transaction) => !query.trim() || `${transaction.studentName ?? ""} ${transaction.amountCents} ${transaction.paidAt}`.toLowerCase().includes(query.trim().toLowerCase()));
-  return <div className="space-y-4"><label className="flex min-h-11 items-center gap-2 rounded-[14px] border border-[#D6DCE0] bg-[#F8FAFB] px-3 text-[#6B747B] md:max-w-xl"><SearchIcon /><input aria-label="Search transactions" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search student or payment" className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-[#26323A] outline-none" />{query ? <button type="button" aria-label="Clear search" onClick={() => setQuery("")} className="h-8 w-8 rounded-full text-lg hover:bg-black/5">×</button> : null}</label><div className="overflow-x-auto rounded-[20px] border border-[#DFE7E5]"><table className="min-w-[620px] w-full text-left text-sm"><thead className="bg-[#F5F8F7] text-xs uppercase text-[#657178]"><tr><th className="px-4 py-3">Student</th><th className="px-4 py-3">Date</th><th className="px-4 py-3 text-right">Amount</th><th className="px-4 py-3">Receipt</th></tr></thead><tbody className="divide-y divide-[#EDF1F0]">{filtered.map((transaction) => <tr key={transaction.id} role="button" tabIndex={0} onClick={() => onOpenStudent(transaction.studentProfileId)} onKeyDown={(event) => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpenStudent(transaction.studentProfileId); } }} className="cursor-pointer transition hover:bg-[#F5F9F8] focus-visible:bg-[#F5F9F8] focus-visible:outline-none"><td className="px-4 py-3 font-semibold">{transaction.studentName || "Student"}</td><td className="px-4 py-3 text-[#657178]">{new Date(transaction.paidAt).toLocaleDateString("en-CA", { month: "short", day: "numeric", year: "numeric" })}</td><td className="px-4 py-3 text-right font-semibold">{formatCurrencyAmount(transaction.amountCents)}</td><td className="px-4 py-3">{transaction.receiptUrl ? <a href={transaction.receiptUrl} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()} className="font-semibold text-[#17624F]">Open receipt</a> : <span className="text-[#9AA3A8]">—</span>}</td></tr>)}{!filtered.length ? <tr><td colSpan={4} className="px-4 py-10 text-center text-[#657178]">No matching transactions.</td></tr> : null}</tbody></table></div></div>;
+  const seenRefunds = new Set<string>();
+  const refunds = refundEvents.flatMap((event) => {
+    const metadata = event.metadata as Record<string, unknown> | null;
+    const amount = Number(metadata?.amountCents);
+    const refundId = typeof metadata?.stripeRefundId === "string" ? metadata.stripeRefundId : event.id;
+    if (!event.student_profile_id || !Number.isFinite(amount) || amount <= 0 || seenRefunds.has(refundId)) return [];
+    seenRefunds.add(refundId);
+    const payment = transactions.find((item) => item.id === metadata?.programPaymentId);
+    return [{ id: `refund:${refundId}`, studentProfileId: event.student_profile_id, studentName: payment?.studentName ?? null, amountCents: -amount, currency: typeof metadata?.currency === "string" ? metadata.currency : payment?.currency ?? "cad", paidAt: event.created_at, receiptUrl: null }];
+  });
+  const entries = [...transactions, ...refunds].map((transaction) => {
+    const row = rows.find((item) => item.enrollment.student_profile_id === transaction.studentProfileId);
+    return { ...transaction, studentName: transaction.studentName || row?.student?.full_name || "Student", parentName: row && financeStudentType(row) === "child" ? row.parent?.full_name : null };
+  }).sort((left, right) => new Date(right.paidAt).getTime() - new Date(left.paidAt).getTime());
+  const filtered = entries.filter((entry) => !query.trim() || `${entry.studentName} ${entry.parentName ?? ""} ${entry.amountCents} ${entry.paidAt} ${entry.amountCents < 0 ? "refund" : "payment"}`.toLowerCase().includes(query.trim().toLowerCase()));
+  return <div className="space-y-4">
+    {refundsError ? <p role="status" className="text-sm text-[#8A5A00]">Refund records could not be fully loaded. Refresh to try again.</p> : null}
+    <label className="flex min-h-11 items-center gap-2 rounded-[14px] border border-[#D6DCE0] bg-[#F8FAFB] px-3 text-[#6B747B] md:max-w-xl"><SearchIcon /><input aria-label="Search transactions" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search student, parent or payment" className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-[#26323A] outline-none" />{query ? <button type="button" aria-label="Clear search" onClick={() => setQuery("")} className="h-8 w-8 rounded-full text-lg hover:bg-black/5">×</button> : null}</label>
+    <div className="overflow-hidden rounded-[20px] border border-[#DFE7E5]"><table className="w-full table-fixed text-left text-sm">
+      <thead className="bg-[#F5F8F7] text-xs uppercase text-[#657178]"><tr><th className="w-[44%] px-3 py-3 md:px-4">Student</th><th className="w-[27%] px-2 py-3 md:px-4">Date</th><th className="w-[29%] px-3 py-3 text-right md:px-4">Amount</th></tr></thead>
+      <tbody className="divide-y divide-[#EDF1F0]">{filtered.map((transaction) => <tr key={transaction.id} role="button" tabIndex={0} onClick={() => onOpenStudent(transaction.studentProfileId)} onKeyDown={(event) => { if (event.target !== event.currentTarget) return; if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpenStudent(transaction.studentProfileId); } }} className="cursor-pointer transition hover:bg-[#F5F9F8] focus-visible:bg-[#F5F9F8] focus-visible:outline-none">
+        <td className="break-words px-3 py-4 md:px-4"><p className="font-semibold">{transaction.studentName}</p>{transaction.parentName ? <p className="mt-1 text-xs text-[#657178]">{transaction.parentName}</p> : null}</td>
+        <td className="px-2 py-4 text-xs text-[#657178] md:px-4 md:text-sm">{new Date(transaction.paidAt).toLocaleDateString("en-CA", { month: "short", day: "numeric", year: "numeric", timeZone: "America/Edmonton" })}</td>
+        <td className="px-3 py-4 text-right md:px-4"><p className={cn("break-words font-semibold tabular-nums", transaction.amountCents < 0 && "text-[#B42318]")}>{new Intl.NumberFormat("en-CA", { style: "currency", currency: transaction.currency.toUpperCase() }).format(transaction.amountCents / 100)}</p>{transaction.amountCents < 0 ? <p className="mt-1 text-xs text-[#B42318]">Refund</p> : null}{transaction.receiptUrl ? <a href={transaction.receiptUrl} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()} className="mt-1 inline-block text-xs font-semibold text-[#17624F]">Receipt</a> : null}</td>
+      </tr>)}{!filtered.length ? <tr><td colSpan={3} className="px-4 py-10 text-center text-[#657178]">No matching transactions.</td></tr> : null}</tbody>
+    </table></div>
+  </div>;
 }
-
 
 function FinanceSummaryFigure({ value, label }: { value: string; label: string }) {
   return (
