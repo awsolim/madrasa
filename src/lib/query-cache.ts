@@ -266,6 +266,18 @@ function cacheSnapshot<T>(key: string | null | undefined) {
   return { data: entry?.data, loading: !entry };
 }
 
+function isTransientFetchError(error: unknown) {
+  if (error instanceof TypeError) return true;
+  if (error instanceof DOMException && error.name === "AbortError") return true;
+  const message = error instanceof Error ? error.message.toLowerCase() : "";
+  return message.includes("abort") || message.includes("fetch") || message.includes("network") || message.includes("timeout");
+}
+
+function readableQueryError(error: unknown) {
+  if (isTransientFetchError(error)) return "The connection was interrupted. Please try again.";
+  return error instanceof Error ? error.message : "Something went wrong.";
+}
+
 export function useCachedQuery<T>(
   key: string | null | undefined,
   fetcher: () => Promise<T>,
@@ -303,9 +315,9 @@ export function useCachedQuery<T>(
       await runFetch(key, () => fetcherRef.current(), options?.persist !== false);
     } catch (initialError) {
       let err = initialError;
-      if (!cache.has(key) && initialError instanceof TypeError) {
+      if (!cache.has(key) && isTransientFetchError(initialError)) {
         try {
-          await new Promise((resolve) => window.setTimeout(resolve, 250));
+          await new Promise((resolve) => window.setTimeout(resolve, 500));
           await runFetch(key, () => fetcherRef.current(), options?.persist !== false);
           return;
         } catch (retryError) {
@@ -314,7 +326,7 @@ export function useCachedQuery<T>(
       }
       // A failed background refresh must not replace an already useful page
       // with its initial error state. Cold loads still report the failure.
-      if (!cache.has(key)) setError(err instanceof Error ? err.message : "Something went wrong.");
+      if (!cache.has(key)) setError(readableQueryError(err));
       setSnapshot((current) => ({ ...current, loading: false }));
     }
   }

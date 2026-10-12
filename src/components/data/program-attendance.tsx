@@ -29,7 +29,6 @@ type Mosque = Database["public"]["Tables"]["mosques"]["Row"];
 type Program = Database["public"]["Tables"]["programs"]["Row"];
 type Profile = Database["public"]["Tables"]["profiles"]["Row"];
 type ProgramSession = Database["public"]["Tables"]["program_sessions"]["Row"];
-type ProgramTrack = Database["public"]["Tables"]["program_tracks"]["Row"];
 type ProgramTrackSession = Database["public"]["Tables"]["program_track_sessions"]["Row"];
 type ProgramAttendanceRecord = Database["public"]["Tables"]["program_attendance_records"]["Row"];
 type Enrollment = Database["public"]["Tables"]["enrollments"]["Row"];
@@ -96,23 +95,18 @@ async function loadAttendanceSessionContext(slug: string, programId: string, sea
     return { ...emptyAttendanceSessionContext, currentUserId: userId, sessionDate, day, start, end, error: "Session time is missing." };
   }
 
-  const [{ data: mosque, error: mosqueError }, { data: canManage }] = await Promise.all([
+  const [
+    { data: mosque, error: mosqueError },
+    { data: canManage },
+    { data: program, error: programError },
+    { data: enrollmentRows },
+    { data: trackRows },
+    { data: sessionRows },
+    { data: records },
+  ] = await Promise.all([
     supabase.from("mosques").select("*").eq("slug", slug).maybeSingle(),
     supabase.rpc("can_manage_program", { check_program_id: programId, check_profile_id: userId }),
-  ]);
-  if (mosqueError || !mosque) {
-    return { ...emptyAttendanceSessionContext, currentUserId: userId, sessionDate, day, start, end, error: friendlyErrorMessage(mosqueError, "Masjid not found.") };
-  }
-  if (!canManage) {
-    return { ...emptyAttendanceSessionContext, mosque, currentUserId: userId, sessionDate, day, start, end, error: "You don't have permission to manage attendance for this class." };
-  }
-
-  const { data: program, error: programError } = await supabase.from("programs").select("*").eq("id", programId).eq("mosque_id", mosque.id).maybeSingle();
-  if (programError || !program) {
-    return { ...emptyAttendanceSessionContext, mosque, currentUserId: userId, sessionDate, day, start, end, error: friendlyErrorMessage(programError, "Class not found.") };
-  }
-
-  const [{ data: enrollmentRows }, { data: trackRows }, { data: sessionRows }, { data: records }] = await Promise.all([
+    supabase.from("programs").select("*").eq("id", programId).maybeSingle(),
     supabase.from("enrollments").select("*").eq("program_id", programId).order("created_at", { ascending: true }),
     supabase.from("program_tracks").select("*").eq("program_id", programId).eq("is_active", true).order("sort_order", { ascending: true }),
     supabase.from("program_sessions").select("*").eq("program_id", programId),
@@ -123,6 +117,16 @@ async function loadAttendanceSessionContext(slug: string, programId: string, sea
       .eq("session_date", sessionDate)
       .eq("start_time", start),
   ]);
+  if (mosqueError || !mosque) {
+    return { ...emptyAttendanceSessionContext, currentUserId: userId, sessionDate, day, start, end, error: friendlyErrorMessage(mosqueError, "Masjid not found.") };
+  }
+  if (!canManage) {
+    return { ...emptyAttendanceSessionContext, mosque, currentUserId: userId, sessionDate, day, start, end, error: "You don't have permission to manage attendance for this class." };
+  }
+
+  if (programError || !program || program.mosque_id !== mosque.id) {
+    return { ...emptyAttendanceSessionContext, mosque, currentUserId: userId, sessionDate, day, start, end, error: friendlyErrorMessage(programError, "Class not found.") };
+  }
 
   const normalizedEnd = end || start;
   const matchingSessions = (sessionRows ?? []).filter((row) => {
@@ -561,7 +565,7 @@ type AttendanceHistoryTimeframe = {
   columns: AttendanceHistorySessionColumn[];
 };
 
-export function ProgramAttendanceHistoryData({ slug, programId, mode = "teacher" }: { slug: string; programId: string; mode?: "teacher" | "admin" }) {
+export function ProgramAttendanceHistoryData({ slug, programId }: { slug: string; programId: string; mode?: "teacher" | "admin" }) {
   const searchParams = useSearchParams();
   const selectedStudentId = searchParams.get("studentId");
   const requestedDay = normalizeScheduleDay(searchParams.get("day") ?? "");
@@ -588,9 +592,27 @@ export function ProgramAttendanceHistoryData({ slug, programId, mode = "teacher"
         setLoading(false);
         return;
       }
-      const [{ data: mosque }, { data: canManage }] = await Promise.all([
+      const [
+        { data: mosque },
+        { data: canManage },
+        { data: programRow },
+        { data: recordRows },
+        { data: enrollmentRows },
+        { data: sessionRows },
+        { data: trackRows },
+      ] = await Promise.all([
         supabase.from("mosques").select("id").eq("slug", slug).maybeSingle(),
         supabase.rpc("can_manage_program", { check_program_id: programId, check_profile_id: userId }),
+        supabase.from("programs").select("*").eq("id", programId).maybeSingle(),
+        supabase
+          .from("program_attendance_records")
+          .select("*")
+          .eq("program_id", programId)
+          .order("session_date", { ascending: true })
+          .order("start_time", { ascending: true }),
+        supabase.from("enrollments").select("*").eq("program_id", programId).order("created_at", { ascending: true }),
+        supabase.from("program_sessions").select("*").eq("program_id", programId).order("session_date", { ascending: true }).order("start_time", { ascending: true }),
+        supabase.from("program_tracks").select("*").eq("program_id", programId).eq("is_active", true).order("sort_order", { ascending: true }),
       ]);
       if (!active) {
         return;
@@ -605,18 +627,11 @@ export function ProgramAttendanceHistoryData({ slug, programId, mode = "teacher"
         setLoading(false);
         return;
       }
-      const [{ data: programRow }, { data: recordRows }, { data: enrollmentRows }, { data: sessionRows }, { data: trackRows }] = await Promise.all([
-        supabase.from("programs").select("*").eq("id", programId).eq("mosque_id", mosque.id).maybeSingle(),
-        supabase
-          .from("program_attendance_records")
-          .select("*")
-          .eq("program_id", programId)
-          .order("session_date", { ascending: true })
-          .order("start_time", { ascending: true }),
-        supabase.from("enrollments").select("*").eq("program_id", programId).order("created_at", { ascending: true }),
-        supabase.from("program_sessions").select("*").eq("program_id", programId).order("session_date", { ascending: true }).order("start_time", { ascending: true }),
-        supabase.from("program_tracks").select("*").eq("program_id", programId).eq("is_active", true).order("sort_order", { ascending: true }),
-      ]);
+      if (!programRow || programRow.mosque_id !== mosque.id) {
+        setError("Class not found.");
+        setLoading(false);
+        return;
+      }
       const activeEnrollmentRows = (enrollmentRows ?? []).filter((enrollment) => isCurrentEnrollmentStatus(enrollment.status));
       const trackIds = (trackRows ?? []).map((track) => track.id);
       const enrollmentIds = activeEnrollmentRows.map((enrollment) => enrollment.id);
@@ -758,31 +773,16 @@ export function ProgramAttendanceHistoryData({ slug, programId, mode = "teacher"
       });
   }, [allSessionColumns]);
 
-  useEffect(() => {
-    setSelectedTimeframeKey((current) => {
-      if (!timeframes.length) {
-        return null;
-      }
-      if (current && timeframes.some((timeframe) => timeframe.key === current)) {
-        return current;
-      }
-      const requested = requestedDay || requestedStart
-        ? timeframes.find((timeframe) => (!requestedDay || timeframe.dayOfWeek === requestedDay) && (!requestedStart || timeframe.startTime === requestedStart))
-        : null;
-      return requested?.key ?? timeframes[0]?.key ?? null;
-    });
-  }, [requestedDay, requestedStart, timeframes]);
-  const selectedTimeframe = selectedTimeframeKey ? timeframes.find((timeframe) => timeframe.key === selectedTimeframeKey) ?? null : null;
+  const requestedTimeframe = requestedDay || requestedStart
+    ? timeframes.find((timeframe) => (!requestedDay || timeframe.dayOfWeek === requestedDay) && (!requestedStart || timeframe.startTime === requestedStart))
+    : null;
+  const selectedTimeframe = (selectedTimeframeKey
+    ? timeframes.find((timeframe) => timeframe.key === selectedTimeframeKey)
+    : null) ?? requestedTimeframe ?? timeframes[0] ?? null;
   const sessionColumns = selectedTimeframe?.columns ?? [];
-  const filteredStudents = useMemo(() => {
-    if (!selectedTimeframe || selectedStudentId) {
-      return students;
-    }
-    if (!selectedTimeframe.trackIds.length) {
-      return students;
-    }
-    return students.filter((student) => student.trackIds.some((trackId) => selectedTimeframe.trackIds.includes(trackId)));
-  }, [selectedTimeframe, selectedStudentId, students]);
+  const filteredStudents = !selectedTimeframe || selectedStudentId || !selectedTimeframe.trackIds.length
+    ? students
+    : students.filter((student) => student.trackIds.some((trackId) => selectedTimeframe.trackIds.includes(trackId)));
 
   const recordsByStudentAndSession = useMemo(() => {
     const map = new Map<string, AttendanceHistoryRow>();
@@ -813,7 +813,7 @@ export function ProgramAttendanceHistoryData({ slug, programId, mode = "teacher"
       </div>
       {error ? <div className="rounded-[18px] border border-[#F4C7C1] bg-[#FDEDEA] px-4 py-3 text-sm text-[#A4352A]">{error}</div> : null}
       {!selectedStudentId && timeframes.length > 1 ? (
-        <AttendanceHistoryTimeframeSelector timeframes={timeframes} selectedTimeframeKey={selectedTimeframeKey} onChange={setSelectedTimeframeKey} />
+        <AttendanceHistoryTimeframeSelector timeframes={timeframes} selectedTimeframeKey={selectedTimeframe?.key ?? null} onChange={setSelectedTimeframeKey} />
       ) : null}
       {filteredStudents.length && sessionColumns.length ? (
         <div className="-mx-1 overflow-hidden border-y border-[#E1E8EC] bg-white sm:mx-0 sm:rounded-[18px] sm:border sm:shadow-[0_10px_28px_rgba(38,50,58,0.08)]">

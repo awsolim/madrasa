@@ -80,6 +80,12 @@ a {
   text-decoration: none;
 }
 
+/* Filled controls must always preserve readable white foregrounds, including
+   links styled as buttons inside error states and nested themed containers. */
+.text-white {
+  color: #ffffff !important;
+}
+
 button,
 input,
 select,

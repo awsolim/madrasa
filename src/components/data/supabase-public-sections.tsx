@@ -616,7 +616,7 @@ async function fetchProgramDetailSnapshot(
   });
 
   if (error) {
-    return { ...emptyProgramDetailSnapshot, error: error.message };
+    throw error;
   }
 
   const snapshot = data as unknown as Partial<ProgramDetailSnapshot> | null;
@@ -668,6 +668,7 @@ async function shareProgramLink(slug: string, programId: string, title: string, 
 }
 
 export function ProgramDetailData({ slug, programId, section = "public" }: { slug: string; programId: string; section?: "public" | "portal" | "teacher" }) {
+  const [applicationOpening, setApplicationOpening] = useState(false);
   const pathname = usePathname();
   const searchParams = useSearchParams();
   const [mosque, setMosque] = useState<Mosque | null>(null);
@@ -728,7 +729,7 @@ export function ProgramDetailData({ slug, programId, section = "public" }: { slu
   const programDetailUserId = programDetailSession?.user.id ?? null;
   const programDetailKey =
     programDetailSession === undefined ? null : `program-detail:${slug}:${programId}:${section}:${programDetailUserId ?? "guest"}`;
-  const { data: programDetailSnapshot, loading: programDetailQueryLoading } = useCachedQuery(programDetailKey, () =>
+  const { data: programDetailSnapshot, loading: programDetailQueryLoading, error: programDetailQueryError, refetch: refetchProgramDetail } = useCachedQuery(programDetailKey, () =>
     fetchProgramDetailSnapshot(slug, programId, section, programDetailUserId),
   );
   const eligibilityKey = programDetailSession === undefined || !programDetailUserId || section === "teacher"
@@ -769,6 +770,10 @@ export function ProgramDetailData({ slug, programId, section = "public" }: { slu
 
   if (error) {
     return <EmptyState title="Could not load class" text={error} onRetry={() => window.location.reload()} />;
+  }
+
+  if (programDetailQueryError && !program) {
+    return <EmptyState title="Could not load class" text={programDetailQueryError} onRetry={() => void refetchProgramDetail()} />;
   }
 
   if (!mosque || !program) {
@@ -1053,9 +1058,21 @@ export function ProgramDetailData({ slug, programId, section = "public" }: { slu
                 ) : (
                   <Link
                     href={primaryCta.href}
-                    className="mt-2 flex min-h-12 w-full items-center justify-center rounded-full bg-[#248B72] px-4 text-sm font-semibold !text-white shadow-[0_10px_22px_rgba(36,139,114,0.24)] transition-colors hover:bg-[#17624F] md:w-auto md:px-10"
+                    aria-disabled={applicationOpening}
+                    onClick={(event) => {
+                      if (applicationOpening) {
+                        event.preventDefault();
+                        return;
+                      }
+                      setApplicationOpening(true);
+                    }}
+                    className={cn(
+                      "mt-2 flex min-h-12 w-full items-center justify-center gap-2 rounded-full bg-[#248B72] px-4 text-sm font-semibold !text-white shadow-[0_10px_22px_rgba(36,139,114,0.24)] transition-colors hover:bg-[#17624F] md:w-auto md:px-10",
+                      applicationOpening && "cursor-wait bg-[#17624F]",
+                    )}
                   >
-                    {primaryCta.label}
+                    {applicationOpening ? <span className="h-4 w-4 animate-spin rounded-full border-2 border-white/45 border-t-white" aria-hidden /> : null}
+                    {applicationOpening ? "Opening application…" : primaryCta.label}
                   </Link>
                 )}
               </div>
@@ -2507,7 +2524,7 @@ export function StudentScheduleOptionsData({ slug, programId }: { slug: string; 
   );
 }
 
-type AccountPanel = "menu" | "settings" | "family" | "billing" | "security" | "homescreen" | "photo";
+type AccountPanel = "menu" | "settings" | "family" | "billing" | "notifications" | "security" | "homescreen" | "photo";
 type EditableProfileField = "fullName" | "password" | "email" | "dateOfBirth" | "phone";
 
 type BillingPaymentRow = {
@@ -2562,6 +2579,17 @@ export function PortalAccountData({ slug }: { slug: string }) {
     });
   }, [slug]);
   const [panelMotion, setPanelMotion] = useState<"forward" | "back">("forward");
+
+  useEffect(() => {
+    if (activePanel === "menu") {
+      return;
+    }
+
+    window.dispatchEvent(new CustomEvent("tareeqah:overlay-chrome", { detail: { hidden: true } }));
+    return () => {
+      window.dispatchEvent(new CustomEvent("tareeqah:overlay-chrome", { detail: { hidden: false } }));
+    };
+  }, [activePanel]);
   const [hasPanelNavigated, setHasPanelNavigated] = useState(false);
   const [profileForm, setProfileForm] = useState({
     avatarUrl: initialProfileSummary?.avatarUrl ?? "",
@@ -3087,6 +3115,7 @@ export function PortalAccountData({ slug }: { slug: string }) {
           <AccountMenuButton icon={<AccountUserIcon />} label="Account Settings" onClick={() => openPanel("settings")} />
           {isParent ? <AccountMenuButton icon={<FamilyIcon />} label="Family" onClick={() => openPanel("family")} /> : null}
           <AccountMenuButton icon={<BillingIcon />} label="Billing" onClick={() => openPanel("billing")} />
+          <AccountMenuButton icon={<NotificationBellIcon />} label="Notifications" onClick={() => openPanel("notifications")} />
           <AccountMenuButton icon={<ShieldIcon />} label="Privacy and Security" onClick={() => openPanel("security")} />
           <AccountMenuButton icon={<HomeScreenIcon />} label="Add App to Homescreen" onClick={() => openPanel("homescreen")} />
           <AccountMenuButton
@@ -3176,8 +3205,6 @@ export function PortalAccountData({ slug }: { slug: string }) {
               />
             </div>
           </section>
-
-          <PushNotificationToggle />
 
           <div className="mt-7">
             <p className="text-[11px] font-semibold uppercase tracking-wide text-[#8A9399]">Danger zone</p>
@@ -3272,6 +3299,14 @@ export function PortalAccountData({ slug }: { slug: string }) {
         </div>
       </>
     ),
+    notifications: (
+      <>
+        <AccountSubpageHeader title="Notifications" onBack={closePanel} />
+        <div className="mt-8">
+          <PushNotificationToggle />
+        </div>
+      </>
+    ),
     security: (
       <>
         <AccountSubpageHeader title="Privacy and Security" onBack={closePanel} />
@@ -3357,7 +3392,7 @@ export function PortalAccountData({ slug }: { slug: string }) {
 }
 
 function isAccountPanel(value: string): value is AccountPanel {
-  return value === "menu" || value === "settings" || value === "family" || value === "billing" || value === "security" || value === "homescreen" || value === "photo";
+  return value === "menu" || value === "settings" || value === "family" || value === "billing" || value === "notifications" || value === "security" || value === "homescreen" || value === "photo";
 }
 
 function ReportProblemModal({
@@ -4136,22 +4171,13 @@ export function TeacherScheduleData({ slug, programId }: { slug: string; program
     setError(null);
     const supabase = createSupabaseBrowserClient();
 
-    const { data: mosque, error: mosqueError } = await supabase.from("mosques").select("id").eq("slug", slug).maybeSingle();
-    if (mosqueError || !mosque) {
-      setError(friendlyErrorMessage(mosqueError, "Masjid not found."));
-      setLoading(false);
-      return;
-    }
+    const [{ data: mosque, error: mosqueError }, { data: programRow, error: programError }] = await Promise.all([
+      supabase.from("mosques").select("id").eq("slug", slug).maybeSingle(),
+      supabase.from("programs").select("*").eq("id", programId).maybeSingle(),
+    ]);
 
-    const { data: programRow, error: programError } = await supabase
-      .from("programs")
-      .select("*")
-      .eq("id", programId)
-      .eq("mosque_id", mosque.id)
-      .maybeSingle();
-
-    if (programError || !programRow) {
-      setError(friendlyErrorMessage(programError, "Class not found."));
+    if (mosqueError || programError || !mosque || !programRow || programRow.mosque_id !== mosque.id) {
+      setError(friendlyErrorMessage(mosqueError ?? programError, !mosque ? "Masjid not found." : "Class not found."));
       setLoading(false);
       return;
     }
@@ -5086,31 +5112,36 @@ export function AdminMasjidFinancesData({ slug }: { slug: string }) {
   );
 }
 
-type TeacherInstructorsGateSnapshot = { program: Program | null; isDirector: boolean; error: string | null };
-const emptyTeacherInstructorsGateSnapshot: TeacherInstructorsGateSnapshot = { program: null, isDirector: false, error: null };
+type ProgramStaffSnapshot = {
+  isDirector: boolean;
+  assignments: ProgramTeacher[];
+  inactiveEvents: ProgramInstructorEvent[];
+  profiles: Profile[];
+};
+type TeacherInstructorsGateSnapshot = { program: Program | null; staff: ProgramStaffSnapshot | null; error: string | null };
+const emptyTeacherInstructorsGateSnapshot: TeacherInstructorsGateSnapshot = { program: null, staff: null, error: null };
 
 async function fetchTeacherInstructorsGate(slug: string, programId: string): Promise<TeacherInstructorsGateSnapshot> {
   const supabase = createSupabaseBrowserClient();
-  const { data: mosque } = await supabase.from("mosques").select("id").eq("slug", slug).maybeSingle();
-  if (!mosque) {
+  const [{ data: mosque, error: mosqueError }, { data: programRow, error: programError }, { data: staffData, error: staffError }] = await Promise.all([
+    supabase.from("mosques").select("id").eq("slug", slug).maybeSingle(),
+    supabase.from("programs").select("*").eq("id", programId).maybeSingle(),
+    supabase.rpc("get_program_staff_snapshot", { p_program_id: programId }),
+  ]);
+
+  if (mosqueError || programError || staffError) {
+    return { program: null, staff: null, error: friendlyErrorMessage(mosqueError ?? programError ?? staffError, "Could not load instructors.") };
+  }
+  if (!mosque || !programRow || programRow.mosque_id !== mosque.id) {
     return emptyTeacherInstructorsGateSnapshot;
   }
 
-  const [{ data: programRow, error: programError }, { data: directorAllowed }] = await Promise.all([
-    supabase.from("programs").select("*").eq("id", programId).eq("mosque_id", mosque.id).maybeSingle(),
-    supabase.rpc("is_program_director", { check_program_id: programId }),
-  ]);
-
-  if (programError) {
-    return { program: null, isDirector: false, error: friendlyErrorMessage(programError, "Could not load this class.") };
-  }
-
-  return { program: programRow ?? null, isDirector: Boolean(directorAllowed), error: null };
+  return { program: programRow, staff: staffData as unknown as ProgramStaffSnapshot | null, error: null };
 }
 
 export function TeacherInstructorsData({ slug, programId }: { slug: string; programId: string }) {
   const { data: gateSnapshot, loading } = useCachedQuery(programId ? `teacher-instructors-gate:${slug}:${programId}` : null, () => fetchTeacherInstructorsGate(slug, programId));
-  const { program, isDirector, error } = gateSnapshot ?? emptyTeacherInstructorsGateSnapshot;
+  const { program, staff, error } = gateSnapshot ?? emptyTeacherInstructorsGateSnapshot;
 
   if (loading) {
     return <ClassesLoadingPlaceholders count={1} />;
@@ -5124,13 +5155,13 @@ export function TeacherInstructorsData({ slug, programId }: { slug: string; prog
     return <EmptyState title="Class not found" text="This class may no longer be available." />;
   }
 
-  if (!isDirector) {
+  if (!staff?.isDirector) {
     return <EmptyState title="Director access required" text="Only the class director can manage instructors for this class." />;
   }
 
   return (
     <div className="bg-white p-4">
-      <ProgramTeacherStaffTools program={program} />
+      <ProgramTeacherStaffTools program={program} initialSnapshot={staff} />
     </div>
   );
 }
@@ -8647,9 +8678,8 @@ function TeacherStudentNotesPage({
   const [pendingDeleteNote, setPendingDeleteNote] = useState<StudentNoteWithContext | null>(null);
   const studentName = target.profile?.full_name?.trim() || "Student";
   const recipient = target.parent ?? target.profile;
-  const recipientName = recipient?.full_name?.trim() || (target.parent ? "Parent" : studentName);
-  const recipientKind = target.parent ? "Parent" : "Student";
-  const recipientAvatar = target.parent?.avatar_url ?? target.profile?.avatar_url ?? null;
+  const deliveryRecipientName = recipient?.full_name?.trim() || studentName;
+  const studentAvatar = target.profile?.avatar_url ?? null;
 
   async function loadNotes() {
     setLoading(true);
@@ -8750,13 +8780,11 @@ function TeacherStudentNotesPage({
       <div className="flex min-h-[calc(100vh-230px)] flex-col">
         <section className="border-b border-[#E6ECEF] px-5 pb-4 pt-5">
           <div className="flex items-start gap-3">
-            <Avatar src={recipientAvatar} name={recipientName} />
+            <Avatar src={studentAvatar} name={studentName} />
             <div className="min-w-0 flex-1">
-              <div className="flex flex-wrap items-center gap-2">
-                <span className="rounded-full bg-[#EEF6F7] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#2F8FB3]">{recipientKind}</span>
-                {target.parent ? <span className="truncate text-xs font-semibold text-[#6B747B]">For {studentName}</span> : null}
-              </div>
-              <h1 className="mt-1 truncate text-xl font-semibold leading-6">{recipientName}</h1>
+              <span className="rounded-full bg-[#EEF6F7] px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-[#2F8FB3]">Student</span>
+              <h1 className="mt-1 truncate text-xl font-semibold leading-6">{studentName}</h1>
+              {target.parent ? <p className="mt-1 truncate text-sm text-[#52616A]">Delivered to parent <span className="font-semibold text-[#26323A]">{deliveryRecipientName}</span></p> : null}
               <p className="mt-1 truncate text-sm font-semibold text-[#17624F]">{program.title}</p>
               
             </div>
@@ -10593,13 +10621,12 @@ function HomeUpcomingLesson({
   markAttendanceDisabled?: boolean;
 }) {
   const detailParts = [lesson.ownerLabel, lessonTimeRange(lesson)].filter(Boolean);
-  const happeningNow = lesson.startsAt.getTime() <= Date.now() && Boolean(lesson.endsAt && Date.now() < lesson.endsAt.getTime());
+  const isToday = dayKey(lesson.date) === dayKey(new Date());
   return (
-    <div className={cn("flex items-center gap-3 rounded-[24px] px-4 py-3 shadow-[0_8px_24px_rgba(38,50,58,0.06)]", happeningNow ? "border border-[#8FD4BD] bg-[#EAF8F2] shadow-[0_10px_26px_rgba(23,98,79,0.12)]" : "bg-white")}>
+    <div className={cn("flex items-center gap-3 rounded-[24px] px-4 py-3 shadow-[0_8px_24px_rgba(38,50,58,0.06)]", isToday ? "border border-[#8FD4BD] bg-[#EAF8F2] shadow-[0_10px_26px_rgba(23,98,79,0.12)]" : "bg-white")}>
       <HomeProgramThumb program={lesson.program} />
       <div className="min-w-0 flex-1">
         <h3 className="truncate text-base font-semibold text-[var(--text-primary)]">{lesson.program.title}</h3>
-        {happeningNow ? <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-[#17624F]">Happening now</p> : null}
         <p className="mt-0.5 text-sm leading-5 text-[var(--text-muted)]">{detailParts.join(" • ")}</p>
       </div>
       {canCancel ? (
@@ -10625,6 +10652,18 @@ function UpcomingLessonActionMenu({
   const [menuOpen, setMenuOpen] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null);
+
+  useEffect(() => {
+    const closeMenu = () => setMenuOpen(false);
+    window.addEventListener("tareeqah:workspace-location", closeMenu);
+    window.addEventListener("tareeqah:nav-preview", closeMenu);
+    window.addEventListener("popstate", closeMenu);
+    return () => {
+      window.removeEventListener("tareeqah:workspace-location", closeMenu);
+      window.removeEventListener("tareeqah:nav-preview", closeMenu);
+      window.removeEventListener("popstate", closeMenu);
+    };
+  }, []);
 
   useEffect(() => {
     if (!menuOpen) {
@@ -11710,10 +11749,24 @@ function StudentInviteCodeTools({ slug }: { slug: string }) {
   );
 }
 
-function ProgramTeacherStaffTools({ program }: { program: Program }) {
-  const [isDirector, setIsDirector] = useState(false);
-  const [instructors, setInstructors] = useState<Array<ProgramTeacher & { profile?: Profile | null }>>([]);
-  const [inactiveInstructors, setInactiveInstructors] = useState<Array<ProgramInstructorEvent & { profile?: Profile | null }>>([]);
+function ProgramTeacherStaffTools({ program, initialSnapshot }: { program: Program; initialSnapshot: ProgramStaffSnapshot }) {
+  const initialProfiles = initialSnapshot.profiles ?? [];
+  const initialAssignments = initialSnapshot.assignments ?? [];
+  const initialActiveProfileIds = new Set(initialAssignments.map((assignment) => assignment.teacher_profile_id).filter(Boolean));
+  const [isDirector, setIsDirector] = useState(Boolean(initialSnapshot.isDirector));
+  const [instructors, setInstructors] = useState<Array<ProgramTeacher & { profile?: Profile | null }>>(() =>
+    initialAssignments
+      .filter((assignment) => assignment.role === "instructor")
+      .map((assignment) => ({
+        ...assignment,
+        profile: assignment.teacher_profile_id ? initialProfiles.find((profile) => profile.id === assignment.teacher_profile_id) ?? null : null,
+      })),
+  );
+  const [inactiveInstructors, setInactiveInstructors] = useState<Array<ProgramInstructorEvent & { profile?: Profile | null }>>(() =>
+    (initialSnapshot.inactiveEvents ?? [])
+      .filter((event) => event.teacher_profile_id && !initialActiveProfileIds.has(event.teacher_profile_id))
+      .map((event) => ({ ...event, profile: initialProfiles.find((profile) => profile.id === event.teacher_profile_id) ?? null })),
+  );
   const [message, setMessage] = useState<string | null>(null);
   const [toast, setToast] = useState<EditorToastState | null>(null);
   const [latestInviteCode, setLatestInviteCode] = useState<string | null>(null);
@@ -11729,12 +11782,7 @@ function ProgramTeacherStaffTools({ program }: { program: Program }) {
       return;
     }
 
-    const snapshot = data as unknown as {
-      isDirector: boolean;
-      assignments: ProgramTeacher[];
-      inactiveEvents: ProgramInstructorEvent[];
-      profiles: Profile[];
-    } | null;
+    const snapshot = data as unknown as ProgramStaffSnapshot | null;
     if (!snapshot) {
       return;
     }
@@ -11754,14 +11802,6 @@ function ProgramTeacherStaffTools({ program }: { program: Program }) {
     const activeProfileIds = new Set(assignments.map((assignment) => assignment.teacher_profile_id).filter(Boolean));
     setInactiveInstructors(inactiveEvents.filter((event) => event.teacher_profile_id && !activeProfileIds.has(event.teacher_profile_id)).map((event) => ({ ...event, profile: profiles.find((profile) => profile.id === event.teacher_profile_id) ?? null })));
   }
-
-  useEffect(() => {
-    const timeout = window.setTimeout(() => {
-      void loadStaff();
-    }, 0);
-    return () => window.clearTimeout(timeout);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [program.id]);
 
   async function generateInstructorCode() {
     setBusy(true);
@@ -12390,8 +12430,8 @@ function urlBase64ToUint8Array(base64String: string) {
 }
 
 /**
- * Shared subscribe/unsubscribe logic for web push, used by both the Account Settings
- * toggle and the home-page onboarding nudge — one implementation of the actual
+ * Shared subscribe/unsubscribe logic for web push, used by the Notifications
+ * page and the home-page onboarding nudge — one implementation of the actual
  * permission/subscribe/API-call flow, two different UI presentations of it.
  */
 function usePushSubscription() {
@@ -12470,6 +12510,13 @@ function usePushSubscription() {
 
       setSubscribed(true);
       setStatus("Notifications are enabled on this device.");
+      const session = await loadCachedSession();
+      if (session?.user.id) {
+        try {
+          window.localStorage.removeItem(`madrasa:push-reminder-disabled:${session.user.id}`);
+          window.localStorage.removeItem(`madrasa:push-reminder:${session.user.id}`);
+        } catch {}
+      }
     } catch {
       setError("Could not enable push notifications on this device.");
     }
@@ -12534,9 +12581,8 @@ function PushNotificationToggle() {
   const { supported, standalone, permission, subscribed, busy, testing, error, status, enable, disable, test } = usePushSubscription();
 
   return (
-    <section className="mt-7">
-      <p className="text-[11px] font-semibold uppercase tracking-wide text-[#8A9399]">Notifications</p>
-      <div className="mt-2 flex items-center justify-between gap-3 rounded-2xl border border-[#E6EAED] px-4 py-3">
+    <section>
+      <div className="flex items-center justify-between gap-3 rounded-2xl border border-[#E6EAED] bg-white px-4 py-4">
         <div className="min-w-0">
           <p className="text-sm font-semibold text-[#26323A]">Push notifications</p>
           <p className="mt-0.5 text-xs leading-5 text-[#6B747B]">
@@ -12956,6 +13002,15 @@ function BillingIcon() {
       <rect x="3" y="5" width="18" height="14" rx="3" />
       <path d="M3 10h18" />
       <path d="M7 15h4" />
+    </svg>
+  );
+}
+
+function NotificationBellIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
+      <path d="M18 8a6 6 0 0 0-12 0c0 6-2.5 7-2.5 9h17c0-2-2.5-3-2.5-9" />
+      <path d="M10 21h4" />
     </svg>
   );
 }

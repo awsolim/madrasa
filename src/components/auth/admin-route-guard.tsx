@@ -53,7 +53,7 @@ export function AdminRouteGuard({ children, slug }: { children: React.ReactNode;
         <div className="max-w-sm space-y-3">
           <h1 className="text-2xl font-semibold text-[#26323A]">Admin access required</h1>
           <p className="text-sm leading-6 text-[#68747C]">This area is only available to active masjid admins.</p>
-          <Link href={`/m/${slug}`} className="inline-flex min-h-11 items-center justify-center rounded-full bg-[#2F6F5B] px-5 text-sm font-semibold text-white">
+          <Link href={`/m/${slug}`} className="inline-flex min-h-11 items-center justify-center rounded-full bg-[#2F6F5B] px-5 text-sm font-semibold !text-white">
             Go back
           </Link>
         </div>

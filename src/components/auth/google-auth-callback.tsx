@@ -60,7 +60,7 @@ export function GoogleAuthCallback({ slug, returnTo }: { slug: string; returnTo?
         <div className="rounded-[28px] bg-white p-6 text-center shadow-[0_18px_44px_rgba(38,50,58,0.08)]">
           <p className="text-lg font-semibold text-[#26323A]">Google sign in did not finish</p>
           <p className="mt-2 text-sm text-[#6B747B]">{error}</p>
-          <Link href={`/m/${slug}/login`} className="mt-6 inline-flex min-h-11 items-center justify-center rounded-full bg-[#2F6B53] px-6 text-sm font-semibold text-white">
+          <Link href={`/m/${slug}/login`} className="mt-6 inline-flex min-h-11 items-center justify-center rounded-full bg-[#2F6B53] px-6 text-sm font-semibold !text-white">
             Back to login
           </Link>
         </div>

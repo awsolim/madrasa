@@ -4,7 +4,7 @@ import Link from "@/components/layout/workspace-link";
 import { useWorkspacePathname as usePathname, useWorkspaceRouter as useRouter } from "@/components/layout/workspace-navigation";
 import type { ComponentProps, MouseEvent, ReactNode } from "react";
 import { getCachedSessionSnapshot, loadCachedSession } from "@/lib/client-cache";
-import { operationalSnapshotKey, prefetchPrivateSnapshot } from "@/lib/query-cache";
+import { operationalSnapshotKey, prefetchPrivateSnapshot, prefetchQuery } from "@/lib/query-cache";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { loadProgramEditor, loadProgramDirectorOptions } from "@/lib/program-editor-data";
 
@@ -62,7 +62,7 @@ export function TransitionLink({
   function warmDestination() {
     router.prefetch(href);
     const destination = new URL(href, window.location.href).pathname;
-    const match = destination.match(/^\/m\/([^/]+)\/(?:teacher\/classes|admin\/programs)\/([^/]+)\/(applications|finances|students)$/);
+    const match = destination.match(/^\/m\/([^/]+)\/(?:teacher\/classes|admin\/programs)\/([^/]+)\/(applications|finances|students|instructors)$/);
     const wizardMatch = destination.match(/^\/m\/([^/]+)\/(?:teacher\/classes|admin\/programs)\/new$/);
     const editorMatch = destination.match(/^\/m\/([^/]+)\/(?:teacher\/classes|admin\/programs)\/([a-f0-9-]{36})$/i);
     if (editorMatch) {
@@ -85,6 +85,20 @@ export function TransitionLink({
       }
       if (!match) return;
       const [, slug, programId, kind] = match;
+      if (kind === "instructors") {
+        prefetchQuery(`teacher-instructors-gate:${slug}:${programId}`, async () => {
+          const supabase = createSupabaseBrowserClient();
+          const [{ data: mosque, error: mosqueError }, { data: program, error: programError }, { data: staff, error: staffError }] = await Promise.all([
+            supabase.from("mosques").select("id").eq("slug", slug).maybeSingle(),
+            supabase.from("programs").select("*").eq("id", programId).maybeSingle(),
+            supabase.rpc("get_program_staff_snapshot", { p_program_id: programId }),
+          ]);
+          if (mosqueError || programError || staffError) throw mosqueError ?? programError ?? staffError;
+          if (!mosque || !program || program.mosque_id !== mosque.id) return { program: null, staff: null, error: null };
+          return { program, staff, error: null };
+        });
+        return;
+      }
       const key = operationalSnapshotKey(kind as "applications" | "finances" | "students", slug, programId, userId);
       prefetchPrivateSnapshot(key, async () => {
         const supabase = createSupabaseBrowserClient();
