@@ -65,7 +65,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
       return Response.json({ ok: true });
     }
 
-    void sendPushNotification(supabase, {
+      await sendPushNotification(supabase, {
       recipientProfileIds: [note.recipient_profile_id],
       title: `New note: ${program.title}`,
       body: notificationBody(note.message, note.attachments),

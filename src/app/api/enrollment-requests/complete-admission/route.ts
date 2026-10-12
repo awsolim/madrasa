@@ -72,7 +72,7 @@ export async function POST(request: Request) {
       const managerIds = await getProgramEnrollmentRecipientProfileIds(supabase, { id: enrollmentRequest.program_id, ...program });
       if (mosque) {
         const message = `${student?.full_name || student?.email || "A student"} completed registration for ${program.title}.`;
-        void sendPushNotification(supabase, {
+      await sendPushNotification(supabase, {
           recipientProfileIds: managerIds,
           title: "Registration completed",
           body: message,

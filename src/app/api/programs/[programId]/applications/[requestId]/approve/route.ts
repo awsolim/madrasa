@@ -131,7 +131,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
     if (mosque) {
       const portalPath = "/portal/classes?tab=applications";
       const approvalMessage = `${label}'s application to ${program.title} was approved. Open Madrasa to complete the remaining registration steps${program.is_paid && !paymentBypassed ? ", including payment" : ""}.`;
-      void sendPushNotification(supabase, {
+      await sendPushNotification(supabase, {
         recipientProfileIds: [enrollmentRequest.parent_profile_id, enrollmentRequest.student_profile_id],
         title: "Application approved",
         body: approvalMessage,

@@ -132,7 +132,7 @@ async function notifyProgramManagers(
     { id: programId, ...program },
     { includeMosqueAdmins: payload.includeAdmins === true },
   );
-  void sendPushNotification(supabase, {
+      await sendPushNotification(supabase, {
     recipientProfileIds: managerIds,
     title: payload.title,
     body: payload.body,

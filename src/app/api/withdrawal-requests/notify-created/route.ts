@@ -62,7 +62,7 @@ export async function POST(request: Request) {
     const managerIds = await getProgramEnrollmentRecipientProfileIds(supabase, { id: body.programId, ...program });
     if (mosque) {
       const message = `${student?.full_name || student?.email || "A student"} requested to withdraw from ${program.title}.`;
-      void sendPushNotification(supabase, {
+      await sendPushNotification(supabase, {
         recipientProfileIds: managerIds,
         title: "Withdrawal requested",
         body: message,

@@ -60,7 +60,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
     const { data: program } = await supabase.from("programs").select("title, mosque_id").eq("id", programId).maybeSingle();
     const { data: mosque } = program ? await supabase.from("mosques").select("slug").eq("id", program.mosque_id).maybeSingle() : { data: null };
     if (program && mosque) {
-      void sendPushNotification(supabase, {
+      await sendPushNotification(supabase, {
         recipientProfileIds: [enrollmentRequest.parent_profile_id, enrollmentRequest.student_profile_id],
         title: "Application reopened",
         body: `Your application to ${program.title} was reopened and is back under review.`,

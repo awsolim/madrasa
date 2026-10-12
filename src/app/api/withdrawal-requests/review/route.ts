@@ -91,7 +91,7 @@ export async function POST(request: Request) {
 
       if (program && mosque) {
         const message = `Your withdrawal request for ${program.title} was rejected. Enrollment remains active.`;
-        void sendPushNotification(supabase, {
+        await sendPushNotification(supabase, {
           recipientProfileIds: [withdrawalRequest.parent_profile_id, withdrawalRequest.student_profile_id],
           title: "Withdrawal request rejected",
           body: message,
@@ -194,7 +194,7 @@ export async function POST(request: Request) {
 
     if (program && mosque) {
       const message = `Your withdrawal request for ${program.title} was approved. Enrollment has ended.${refundAmountCents > 0 ? ` A ${(refundAmountCents / 100).toFixed(2)} refund was issued to the original payment method.` : ""}`;
-      void sendPushNotification(supabase, {
+      await sendPushNotification(supabase, {
         recipientProfileIds: [withdrawalRequest.parent_profile_id, withdrawalRequest.student_profile_id],
         title: "Withdrawal request approved",
         body: message,

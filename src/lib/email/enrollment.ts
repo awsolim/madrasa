@@ -122,7 +122,7 @@ export async function sendEnrollmentSubmittedEmails(requestIds: string[], userId
       const requesterText = parentName ? `${parentName} submitted this request for ${studentName}.` : `${studentName} submitted this request.`;
 
       const managerIds = await getProgramApplicationReviewerProfileIds(supabase, program);
-      void sendPushNotification(supabase, {
+      await sendPushNotification(supabase, {
         recipientProfileIds: managerIds,
         title: "New application received",
         body: `${requesterText} Class: ${program.title}.`,

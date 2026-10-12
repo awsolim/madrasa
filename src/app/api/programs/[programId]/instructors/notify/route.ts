@@ -78,7 +78,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
       const message = body.eventType === "joined"
         ? `${instructorLabel} joined ${program.title} as an instructor.`
         : `${instructorLabel} resigned as an instructor of ${program.title}.`;
-      void sendPushNotification(supabase, {
+      await sendPushNotification(supabase, {
         recipientProfileIds: managerIds,
         title: body.eventType === "joined" ? "Instructor joined" : "Instructor resigned",
         body: message,

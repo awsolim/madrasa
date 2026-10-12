@@ -103,7 +103,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
 
     const recipientProfileIds = Array.from(recipientIds);
     const inboxUrl = getTenantAppUrl(mosque.slug, "/portal/announcements");
-    void sendPushNotification(supabase, {
+      await sendPushNotification(supabase, {
       recipientProfileIds,
       title: `New announcement: ${program.title}`,
       body: notificationBody(announcement.message, announcement.attachments),

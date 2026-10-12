@@ -12396,12 +12396,15 @@ function urlBase64ToUint8Array(base64String: string) {
  */
 function usePushSubscription() {
   const [supported] = useState(() => typeof window !== "undefined" && "serviceWorker" in navigator && "PushManager" in window);
+  const [standalone] = useState(() => typeof window !== "undefined" && (window.matchMedia("(display-mode: standalone)").matches || Boolean((navigator as Navigator & { standalone?: boolean }).standalone)));
   const [permission, setPermission] = useState<NotificationPermission | null>(() =>
     typeof window !== "undefined" && "Notification" in window ? Notification.permission : null,
   );
   const [subscribed, setSubscribed] = useState(false);
   const [busy, setBusy] = useState(false);
+  const [testing, setTesting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [status, setStatus] = useState<string | null>(null);
 
   useEffect(() => {
     if (!supported) {
@@ -12416,6 +12419,7 @@ function usePushSubscription() {
   async function enable() {
     setBusy(true);
     setError(null);
+    setStatus(null);
     try {
       const permissionResult = await Notification.requestPermission();
       setPermission(permissionResult);
@@ -12425,8 +12429,10 @@ function usePushSubscription() {
         return;
       }
 
-      const publicKey = process.env.NEXT_PUBLIC_VAPID_PUBLIC_KEY;
-      if (!publicKey) {
+      const configResponse = await fetch("/api/push/config", { cache: "no-store" });
+      const config = (await configResponse.json().catch(() => ({}))) as { configured?: boolean; publicKey?: string | null };
+      const publicKey = config.publicKey;
+      if (!configResponse.ok || !config.configured || !publicKey) {
         setError("Push notifications are not configured yet.");
         setBusy(false);
         return;
@@ -12463,6 +12469,7 @@ function usePushSubscription() {
       }
 
       setSubscribed(true);
+      setStatus("Notifications are enabled on this device.");
     } catch {
       setError("Could not enable push notifications on this device.");
     }
@@ -12472,6 +12479,7 @@ function usePushSubscription() {
   async function disable() {
     setBusy(true);
     setError(null);
+    setStatus(null);
     try {
       const registration = await navigator.serviceWorker.ready;
       const subscription = await registration.pushManager.getSubscription();
@@ -12488,21 +12496,42 @@ function usePushSubscription() {
         }
       }
       setSubscribed(false);
+      setStatus("Notifications are disabled on this device.");
     } catch {
       setError("Could not disable push notifications.");
     }
     setBusy(false);
   }
 
-  return { supported, permission, subscribed, busy, error, enable, disable };
+  async function test() {
+    setTesting(true);
+    setError(null);
+    setStatus(null);
+    try {
+      const token = await getCurrentAccessToken();
+      if (!token) {
+        setError("Please sign in again before testing notifications.");
+        return;
+      }
+      const response = await fetch("/api/push/test", { method: "POST", headers: { authorization: `Bearer ${token}` } });
+      const result = (await response.json().catch(() => ({}))) as { error?: string };
+      if (!response.ok) {
+        setError(result.error ?? "The test notification could not be sent.");
+        return;
+      }
+      setStatus("Test sent. It should appear as a device notification shortly.");
+    } catch {
+      setError("The test notification could not be sent.");
+    } finally {
+      setTesting(false);
+    }
+  }
+
+  return { supported, standalone, permission, subscribed, busy, testing, error, status, enable, disable, test };
 }
 
 function PushNotificationToggle() {
-  const { supported, subscribed, busy, error, enable, disable } = usePushSubscription();
-
-  if (!supported) {
-    return null;
-  }
+  const { supported, standalone, permission, subscribed, busy, testing, error, status, enable, disable, test } = usePushSubscription();
 
   return (
     <section className="mt-7">
@@ -12510,13 +12539,24 @@ function PushNotificationToggle() {
       <div className="mt-2 flex items-center justify-between gap-3 rounded-2xl border border-[#E6EAED] px-4 py-3">
         <div className="min-w-0">
           <p className="text-sm font-semibold text-[#26323A]">Push notifications</p>
-          <p className="mt-0.5 text-xs leading-5 text-[#6B747B]">Get notified on this device when your inbox has something new.</p>
+          <p className="mt-0.5 text-xs leading-5 text-[#6B747B]">
+            {!supported
+              ? "Install and open this app from your Home Screen to enable notifications on iPhone."
+              : permission === "denied"
+                ? "Notifications are blocked in this device's system settings."
+                : subscribed
+                  ? "This device is registered for application, payment, announcement, note, and withdrawal updates."
+                  : standalone
+                    ? "Enable notifications for important class and account updates."
+                    : "Enable notifications on this browser or install the app for the full experience."}
+          </p>
           {error ? <p className="mt-1 text-xs font-semibold text-[#C0392B]">{error}</p> : null}
+          {status ? <p className="mt-1 text-xs font-semibold text-[#17624F]">{status}</p> : null}
         </div>
         <button
           type="button"
           onClick={() => (subscribed ? void disable() : void enable())}
-          disabled={busy}
+          disabled={busy || !supported || permission === "denied"}
           className={cn(
             "min-h-9 shrink-0 rounded-full px-4 text-xs font-semibold transition-colors disabled:opacity-60",
             subscribed ? "bg-[#E2F6E8] text-[#258A43]" : "bg-[#F0F4F5] text-[#52616A]",
@@ -12525,6 +12565,11 @@ function PushNotificationToggle() {
           {busy ? "..." : subscribed ? "On" : "Off"}
         </button>
       </div>
+      {subscribed ? (
+        <button type="button" onClick={() => void test()} disabled={testing} className="mt-2 min-h-10 w-full rounded-xl border border-[#CFE1DC] bg-[#F4FAF8] px-4 text-xs font-semibold text-[#17624F] disabled:opacity-60">
+          {testing ? "Sending test…" : "Send test notification"}
+        </button>
+      ) : null}
     </section>
   );
 }

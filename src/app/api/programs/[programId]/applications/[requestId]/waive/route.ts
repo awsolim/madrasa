@@ -86,7 +86,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
 
     const { data: mosque } = await supabase.from("mosques").select("slug").eq("id", program.mosque_id).maybeSingle();
     if (mosque) {
-      void sendPushNotification(supabase, {
+      await sendPushNotification(supabase, {
         recipientProfileIds: [enrollmentRequest.parent_profile_id, enrollmentRequest.student_profile_id],
         title: "Payment waived",
         body: `Payment for ${program.title} was waived. Complete registration to activate the class.`,
