@@ -331,6 +331,25 @@ export async function refreshCachedProfileSummary(userId: string) {
 }
 
 export async function performClientLogout() {
+  try {
+    if ("serviceWorker" in navigator && "PushManager" in window) {
+      const [session, registration] = await Promise.all([
+        createSupabaseBrowserClient().auth.getSession(),
+        navigator.serviceWorker.ready,
+      ]);
+      const subscription = await registration.pushManager.getSubscription();
+      const accessToken = session.data.session?.access_token;
+      if (subscription && accessToken) {
+        await fetch("/api/push/unsubscribe", {
+          method: "POST",
+          headers: { "content-type": "application/json", authorization: `Bearer ${accessToken}` },
+          body: JSON.stringify({ endpoint: subscription.endpoint }),
+        });
+      }
+    }
+  } catch {
+    // Logout must continue even when notification cleanup is unavailable.
+  }
   clearUserScopedCaches();
   setCachedSessionSnapshot(null);
   await createSupabaseBrowserClient().auth.signOut();

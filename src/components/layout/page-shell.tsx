@@ -6,6 +6,7 @@ import { PrimaryNavPrefetch } from "@/components/layout/primary-nav-prefetch";
 import { WorkspaceNavigationProvider } from "@/components/layout/workspace-navigation";
 import { WorkspacePages } from "@/components/layout/workspace-pages";
 import { NavigationDiagnostics } from "@/components/monitoring/navigation-diagnostics";
+import { PushNotificationManager } from "@/components/pwa/push-notification-manager";
 
 const defaultAppName = "Madrasa";
 
@@ -75,10 +76,16 @@ export function AppChrome({
   const resolvedMobileNav =
     mobileNavItems ??
     (section === "portal" ? scopedPortalMobileNav : section === "teacher" ? scopedTeacherMobileNav : section === "admin" ? scopedAdminMobileNav : scopedPublicMobileNav);
+  const notificationSettingsHref = section === "admin"
+    ? `/m/${slug}/admin/settings`
+    : section === "teacher"
+      ? `/m/${slug}/teacher/account`
+      : `/m/${slug}/portal/account`;
   return (
     <WorkspaceNavigationProvider slug={slug} section={section}>
       <PrimaryNavPrefetch slug={slug} section={section} />
       <NavigationDiagnostics />
+      {section !== "public" ? <PushNotificationManager settingsHref={notificationSettingsHref} /> : null}
       <AppTopBar appName={defaultAppName} mosqueSlug={slug} homeHref={`/m/${slug}`} navItems={resolvedNav} mobileNavItems={resolvedMobileNav} />
       <MobileBottomNav mosqueSlug={slug} navItems={resolvedNav} mobileNavItems={resolvedMobileNav} />
       <DesktopSidebar appName={defaultAppName} mosqueSlug={slug} homeHref={`/m/${slug}`} navItems={resolvedNav} mobileNavItems={resolvedMobileNav} section={section} />
