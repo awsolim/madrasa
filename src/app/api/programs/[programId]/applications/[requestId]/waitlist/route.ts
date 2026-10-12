@@ -73,8 +73,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
     if (program && mosque) {
       await sendPushNotification(supabase, {
         recipientProfileIds: [enrollmentRequest.parent_profile_id, enrollmentRequest.student_profile_id],
-        title: "Application waitlisted",
-        body: `${student?.full_name || "Your"} application to ${program.title} was waitlisted.`,
+        title: `Waitlist update · ${program.title}`,
+        body: student?.full_name ? `${student.full_name}’s application was added to the waitlist.` : "Your application was added to the waitlist.",
         url: `/m/${mosque.slug}/portal/classes?tab=applications`,
       });
     }

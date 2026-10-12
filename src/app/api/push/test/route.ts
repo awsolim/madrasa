@@ -14,8 +14,8 @@ export async function POST(request: Request) {
 
   const result = await sendPushNotification(supabase, {
     recipientProfileIds: user.id,
-    title: "Assiddiq notifications are working",
-    body: "This device is ready to receive Madrasa updates.",
+    title: "Notifications enabled",
+    body: "You’ll receive class announcements, application updates, messages, and payment alerts here.",
     url: "/",
   });
 

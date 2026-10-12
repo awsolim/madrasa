@@ -106,8 +106,8 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
     if (program && mosque) {
       await sendPushNotification(supabase, {
         recipientProfileIds: [enrollmentRequest.parent_profile_id, enrollmentRequest.student_profile_id],
-        title: "Price updated",
-        body: `The approved price for ${program.title} was updated to $${(priceCents / 100).toFixed(2)}.`,
+        title: `Payment plan updated · ${program.title}`,
+        body: `Your approved price is now $${(priceCents / 100).toFixed(2)}.`,
         url: `/m/${mosque.slug}/registration/${requestId}`,
       });
     }

@@ -124,8 +124,8 @@ export async function sendEnrollmentSubmittedEmails(requestIds: string[], userId
       const managerIds = await getProgramApplicationReviewerProfileIds(supabase, program);
       await sendPushNotification(supabase, {
         recipientProfileIds: managerIds,
-        title: "New application received",
-        body: `${requesterText} Class: ${program.title}.`,
+        title: `New application · ${program.title}`,
+        body: requesterText,
         url: teacherInboxUrl(mosque.slug),
       });
 
