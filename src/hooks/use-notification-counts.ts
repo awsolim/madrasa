@@ -28,6 +28,7 @@ type AnnouncementVisibilityRow = {
   program_id: string;
   target_program_track_ids: string[] | null;
   created_at: string;
+  deleted_at: string | null;
 };
 
 const emptyCounts: NotificationCounts = { announcementCount: 0, noteCount: 0, requestCount: 0, actionRequired: false };
@@ -162,9 +163,9 @@ export async function fetchStudentNotificationCounts(slug: string, userId: strin
     return { announcementCount: 0, noteCount: nextNoteCount, requestCount: nextRequestCount, actionRequired: nextActionRequired };
   }
 
-  const { data: announcements } = await supabase.from("program_announcements").select("id, program_id, target_program_track_ids, created_at").in("program_id", programIds);
+  const { data: announcements } = await supabase.from("program_announcements").select("id, program_id, target_program_track_ids, created_at, deleted_at").in("program_id", programIds);
   const visibleAnnouncements = ((announcements ?? []) as AnnouncementVisibilityRow[]).filter((announcement) =>
-    isAnnouncementVisibleForEnrollment(
+    !announcement.deleted_at && isAnnouncementVisibleForEnrollment(
       announcement,
       enrolledTrackIdsByProgramId.get(announcement.program_id),
       enrolledJoinDatesByProgramId.get(announcement.program_id),

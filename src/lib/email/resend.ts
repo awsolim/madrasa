@@ -17,6 +17,29 @@ export function getAppBaseUrl() {
   return (process.env.NEXT_PUBLIC_APP_URL || process.env.NEXT_PUBLIC_SITE_URL || "http://localhost:3000").replace(/\/$/, "");
 }
 
+/**
+ * Builds a deep link on the tenant's own installed-PWA origin in production.
+ * Local and preview environments keep the path-based /m/{slug} routing because
+ * arbitrary subdomains are not normally available there.
+ */
+export function getTenantAppUrl(slug: string, path = "/") {
+  const base = new URL(getAppBaseUrl());
+  const rootDomain = (process.env.NEXT_PUBLIC_ROOT_DOMAIN || "madrasa.ca").toLowerCase();
+  const hostname = base.hostname.toLowerCase();
+  const relativePath = path.replace(/^\/+/, "");
+  const isRootDeployment = hostname === rootDomain || hostname === `www.${rootDomain}` || hostname.endsWith(`.${rootDomain}`);
+
+  if (isRootDeployment) {
+    base.hostname = `${slug}.${rootDomain}`;
+    base.pathname = "/";
+  } else {
+    base.pathname = `/m/${slug}/`;
+  }
+  base.search = "";
+  base.hash = "";
+  return new URL(relativePath, base).toString();
+}
+
 export function escapeHtml(value: string | null | undefined) {
   return String(value ?? "")
     .replaceAll("&", "&amp;")

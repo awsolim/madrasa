@@ -1,7 +1,7 @@
 import { cancelProgramSubscription } from "@/lib/stripe/subscriptions";
 import { sendPushNotification } from "@/lib/push/send-push";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
-import { getAppBaseUrl } from "@/lib/email/resend";
+import { getTenantAppUrl } from "@/lib/email/resend";
 import { sendProfileNotificationEmails } from "@/lib/email/notifications";
 import { logServerError } from "@/lib/monitoring/log-error";
 import { getStripe, shouldUseStripeConnect } from "@/lib/stripe/server";
@@ -102,7 +102,7 @@ export async function POST(request: Request) {
           subject: `Withdrawal request update: ${program.title}`,
           title: "Withdrawal Request Rejected",
           message,
-          action: { label: "Open Classes", href: `${getAppBaseUrl()}/m/${mosque.slug}/portal/classes` },
+          action: { label: "Open Classes", href: getTenantAppUrl(mosque.slug, "/portal/classes") },
         }).catch(() => null);
       }
 
@@ -205,7 +205,7 @@ export async function POST(request: Request) {
         subject: `Withdrawal request approved: ${program.title}`,
         title: "Withdrawal Request Approved",
         message,
-        action: { label: "Open Classes", href: `${getAppBaseUrl()}/m/${mosque.slug}/portal/classes` },
+        action: { label: "Open Classes", href: getTenantAppUrl(mosque.slug, "/portal/classes") },
       }).catch(() => null);
     }
 

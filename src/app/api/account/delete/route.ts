@@ -1,8 +1,8 @@
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
 import { cancelProgramSubscription, isActiveStripeSubscriptionStatus } from "@/lib/stripe/subscriptions";
-import { escapeHtml, getAppBaseUrl, renderEmailShell, sendEmail } from "@/lib/email/resend";
+import { escapeHtml, getTenantAppUrl, renderEmailShell, sendEmail } from "@/lib/email/resend";
 import { sendProfileNotificationEmails } from "@/lib/email/notifications";
-import { getProgramManagerProfileIds } from "@/lib/push/program-recipients";
+import { getProgramEnrollmentRecipientProfileIds } from "@/lib/push/program-recipients";
 import { logServerError } from "@/lib/monitoring/log-error";
 
 export const runtime = "nodejs";
@@ -170,7 +170,7 @@ export async function POST(request: Request) {
 
       teacherNotifications = await Promise.all(
         (programs ?? []).map(async (program) => {
-          const managerIds = await getProgramManagerProfileIds(supabase, program);
+          const managerIds = await getProgramEnrollmentRecipientProfileIds(supabase, program);
           const enrolledIds = (activeEnrollments ?? [])
             .filter((row) => row.program_id === program.id)
             .map((row) => row.student_profile_id);
@@ -233,12 +233,13 @@ export async function POST(request: Request) {
         : `${names} ${plural ? "have" : "has"} left ${notification.title} because their account${plural ? "s were" : " was"} deleted.`;
       try {
         await sendProfileNotificationEmails(supabase, notification.managerIds, {
+          includeAdmins: true,
           eventKey: `account-deleted:${userId}:${notification.programId}`,
           subject: `${names} ${plural ? "have" : "has"} left ${notification.title}`,
           title: "A student's enrollment has ended",
           message,
           action: notification.mosqueSlug
-            ? { label: "Open Teacher Inbox", href: `${getAppBaseUrl()}/m/${notification.mosqueSlug}/teacher/inbox` }
+            ? { label: "Open Teacher Inbox", href: getTenantAppUrl(notification.mosqueSlug, "/teacher/inbox") }
             : undefined,
         });
       } catch {

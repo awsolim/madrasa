@@ -28,6 +28,89 @@ export async function getProgramManagerProfileIds(
   );
 }
 
+type ProgramRecipientContext = {
+  id: string;
+  mosque_id: string;
+  director_profile_id: string | null;
+  teacher_profile_id: string | null;
+};
+
+async function getProgramStaffCandidateIds(
+  supabase: SupabaseClient<Database>,
+  program: ProgramRecipientContext,
+  includeMosqueAdmins = true,
+) {
+  const [{ data: assignments, error: assignmentsError }, { data: admins, error: adminsError }] = await Promise.all([
+    supabase.from("program_teachers").select("teacher_profile_id").eq("program_id", program.id).not("teacher_profile_id", "is", null),
+    supabase.from("mosque_memberships").select("profile_id").eq("mosque_id", program.mosque_id).eq("role", "admin").eq("status", "active"),
+  ]);
+  if (assignmentsError) throw new Error(assignmentsError.message);
+  if (adminsError) throw new Error(adminsError.message);
+
+  return Array.from(new Set([
+    program.director_profile_id ?? program.teacher_profile_id,
+    ...(assignments ?? []).map((row) => row.teacher_profile_id),
+    ...(includeMosqueAdmins ? (admins ?? []).map((row) => row.profile_id) : []),
+  ].filter((id): id is string => Boolean(id))));
+}
+
+async function filterByProgramCapability(
+  supabase: SupabaseClient<Database>,
+  program: ProgramRecipientContext,
+  capability: "can_manage_program_finances" | "can_manage_program_enrollments",
+) {
+  const candidates = await getProgramStaffCandidateIds(supabase, program);
+  const authorized = await Promise.all(candidates.map(async (profileId) => {
+    const { data, error } = await supabase.rpc(capability, {
+      check_program_id: program.id,
+      check_profile_id: profileId,
+    });
+    if (error) throw new Error(error.message);
+    return data ? profileId : null;
+  }));
+  return authorized.filter((id): id is string => Boolean(id));
+}
+
+/** Directors, mosque admins, and instructors explicitly granted finance access. */
+export async function getProgramFinanceRecipientProfileIds(
+  supabase: SupabaseClient<Database>,
+  program: ProgramRecipientContext,
+  options?: { includeMosqueAdmins?: boolean },
+) {
+  const candidates = await getProgramStaffCandidateIds(supabase, program, options?.includeMosqueAdmins ?? true);
+  const authorized = await Promise.all(candidates.map(async (profileId) => {
+    const { data, error } = await supabase.rpc("can_manage_program_finances", {
+      check_program_id: program.id,
+      check_profile_id: profileId,
+    });
+    if (error) throw new Error(error.message);
+    return data ? profileId : null;
+  }));
+  return authorized.filter((id): id is string => Boolean(id));
+}
+
+/** Directors, mosque admins, and instructors explicitly granted enrollment access. */
+export function getProgramEnrollmentRecipientProfileIds(
+  supabase: SupabaseClient<Database>,
+  program: ProgramRecipientContext,
+) {
+  return filterByProgramCapability(supabase, program, "can_manage_program_enrollments");
+}
+
+/** Oversight events about the instructor team go only to directors and active mosque admins. */
+export async function getProgramLeadershipProfileIds(
+  supabase: SupabaseClient<Database>,
+  program: ProgramRecipientContext,
+) {
+  const { data: admins, error } = await supabase.from("mosque_memberships")
+    .select("profile_id").eq("mosque_id", program.mosque_id).eq("role", "admin").eq("status", "active");
+  if (error) throw new Error(error.message);
+  return Array.from(new Set([
+    program.director_profile_id ?? program.teacher_profile_id,
+    ...(admins ?? []).map((row) => row.profile_id),
+  ].filter((id): id is string => Boolean(id))));
+}
+
 /** Staff who can act on a new application for this class. */
 export async function getProgramApplicationReviewerProfileIds(
   supabase: SupabaseClient<Database>,

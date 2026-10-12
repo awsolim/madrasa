@@ -3,7 +3,6 @@
 import { ChevronIcon, programStatusBadgeToneClass, titleCase } from "@/components/data/program-builder-shared";
 import type { Profile, Program, ProgramTrack } from "@/components/data/program-builder-shared";
 import { loadStudentActivity } from "@/lib/student-activity";
-import Link from "@/components/layout/workspace-link";
 import { ApplicationReviewOverlay, type ApplicationRow } from "@/components/data/application-review";
 import { useSearchParams } from "next/navigation";
 import { useWorkspacePathname as usePathname, useWorkspaceRouter as useRouter } from "@/components/layout/workspace-navigation";
@@ -35,7 +34,6 @@ export function ProgramApplicationsData({ slug, programId, mode = "teacher" }: {
   const [initialPage] = useState(() => readPrivatePage<CachedApplicationsPage>(cacheKey));
   const [program, setProgram] = useState<Program | null>(initialPage?.program ?? null);
   const [rows, setRows] = useState<ApplicationRow[]>(initialPage?.rows ?? []);
-  const [auditEvents, setAuditEvents] = useState<ProgramFinanceAuditEvent[]>(initialPage?.auditEvents ?? []);
   const [search, setSearch] = useState(searchParams.get("studentId") ?? "");
   const [statusFilter, setStatusFilter] = useState("all");
   const [trackFilter, setTrackFilter] = useState("all");
@@ -148,7 +146,6 @@ export function ProgramApplicationsData({ slug, programId, mode = "teacher" }: {
       clearPrivatePage(`applications:${slug}:${programId}:${mode}:${userId}`);
       setProgram(snapshot.program);
       setRows([]);
-      setAuditEvents([]);
       setError("You don't have permission to view applications for this class.");
       setLoading(false);
       return;
@@ -181,7 +178,6 @@ export function ProgramApplicationsData({ slug, programId, mode = "teacher" }: {
         approver: request.reviewed_by ? (profileRows.find((profile) => profile.id === request.reviewed_by) as Profile | undefined) ?? null : null,
       }));
     setRows(mappedRows);
-    setAuditEvents(auditRows);
     const mappedSwitchRequests = switchRows.map((request) => ({
         ...request,
         program: programRow,
@@ -224,12 +220,9 @@ export function ProgramApplicationsData({ slug, programId, mode = "teacher" }: {
 
   const countByStatus = (status: RequestApplicationStatus) => rows.filter((row) => getApplicationStatus(row.request) === status).length;
   const approvedRows = rows.filter((row) => getApplicationStatus(row.request) === "approved_confirmation_required");
-  const waitingConfirmationCount = approvedRows.filter((row) => {
-    const payStatus = getApplicationPaymentStatus(row.request, program, row.subscription);
-    return !["payment_required", "checkout_pending"].includes(payStatus);
-  }).length;
   const waitingPaymentRows = approvedRows.filter((row) => ["payment_required", "checkout_pending"].includes(getApplicationPaymentStatus(row.request, program, row.subscription)));
   const waitingPaymentCount = waitingPaymentRows.length;
+  const waitingWorkflowCount = approvedRows.length;
   const tracksById = Object.fromEntries(tracks.map((track) => [track.id, track]));
   const pendingSwitchRequests = trackSwitchRequests.filter((request) => request.status === "pending");
 
@@ -303,9 +296,9 @@ export function ProgramApplicationsData({ slug, programId, mode = "teacher" }: {
       <div className="rounded-[28px] bg-[#17624F] p-5 text-white shadow-[0_18px_45px_rgba(23,98,79,0.22)]">
         <h2 className="mt-2 text-2xl font-semibold leading-7">{program.title}</h2>
         <div className="mt-5 grid grid-cols-3 gap-4 text-center sm:grid-cols-6">
+          <FinanceSummaryFigure value={rows.length.toString()} label="Total Applications" />
           <FinanceSummaryFigure value={countByStatus("pending_review").toString()} label="Pending Review" />
-          <FinanceSummaryFigure value={waitingConfirmationCount.toString()} label="Waiting Confirmation" />
-          <FinanceSummaryFigure value={waitingPaymentCount.toString()} label="Waiting Payment" />
+          <FinanceSummaryFigure value={waitingWorkflowCount.toString()} label="Waiting Payment" />
           <FinanceSummaryFigure value={countByStatus("waitlisted").toString()} label="Waitlisted" />
           <FinanceSummaryFigure value={countByStatus("rejected").toString()} label="Rejected" />
           <FinanceSummaryFigure value={countByStatus("completed_enrolled").toString()} label="Completed" />
@@ -339,11 +332,10 @@ export function ProgramApplicationsData({ slug, programId, mode = "teacher" }: {
           <CompactFinanceSelect
             label="Stage"
             value={statusFilter}
-            options={["pending_review", "waiting_payment", "waiting_confirmation", "waitlisted", "completed_enrolled", "closed"]}
+            options={["pending_review", "waiting_payment", "waitlisted", "completed_enrolled", "closed"]}
             labels={{
               pending_review: "Pending Review",
               waiting_payment: "Waiting Payment",
-              waiting_confirmation: "Waiting Confirmation",
               waitlisted: "Waitlisted",
               completed_enrolled: "Completed / Enrolled",
               closed: "Rejected / Cancelled",
@@ -380,12 +372,14 @@ export function ProgramApplicationsData({ slug, programId, mode = "teacher" }: {
           const status = getApplicationStatus(row.request);
           const payStatus = getApplicationPaymentStatus(row.request, program, row.subscription);
           return (
-            <article key={row.request.id} className="overflow-hidden rounded-[16px] border border-[#E1E8EC] bg-white">
+            <article key={row.request.id} className={cn("overflow-hidden rounded-[16px] border border-[#E1E8EC]", applicationNeedsAction(status) ? "bg-[#F4FAF8]" : "bg-white")}>
               <button type="button" onClick={() => setDetailsTarget(row)} onPointerEnter={() => { void loadStudentActivity(programId, row.request.student_profile_id, "application").catch(() => undefined); }} className="flex w-full items-start gap-3 px-4 py-3.5 text-left">
                 <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-[#EEF6F7] text-[#17624F]" aria-hidden><DefaultProfileIcon className="h-5 w-5" compact /></span>
                 <span className="min-w-0 flex-1">
                   <span className="block break-words text-[15px] font-semibold leading-5 text-[#26323A]">{row.student?.full_name || "Student"}</span>
-                  <span className="mt-1 block text-xs leading-4 text-[#6B747B]">{row.track?.name || "No track"}{row.parent ? ` · ${row.parent.full_name || "Parent"}` : ""}</span>
+                  <span className="mt-1 block text-xs leading-4 text-[#6B747B]">{row.track?.name || "No track"}</span>
+                  {row.parent ? <span className="mt-0.5 block text-xs leading-4 text-[#6B747B]">Parent: {row.parent.full_name || "Not provided"}</span> : null}
+                  <span className="mt-0.5 block text-xs leading-4 text-[#8A949A]">Submitted {formatFinanceDate(row.request.requested_at)}</span>
                   <span className={cn("mt-2 inline-flex rounded-full px-2.5 py-1 text-[11px] font-semibold leading-4", programStatusBadgeToneClass(applicationStatusTone(status)))}>{getApplicationRowStatusLabel(status, payStatus)}</span>
                 </span>
                 <span className="mt-2"><ChevronRightIcon /></span>
@@ -418,11 +412,11 @@ export function ProgramApplicationsData({ slug, programId, mode = "teacher" }: {
                     onPointerEnter={() => { void loadStudentActivity(programId, row.request.student_profile_id, "application").catch(() => undefined); }}
                     onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); setDetailsTarget(row); } }}
                     onClick={() => setDetailsTarget(row)}
-                    className="cursor-pointer align-middle transition-colors hover:bg-[#F7FAFB]"
+                    className={cn("cursor-pointer align-middle transition-colors hover:bg-[#F7FAFB]", applicationNeedsAction(status) && "bg-[#F4FAF8]")}
                   >
                     <td className="px-4 py-4">
                       <p className="font-semibold text-[#26323A]">{row.student?.full_name || "Student"}</p>
-                      <p className="mt-0.5 truncate text-xs text-[#7B858C]">{row.parent ? row.parent.full_name || "Parent" : "Adult student"}</p>
+                      <p className="mt-0.5 truncate text-xs text-[#7B858C]">{row.parent ? `Parent: ${row.parent.full_name || "Not provided"}` : "Adult student"}</p>
                     </td>
                     <td className="truncate px-4 py-4 text-[#52616A]">{row.track ? row.track.name : "—"}</td>
                     <td className="px-4 py-4">
@@ -467,9 +461,6 @@ export function ProgramApplicationsData({ slug, programId, mode = "teacher" }: {
         </section>
       ) : null}
 
-      <Link href={`${mode === "admin" ? `/m/${slug}/admin/programs` : `/m/${slug}/teacher/classes`}/${programId}/applications/audit`} className="inline-flex min-h-11 items-center rounded-full bg-[#EEF6F7] px-4 text-sm font-semibold text-[#17624F]">
-        View audit trail{auditEvents.length ? ` (${auditEvents.length})` : ""}
-      </Link>
 
       {detailsTarget ? (
         <ApplicationReviewOverlay

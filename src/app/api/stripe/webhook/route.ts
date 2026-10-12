@@ -3,13 +3,13 @@ import { getStripe, getStripeWebhookSecret, shouldUseStripeConnect } from "@/lib
 import { finalizePaidEnrollment } from "@/lib/finance/finalize-paid-enrollment";
 import { recordFinanceAuditEvent } from "@/lib/finance/audit";
 import { resolveRefundableCharge } from "@/lib/finance/refundable-charge";
-import { getProgramManagerProfileIds } from "@/lib/push/program-recipients";
+import { getProgramFinanceRecipientProfileIds } from "@/lib/push/program-recipients";
 import { sendPushNotification } from "@/lib/push/send-push";
 import { logServerError } from "@/lib/monitoring/log-error";
 import { insertProgramPayment } from "@/lib/finance/payments";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
 import type { Database } from "@/lib/supabase/types";
-import { getAppBaseUrl } from "@/lib/email/resend";
+import { getTenantAppUrl } from "@/lib/email/resend";
 import { sendProfileNotificationEmails } from "@/lib/email/notifications";
 import { monthlyBillingEndDate } from "@/lib/stripe/billing-anchor";
 
@@ -113,7 +113,7 @@ async function ensureFixedDurationSchedule(
 async function notifyProgramManagers(
   supabase: ReturnType<typeof createSupabaseServiceClient>,
   programId: string,
-  payload: { title: string; body: string; eventKey: string },
+  payload: { title: string; body: string; eventKey: string; includeAdmins?: boolean },
 ) {
   const { data: program } = await supabase
     .from("programs")
@@ -127,7 +127,11 @@ async function notifyProgramManagers(
   if (!mosque) {
     return;
   }
-  const managerIds = await getProgramManagerProfileIds(supabase, { id: programId, ...program });
+  const managerIds = await getProgramFinanceRecipientProfileIds(
+    supabase,
+    { id: programId, ...program },
+    { includeMosqueAdmins: payload.includeAdmins === true },
+  );
   void sendPushNotification(supabase, {
     recipientProfileIds: managerIds,
     title: payload.title,
@@ -135,11 +139,13 @@ async function notifyProgramManagers(
     url: `/m/${mosque.slug}/teacher/inbox`,
   });
   await sendProfileNotificationEmails(supabase, managerIds, {
+    includeAdmins: payload.includeAdmins,
+    adminAction: { label: "Open Finances", href: getTenantAppUrl(mosque.slug, `/admin/programs/${programId}/finances`) },
     eventKey: payload.eventKey,
     subject: `${payload.title}: ${program.title}`,
     title: payload.title,
     message: payload.body,
-    action: { label: "Open Teacher Inbox", href: `${getAppBaseUrl()}/m/${mosque.slug}/teacher/inbox` },
+    action: { label: "Open Teacher Inbox", href: getTenantAppUrl(mosque.slug, "/teacher/inbox") },
   }).catch(() => null);
 }
 
@@ -281,6 +287,7 @@ async function upsertPaidEnrollmentFromSession(
       eventKey: `stripe-checkout:${session.id}`,
       title: "Payment received",
       body: isOneTimePayment ? `${studentLabel} completed payment and enrollment is active.` : `${studentLabel} started a subscription and enrollment is active.`,
+      includeAdmins: true,
     });
   }
 }
@@ -389,7 +396,7 @@ async function handleInvoicePaid(invoice: Stripe.Invoice, stripeAccountId: strin
       amountCents: invoice.amount_paid,
       currency: invoice.currency,
       paidAt: stripeTimestampToIso(invoice.status_transitions.paid_at) ?? new Date().toISOString(),
-      receiptUrl: invoice.hosted_invoice_url ?? invoice.invoice_pdf ?? null,
+      receiptUrl: refundable?.charge.receipt_url ?? invoice.hosted_invoice_url ?? invoice.invoice_pdf ?? null,
     });
   }
 
@@ -463,6 +470,7 @@ async function handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
     eventKey: `stripe-invoice-failed:${invoice.id}`,
     title: "Payment failed",
     body: `A payment from ${studentLabel} failed. Billing will show as past due.`,
+    includeAdmins: true,
   });
 
   if (subscriptionRow.payment_terms_id) {

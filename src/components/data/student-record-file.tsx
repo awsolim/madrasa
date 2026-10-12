@@ -532,12 +532,12 @@ export function FinanceDetailsDrawer({
                     </div>
                     {charge.refundedAmountCents > 0 ? <p className="mt-1 text-xs font-semibold text-[#8A5A00]">{formatCurrencyAmount(charge.refundedAmountCents)} refunded · {formatCurrencyAmount(Math.max(0, charge.amountCents - charge.refundedAmountCents))} retained</p> : null}
                     <p className="mt-0.5 text-xs text-[#7B858C]">
-                      {formatFinanceDate(charge.createdAt)}
+                      {new Date(charge.createdAt).toLocaleString("en-CA", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", timeZone: "America/Edmonton" })}
                       {charge.receiptUrl ? (
                         <>
                           {" - "}
-                          <a href={charge.receiptUrl} target="_blank" rel="noreferrer" className="underline">
-                            Receipt
+                          <a href={charge.receiptUrl} target="_blank" rel="noreferrer" className="font-semibold text-[#1769AA] underline decoration-[#1769AA]/50 underline-offset-2">
+                            View receipt
                           </a>
                         </>
                       ) : null}

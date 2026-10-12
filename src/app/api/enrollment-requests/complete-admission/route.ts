@@ -1,7 +1,7 @@
-import { getProgramManagerProfileIds } from "@/lib/push/program-recipients";
+import { getProgramEnrollmentRecipientProfileIds } from "@/lib/push/program-recipients";
 import { sendPushNotification } from "@/lib/push/send-push";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
-import { getAppBaseUrl } from "@/lib/email/resend";
+import { getTenantAppUrl } from "@/lib/email/resend";
 import { sendProfileNotificationEmails } from "@/lib/email/notifications";
 import { logServerError } from "@/lib/monitoring/log-error";
 import { activateEnrollmentForRequest } from "@/lib/programs/enrollment-activation";
@@ -69,7 +69,7 @@ export async function POST(request: Request) {
     if (program) {
       const { data: mosque } = await supabase.from("mosques").select("slug").eq("id", program.mosque_id).maybeSingle();
       const { data: student } = await supabase.from("profiles").select("full_name, email").eq("id", enrollmentRequest.student_profile_id).maybeSingle();
-      const managerIds = await getProgramManagerProfileIds(supabase, { id: enrollmentRequest.program_id, ...program });
+      const managerIds = await getProgramEnrollmentRecipientProfileIds(supabase, { id: enrollmentRequest.program_id, ...program });
       if (mosque) {
         const message = `${student?.full_name || student?.email || "A student"} completed registration for ${program.title}.`;
         void sendPushNotification(supabase, {
@@ -79,11 +79,13 @@ export async function POST(request: Request) {
           url: `/m/${mosque.slug}/teacher/inbox`,
         });
         await sendProfileNotificationEmails(supabase, managerIds, {
+          includeAdmins: true,
+          adminAction: { label: "Open Students", href: getTenantAppUrl(mosque.slug, `/admin/programs/${enrollmentRequest.program_id}/students`) },
           eventKey: `registration-completed:${enrollmentRequest.id}`,
           subject: `Registration completed: ${program.title}`,
           title: "A Student Joined Your Class",
           message,
-          action: { label: "Open Teacher Inbox", href: `${getAppBaseUrl()}/m/${mosque.slug}/teacher/inbox` },
+          action: { label: "Open Teacher Inbox", href: getTenantAppUrl(mosque.slug, "/teacher/inbox") },
           replyTo: student?.email ?? null,
         }).catch(() => null);
       }

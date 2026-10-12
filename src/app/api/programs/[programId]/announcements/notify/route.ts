@@ -1,6 +1,6 @@
 import { sendPushNotification } from "@/lib/push/send-push";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
-import { getAppBaseUrl } from "@/lib/email/resend";
+import { getTenantAppUrl } from "@/lib/email/resend";
 import { sendProfileNotificationEmails } from "@/lib/email/notifications";
 import { logServerError } from "@/lib/monitoring/log-error";
 
@@ -102,7 +102,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
     }
 
     const recipientProfileIds = Array.from(recipientIds);
-    const inboxUrl = `${getAppBaseUrl()}/m/${mosque.slug}/portal/announcements`;
+    const inboxUrl = getTenantAppUrl(mosque.slug, "/portal/announcements");
     void sendPushNotification(supabase, {
       recipientProfileIds,
       title: `New announcement: ${program.title}`,

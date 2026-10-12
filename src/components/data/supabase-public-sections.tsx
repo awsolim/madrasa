@@ -13,7 +13,7 @@ export { annualDealText, programPaymentOptions, programStatusBadgeToneClass, sch
 export type { Mosque, PaymentType, Profile, Program, ProgramBuilderStatus, ProgramDetails, ProgramFaq, ProgramMedia, ProgramSession, ProgramTrack, ProgramTrackSession } from "@/components/data/program-builder-shared";
 
 
-import { FinanceActionModal, FinanceDetailsDrawer, FinanceAddNoteModal } from "@/components/data/student-record-file";
+import { FinanceActionModal, FinanceDetailsDrawer } from "@/components/data/student-record-file";
 import dynamic from "next/dynamic";
 import { selectCurrentPaymentTerms } from "@/lib/current-payment-terms";
 import { loadStudentActivity, type StudentActivity } from "@/lib/student-activity";
@@ -731,6 +731,10 @@ export function ProgramDetailData({ slug, programId, section = "public" }: { slu
   const { data: programDetailSnapshot, loading: programDetailQueryLoading } = useCachedQuery(programDetailKey, () =>
     fetchProgramDetailSnapshot(slug, programId, section, programDetailUserId),
   );
+  const eligibilityKey = programDetailSession === undefined || !programDetailUserId || section === "teacher"
+    ? null
+    : `program-detail-eligibility:${slug}:${programId}:${programDetailUserId}`;
+  const { data: eligibilitySnapshot, loading: eligibilityLoading } = useCachedQuery(eligibilityKey, () => fetchProgramApplyDetail(slug, programId, programDetailUserId));
 
   useEffect(() => {
     if (!programDetailSnapshot) {
@@ -803,9 +807,9 @@ export function ProgramDetailData({ slug, programId, section = "public" }: { slu
   const learningOutcomes = outcomes.map((item) => item.text);
   const hasLearningSection = Boolean(learningIntro) || learningOutcomes.length > 0;
   const descriptionText = program.description?.trim() ?? "";
-  const contactPhone = program.contact_phone?.trim()
+  const contactPhone = program.teacher?.phone_number?.trim()
+    || program.contact_phone?.trim()
     || details?.instructor_contact_phone?.trim()
-    || program.teacher?.phone_number?.trim()
     || program.teacher?.teacher_whatsapp_number?.trim()
     || "";
   const contactEmail = program.contact_email?.trim() || program.teacher?.email?.trim() || "";
@@ -848,6 +852,23 @@ export function ProgramDetailData({ slug, programId, section = "public" }: { slu
     completePaymentHref,
     loginHref,
   });
+  let applicationEligibilityMessage: string | null = null;
+  if (primaryCta.kind === "link" && primaryCta.href === applyHref && isSignedIn && !isTeacherContext && !isStudentPreview) {
+    if (eligibilityLoading || !eligibilitySnapshot) {
+      applicationEligibilityMessage = "Checking eligibility…";
+    } else if (accountType === "parent") {
+      const eligibleChildren = eligibilitySnapshot.parentChildren.filter((child) => isProfileEligibleForProgram(child, program).eligible);
+      if (eligibleChildren.length === 0) {
+        applicationEligibilityMessage = eligibilitySnapshot.parentChildren.length
+          ? "None of the students on your family account meet this class's age and audience requirements."
+          : "Add a student to your family account before applying.";
+      }
+    } else {
+      const eligibility = isProfileEligibleForProgram(eligibilitySnapshot.selfProfile, program);
+      if (!eligibility.eligible) applicationEligibilityMessage = eligibility.reason ?? "This account is not eligible for this class.";
+    }
+  }
+  const applicationDisabled = Boolean(applicationEligibilityMessage);
 
   return (
     <div className="bg-[var(--workspace)] p-4">
@@ -1023,6 +1044,11 @@ export function ProgramDetailData({ slug, programId, section = "public" }: { slu
                 ) : primaryCta.kind === "disabled" ? (
                   <div className="mt-2 flex min-h-12 w-full items-center justify-center rounded-full bg-[#F6F8F9] px-4 text-center text-sm font-semibold text-[#52616A] ring-1 ring-[#DDE6EA] md:w-auto md:px-10">
                     {primaryCta.label}
+                  </div>
+                ) : applicationDisabled ? (
+                  <div className="mt-2">
+                    <button type="button" disabled className="flex min-h-12 w-full cursor-not-allowed items-center justify-center rounded-full bg-[#DDE7E4] px-4 text-sm font-semibold text-[#6B747B] md:w-auto md:px-10">{primaryCta.label}</button>
+                    {applicationEligibilityMessage ? <p className="mt-2 text-xs leading-5 text-[#8A5A12]">{applicationEligibilityMessage}</p> : null}
                   </div>
                 ) : (
                   <Link
@@ -3503,6 +3529,7 @@ export function TeacherAnnouncementData({ slug, programId }: { slug: string; pro
   const [selectedAnnouncementFeedValue, setSelectedAnnouncementFeedValue] = useState(announcementTargetValue(programId, null));
   const [selectedAnnouncementTrackIds, setSelectedAnnouncementTrackIds] = useState<string[]>([]);
   const [composeOpen, setComposeOpen] = useState(false);
+  const [deletingAnnouncementId, setDeletingAnnouncementId] = useState<string | null>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(getCachedSessionSnapshot()?.user.id ?? null);
   const [loading, setLoading] = useState(!initialPage);
   const [error, setError] = useState<string | null>(null);
@@ -3637,6 +3664,31 @@ export function TeacherAnnouncementData({ slug, programId }: { slug: string; pro
     await loadAnnouncements();
   }
 
+  async function deleteAnnouncement(announcement: AnnouncementWithContext) {
+    if (!canAnnounce || announcement.deleted_at || !window.confirm("Delete this announcement? Recipients will see that the message was deleted.")) {
+      return;
+    }
+    setDeletingAnnouncementId(announcement.id);
+    setError(null);
+    const supabase = createSupabaseBrowserClient();
+    const { error: deleteError } = await supabase
+      .from("program_announcements")
+      .update({
+        message: "",
+        attachments: [] as unknown as Json,
+        deleted_at: new Date().toISOString(),
+        deleted_by: currentUserId,
+      })
+      .eq("id", announcement.id)
+      .eq("program_id", programId);
+    if (deleteError) {
+      setError(friendlyErrorMessage(deleteError, "Could not delete this announcement."));
+    } else {
+      await loadAnnouncements();
+    }
+    setDeletingAnnouncementId(null);
+  }
+
   useEffect(() => {
     const frame = window.requestAnimationFrame(() => {
       const feed = announcementFeedRef.current;
@@ -3681,7 +3733,7 @@ export function TeacherAnnouncementData({ slug, programId }: { slug: string; pro
           </select>
         ) : null}
         <div ref={announcementFeedRef} className="max-h-[min(55vh,520px)] overflow-y-auto overscroll-contain rounded-[18px] border border-[#D6DCE0] bg-white p-3 [touch-action:pan-y]">
-          <ProgramAnnouncementFeed program={program} announcements={visibleAnnouncements} readersByAnnouncementId={readersByAnnouncementId} viewer="teacher" />
+          <ProgramAnnouncementFeed program={program} announcements={visibleAnnouncements} readersByAnnouncementId={readersByAnnouncementId} viewer="teacher" deletingAnnouncementId={deletingAnnouncementId} onDeleteAnnouncement={canAnnounce ? deleteAnnouncement : undefined} />
         </div>
       </div>
 
@@ -5705,7 +5757,6 @@ export function TeacherStudentsData({ slug, programId }: { slug: string; program
   const [studentFileRow, setStudentFileRow] = useState<FinanceEnrollmentRow | null>(null);
   const [studentFileProgram, setStudentFileProgram] = useState<Program | null>(null);
   const [studentFileAction, setStudentFileAction] = useState<{ row: FinanceEnrollmentRow; action: FinanceAction } | null>(null);
-  const [studentFileNote, setStudentFileNote] = useState<FinanceEnrollmentRow | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [kickTarget, setKickTarget] = useState<{ studentId: string; studentName: string; subscription?: ProgramSubscription | null } | null>(null);
   const kickModalRef = useRef<HTMLDivElement>(null);
@@ -6238,13 +6289,15 @@ export function TeacherStudentsData({ slug, programId }: { slug: string; program
           onSubmit={(options) => reviewWaitlistedRequest(reviewTarget.request, reviewTarget.action, options)}
         />
       ) : null}
-      {studentFileRow && studentFileProgram ? <FinanceDetailsDrawer row={studentFileRow} program={studentFileProgram} canViewFinances={studentAccess.finances} canManageEnrollments={studentAccess.enrollments} childDialogOpen={Boolean(studentFileAction || studentFileNote || kickTarget)} onClose={() => { setStudentFileRow(null); setStudentFileProgram(null); }} onAction={(action) => {
-        if (action === "add_note") setStudentFileNote(studentFileRow);
+      {studentFileRow && studentFileProgram ? <FinanceDetailsDrawer row={studentFileRow} program={studentFileProgram} canViewFinances={studentAccess.finances} canManageEnrollments={studentAccess.enrollments} childDialogOpen={Boolean(studentFileAction || kickTarget)} onClose={() => { setStudentFileRow(null); setStudentFileProgram(null); }} onAction={(action) => {
+        if (action === "add_note") {
+          setStudentFileRow(null);
+          router.push(notesHref(studentFileRow.enrollment.student_profile_id));
+        }
         else if (action === "remove_student") { setKickTarget({ studentId: studentFileRow.enrollment.student_profile_id, studentName: studentFileRow.student?.full_name ?? "this student", subscription: studentFileRow.subscription }); setShowKickMessage(false); setKickMessage(""); }
         else setStudentFileAction({ row: studentFileRow, action });
       }} /> : null}
       {studentFileAction && studentFileProgram ? <FinanceActionModal row={studentFileAction.row} action={studentFileAction.action} program={studentFileProgram} onClose={() => setStudentFileAction(null)} onSuccess={() => { const target = students.find((student) => student.enrollment.student_profile_id === studentFileAction.row.enrollment.student_profile_id); if (target) openStudentFile(target); }} /> : null}
-      {studentFileNote && studentFileProgram ? <FinanceAddNoteModal row={studentFileNote} program={studentFileProgram} onClose={() => setStudentFileNote(null)} onSuccess={() => { const target = students.find((student) => student.enrollment.student_profile_id === studentFileNote.enrollment.student_profile_id); if (target) openStudentFile(target); }} /> : null}
       {kickTarget ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-[#26323A]/35 px-6 backdrop-blur-sm">
           <div ref={kickModalRef} role="dialog" aria-modal="true" tabIndex={-1} className="w-full max-w-sm rounded-[28px] bg-white p-5 text-[#26323A] shadow-[0_24px_70px_rgba(38,50,58,0.22)] outline-none">
@@ -7440,6 +7493,7 @@ function StudentAnnouncementStream({ announcements }: { announcements: Announcem
 }
 
 export function StudentAnnouncementCard({ announcement }: { announcement: AnnouncementWithContext }) {
+  const deleted = Boolean(announcement.deleted_at);
   const attachments = normalizeMessageAttachments(announcement.attachments);
   return (
     <article className="flex gap-3">
@@ -7450,8 +7504,8 @@ export function StudentAnnouncementCard({ announcement }: { announcement: Announ
           <span className="text-xs text-[#6B747B]">{formatAnnouncementTimestamp(announcement.created_at)}</span>
         </div>
         <p className="mt-0.5 text-xs font-medium text-[#2F8FB3]">{announcement.program?.title ?? "Class announcement"}</p>
-        {announcement.message.trim() ? <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-[#26323A]">{announcement.message}</p> : null}
-        <MessageAttachmentList attachments={attachments} programId={announcement.program_id} source="announcement" messageId={announcement.id} />
+        {deleted ? <p className="mt-2 text-sm italic leading-6 text-[#7B858C]">This message has been deleted.</p> : announcement.message.trim() ? <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-[#26323A]">{announcement.message}</p> : null}
+        {!deleted ? <MessageAttachmentList attachments={attachments} programId={announcement.program_id} source="announcement" messageId={announcement.id} /> : null}
       </div>
     </article>
   );
@@ -7462,11 +7516,15 @@ function ProgramAnnouncementFeed({
   announcements,
   readersByAnnouncementId = {},
   viewer,
+  deletingAnnouncementId,
+  onDeleteAnnouncement,
 }: {
   program: Program | null;
   announcements: AnnouncementWithContext[];
   readersByAnnouncementId?: Record<string, Profile[]>;
   viewer: "teacher" | "student";
+  deletingAnnouncementId?: string | null;
+  onDeleteAnnouncement?: (announcement: AnnouncementWithContext) => void;
 }) {
   return (
     <section className={cn("space-y-4 text-[#26323A]", viewer === "student" ? "bg-white px-4 pb-28 pt-4" : "")}>
@@ -7485,6 +7543,8 @@ function ProgramAnnouncementFeed({
               announcement={announcement}
               readers={readersByAnnouncementId[announcement.id] ?? []}
               showSeenDetails={viewer === "teacher"}
+              deleting={deletingAnnouncementId === announcement.id}
+              onDelete={onDeleteAnnouncement}
             />
           ))
         ) : (
@@ -7618,9 +7678,10 @@ export function StudentNoteBubble({
   );
 }
 
-function TeacherAnnouncementBubble({ announcement, readers = [], showSeenDetails = false }: { announcement: AnnouncementWithContext; readers?: Profile[]; showSeenDetails?: boolean }) {
+function TeacherAnnouncementBubble({ announcement, readers = [], showSeenDetails = false, deleting = false, onDelete }: { announcement: AnnouncementWithContext; readers?: Profile[]; showSeenDetails?: boolean; deleting?: boolean; onDelete?: (announcement: AnnouncementWithContext) => void }) {
   const authorName = announcement.author?.full_name?.trim() || "You";
   const [readersOpen, setReadersOpen] = useState(false);
+  const deleted = Boolean(announcement.deleted_at);
   const attachments = normalizeMessageAttachments(announcement.attachments);
 
   return (
@@ -7637,10 +7698,15 @@ function TeacherAnnouncementBubble({ announcement, readers = [], showSeenDetails
           <h3 className="text-sm font-semibold text-[#26323A]">{authorName}</h3>
           <span className="text-xs text-[#6B747B]">{formatAnnouncementTimestamp(announcement.created_at)}</span>
         </div>
-        {announcement.message.trim() ? <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-[#26323A]">{announcement.message}</p> : null}
-        <MessageAttachmentList attachments={attachments} programId={announcement.program_id} source="announcement" messageId={announcement.id} />
+        {deleted ? <p className="mt-2 text-sm italic leading-6 text-[#7B858C]">This message has been deleted.</p> : announcement.message.trim() ? <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-[#26323A]">{announcement.message}</p> : null}
+        {!deleted ? <MessageAttachmentList attachments={attachments} programId={announcement.program_id} source="announcement" messageId={announcement.id} /> : null}
         {showSeenDetails ? (
-          <div className="mt-3 flex justify-end">
+          <div className="mt-3 flex items-center justify-end gap-4">
+            {!deleted && onDelete ? (
+              <button type="button" onClick={() => onDelete(announcement)} disabled={deleting} className="text-[11px] font-semibold text-[#B33B30] underline-offset-2 hover:underline disabled:opacity-50">
+                {deleting ? "Deleting..." : "Delete"}
+              </button>
+            ) : null}
             <button
               type="button"
               onClick={() => setReadersOpen(true)}
@@ -10771,8 +10837,7 @@ function lessonHasEnded(lesson: HomeLesson) {
   if (lesson.date.toDateString() !== now.toDateString()) {
     return lesson.date < startOfToday();
   }
-
-  return lesson.endsAt ? lesson.endsAt.getTime() <= now.getTime() : false;
+  return false;
 }
 
 function withTime(date: Date, time: string) {

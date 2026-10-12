@@ -3,7 +3,7 @@ import { recordFinanceAuditEvent } from "@/lib/finance/audit";
 import { createApprovedPaymentTerms } from "@/lib/finance/payment-terms";
 import { sendPushNotification } from "@/lib/push/send-push";
 import { sendProfileNotificationEmails } from "@/lib/email/notifications";
-import { getAppBaseUrl } from "@/lib/email/resend";
+import { getTenantAppUrl } from "@/lib/email/resend";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
 import { logServerError } from "@/lib/monitoring/log-error";
 
@@ -129,7 +129,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
 
     const { data: mosque } = await supabase.from("mosques").select("slug").eq("id", program.mosque_id).maybeSingle();
     if (mosque) {
-      const portalPath = `/m/${mosque.slug}/portal/classes?tab=applications`;
+      const portalPath = "/portal/classes?tab=applications";
       const approvalMessage = `${label}'s application to ${program.title} was approved. Open Madrasa to complete the remaining registration steps${program.is_paid && !paymentBypassed ? ", including payment" : ""}.`;
       void sendPushNotification(supabase, {
         recipientProfileIds: [enrollmentRequest.parent_profile_id, enrollmentRequest.student_profile_id],
@@ -142,7 +142,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
         subject: `Application approved: ${program.title}`,
         title: "Application Approved",
         message: approvalMessage,
-        action: { label: "Complete Registration", href: `${getAppBaseUrl()}${portalPath}` },
+        action: { label: "Complete Registration", href: getTenantAppUrl(mosque.slug, portalPath) },
       }).catch(async (emailError) => {
         await logServerError(supabase, {
           source: "programs.applications.approve.email",

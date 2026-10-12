@@ -2,7 +2,7 @@ import "server-only";
 
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
 import type { Database } from "@/lib/supabase/types";
-import { escapeHtml, getAppBaseUrl, sendEmail } from "@/lib/email/resend";
+import { escapeHtml, getTenantAppUrl, sendEmail } from "@/lib/email/resend";
 import { getProgramApplicationReviewerProfileIds } from "@/lib/push/program-recipients";
 import { sendPushNotification } from "@/lib/push/send-push";
 import { sendProfileNotificationEmails } from "@/lib/email/notifications";
@@ -30,15 +30,15 @@ function profileName(profile: Pick<Profile, "full_name" | "email"> | null | unde
 }
 
 function portalInboxUrl(mosqueSlug: string) {
-  return `${getAppBaseUrl()}/m/${mosqueSlug}/portal/announcements`;
+  return getTenantAppUrl(mosqueSlug, "/portal/announcements");
 }
 
 function registrationConfirmationUrl(mosqueSlug: string, requestId: string) {
-  return `${getAppBaseUrl()}/m/${mosqueSlug}/registration/${requestId}`;
+  return getTenantAppUrl(mosqueSlug, `/registration/${requestId}`);
 }
 
 function teacherInboxUrl(mosqueSlug: string) {
-  return `${getAppBaseUrl()}/m/${mosqueSlug}/teacher/inbox`;
+  return getTenantAppUrl(mosqueSlug, "/teacher/inbox");
 }
 
 function renderShell(title: string, body: string, action?: { label: string; href: string }) {
@@ -131,7 +131,7 @@ export async function sendEnrollmentSubmittedEmails(requestIds: string[], userId
 
       const managerDelivery = await sendProfileNotificationEmails(supabase, managerIds, {
         includeAdmins: true,
-        adminAction: { label: "Review Request", href: `${getAppBaseUrl()}/m/${mosque.slug}/admin/programs/${program.id}/applications` },
+        adminAction: { label: "Review Request", href: getTenantAppUrl(mosque.slug, `/admin/programs/${program.id}/applications`) },
         eventKey: `application-submitted:${request.id}:staff`,
         subject: `New enrollment request for ${program.title}`,
         title: "New Enrollment Request",

@@ -317,6 +317,8 @@ export type Database = {
           message: string;
           attachments: Json;
           target_program_track_ids: string[];
+          deleted_at: string | null;
+          deleted_by: string | null;
           created_at: string;
           updated_at: string;
         };

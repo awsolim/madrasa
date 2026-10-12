@@ -46,18 +46,29 @@ export function operationalSnapshotKey(kind: "applications" | "finances" | "stud
 
 export function loadPrivateSnapshot<T>(key: string, fetcher: () => Promise<T>, force = false): Promise<T> {
   const existing = privateSnapshotCache.get(key);
-  if (!force && existing && Date.now() - existing.updatedAt < 20_000) return Promise.resolve(existing.data as T);
+  if (!force && existing && Date.now() - existing.updatedAt < 20_000) {
+    reportQueryTiming({ key, source: "memory", durationMs: 0, ok: true });
+    return Promise.resolve(existing.data as T);
+  }
   const running = privateSnapshotInflight.get(key);
   if (running) return running as Promise<T>;
   const epoch = privateCacheEpoch;
-  const request = fetcher().then((data) => {
-    if (epoch === privateCacheEpoch) {
-      privateSnapshotCache.set(key, { data, updatedAt: Date.now() });
-      // Keep this small and short lived; these snapshots can contain private records.
-      if (privateSnapshotCache.size > 12) privateSnapshotCache.delete(privateSnapshotCache.keys().next().value as string);
-    }
-    return data;
-  }).finally(() => { if (privateSnapshotInflight.get(key) === request) privateSnapshotInflight.delete(key); });
+  const startedAt = typeof performance === "undefined" ? Date.now() : performance.now();
+  const request = fetcher()
+    .then((data) => {
+      if (epoch === privateCacheEpoch) {
+        privateSnapshotCache.set(key, { data, updatedAt: Date.now() });
+        // Keep this small and short lived; these snapshots can contain private records.
+        if (privateSnapshotCache.size > 12) privateSnapshotCache.delete(privateSnapshotCache.keys().next().value as string);
+      }
+      reportQueryTiming({ key, source: "network", durationMs: Math.round((typeof performance === "undefined" ? Date.now() : performance.now()) - startedAt), ok: true });
+      return data;
+    })
+    .catch((error) => {
+      reportQueryTiming({ key, source: "network", durationMs: Math.round((typeof performance === "undefined" ? Date.now() : performance.now()) - startedAt), ok: false });
+      throw error;
+    })
+    .finally(() => { if (privateSnapshotInflight.get(key) === request) privateSnapshotInflight.delete(key); });
   privateSnapshotInflight.set(key, request);
   return request;
 }

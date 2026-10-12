@@ -42,7 +42,8 @@ export function useModalFocusTrap<T extends HTMLElement>(containerRef: RefObject
     lockBodyScroll();
     const previouslyFocused = document.activeElement as HTMLElement | null;
     const initialFocusable = container.querySelectorAll<HTMLElement>(modalFocusableSelector);
-    (initialFocusable[0] ?? container).focus({ preventScroll: true });
+    const preferredInitialFocus = container.querySelector<HTMLElement>("[data-modal-initial-focus]");
+    (preferredInitialFocus ?? initialFocusable[0] ?? container).focus({ preventScroll: true });
 
     function handleKeyDown(event: KeyboardEvent) {
       if (event.key === "Escape") {

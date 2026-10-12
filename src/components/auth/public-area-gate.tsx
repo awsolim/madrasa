@@ -2,13 +2,14 @@
 
 import Image from "next/image";
 import Link from "next/link";
-import { usePathname } from "next/navigation";
+import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
-import { QuietPageLoadingState } from "@/components/data/data-loading";
 import { AppChrome } from "@/components/layout/page-shell";
-import { loadCachedSession } from "@/lib/client-cache";
+import { getDefaultLandingHref } from "@/lib/authz";
+import { loadCachedSession, loadCachedUserAccess } from "@/lib/client-cache";
+import { browserHref } from "@/lib/navigation-paths";
 
-type GateState = "checking" | "signed-in" | "signed-out";
+type GateState = "checking" | "redirecting" | "signed-in" | "signed-out" | "error";
 
 export function PublicAreaGate({
   children,
@@ -22,6 +23,7 @@ export function PublicAreaGate({
   mosqueLogoUrl: string;
 }) {
   const pathname = usePathname();
+  const router = useRouter();
   const [state, setState] = useState<GateState>("checking");
 
   useEffect(() => {
@@ -32,13 +34,33 @@ export function PublicAreaGate({
       if (cancelled) {
         return;
       }
-      setState(session?.user.id ? "signed-in" : "signed-out");
+      if (!session?.user.id) {
+        setState("signed-out");
+        return;
+      }
+
+      // The installed PWA opens at the tenant root. Resolve the account before
+      // rendering any role-specific shell so an admin or teacher never sees the
+      // student home and Inbox navigation while their access is still loading.
+      if (pathname === "/" || pathname === `/m/${slug}` || pathname === `/m/${slug}/`) {
+        const access = await loadCachedUserAccess(slug, session.user.id);
+        if (cancelled) return;
+        if (access.resolutionError) {
+          setState("error");
+          return;
+        }
+        setState("redirecting");
+        router.replace(browserHref(getDefaultLandingHref(slug, access), slug, window.location.hostname));
+        return;
+      }
+
+      setState("signed-in");
     })();
 
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [pathname, router, slug]);
 
   if (state === "signed-in") {
     return (
@@ -133,7 +155,34 @@ export function PublicAreaGate({
     );
   }
 
-  return <QuietPageLoadingState />;
+  if (state === "error") {
+    return (
+      <TenantBootState mosqueName={mosqueName} mosqueLogoUrl={mosqueLogoUrl} message="We could not open your account." onRetry={() => window.location.reload()} />
+    );
+  }
+
+  return <TenantBootState mosqueName={mosqueName} mosqueLogoUrl={mosqueLogoUrl} />;
+}
+
+function TenantBootState({ mosqueName, mosqueLogoUrl, message = "Opening your account", onRetry }: { mosqueName: string; mosqueLogoUrl: string; message?: string; onRetry?: () => void }) {
+  return (
+    <main className="flex min-h-[100svh] items-center justify-center bg-[#F1F5F3] px-6 text-[#20352F]" aria-label="Opening your account" aria-busy="true">
+      <div className="flex w-full max-w-sm flex-col items-center text-center">
+        <span className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-full border border-[#CEDBD6] bg-white p-2 shadow-[0_14px_36px_rgba(35,57,49,0.12)]">
+          <Image src={mosqueLogoUrl} alt="" width={80} height={80} className="h-full w-full object-contain" priority />
+        </span>
+        <p className="mt-5 text-lg font-semibold tracking-[-0.01em]">{mosqueName}</p>
+        <p className="mt-1 text-sm text-[#6D7B75]">{message}</p>
+        {onRetry ? (
+          <button type="button" onClick={onRetry} className="mt-6 min-h-11 rounded-full bg-[#17624F] px-6 text-sm font-semibold text-white">Try again</button>
+        ) : (
+          <div className="mt-7 h-1 w-32 overflow-hidden rounded-full bg-[#DCE6E2]" aria-hidden>
+            <span className="block h-full w-1/2 animate-pulse rounded-full bg-[#17624F]" />
+          </div>
+        )}
+      </div>
+    </main>
+  );
 }
 
 function WelcomeStep({ number, title, text }: { number: string; title: string; text: string }) {

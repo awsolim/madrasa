@@ -39,7 +39,7 @@ export function PageTitleBar({
       <div
         className={cn(
           "app-container relative flex min-h-60 flex-col justify-start gap-2 pb-32 md:min-h-64 md:pb-32",
-          hasHeaderControl ? "pt-32 md:pt-32" : "pt-0 md:pt-0",
+          hasHeaderControl ? "pt-[calc(env(safe-area-inset-top)+5.25rem)] md:pt-32" : "pt-[env(safe-area-inset-top)] md:pt-0",
           hasHeaderControl ? (shouldCenterBackTitle ? "items-center px-14 text-center" : "items-start px-7 text-left") : "items-center text-center",
         )}
       >

@@ -1,7 +1,7 @@
-import { getProgramManagerProfileIds } from "@/lib/push/program-recipients";
+import { getProgramEnrollmentRecipientProfileIds } from "@/lib/push/program-recipients";
 import { sendPushNotification } from "@/lib/push/send-push";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
-import { getAppBaseUrl } from "@/lib/email/resend";
+import { getTenantAppUrl } from "@/lib/email/resend";
 import { sendProfileNotificationEmails } from "@/lib/email/notifications";
 import { logServerError } from "@/lib/monitoring/log-error";
 
@@ -59,7 +59,7 @@ export async function POST(request: Request) {
 
     const { data: mosque } = await supabase.from("mosques").select("slug").eq("id", program.mosque_id).maybeSingle();
     const { data: student } = await supabase.from("profiles").select("full_name, email").eq("id", body.studentProfileId).maybeSingle();
-    const managerIds = await getProgramManagerProfileIds(supabase, { id: body.programId, ...program });
+    const managerIds = await getProgramEnrollmentRecipientProfileIds(supabase, { id: body.programId, ...program });
     if (mosque) {
       const message = `${student?.full_name || student?.email || "A student"} requested to withdraw from ${program.title}.`;
       void sendPushNotification(supabase, {
@@ -69,11 +69,13 @@ export async function POST(request: Request) {
         url: `/m/${mosque.slug}/teacher/inbox?tab=withdrawals`,
       });
       await sendProfileNotificationEmails(supabase, managerIds, {
+        includeAdmins: true,
+        adminAction: { label: "Review Request", href: getTenantAppUrl(mosque.slug, `/admin/programs/${body.programId}/students`) },
         eventKey: `withdrawal-requested:${withdrawalRequest.id}`,
         subject: `Withdrawal requested: ${program.title}`,
         title: "New Withdrawal Request",
         message,
-        action: { label: "Review Request", href: `${getAppBaseUrl()}/m/${mosque.slug}/teacher/inbox?tab=withdrawals` },
+        action: { label: "Review Request", href: getTenantAppUrl(mosque.slug, "/teacher/inbox?tab=withdrawals") },
         replyTo: student?.email ?? null,
       }).catch(() => null);
     }

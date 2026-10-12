@@ -4,7 +4,6 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { AttendanceHistoryCell, formatAttendanceHistoryDate } from "@/components/data/attendance-history-cell";
 import { AttendanceStatusButton } from "@/components/data/attendance-status-button";
-import { DirectorySkeleton } from "@/components/data/data-loading";
 import { EditorToast, type EditorToastState } from "@/components/data/editor-toast";
 import { EmptyState } from "@/components/data/empty-state";
 import { loadCachedSession } from "@/lib/client-cache";
@@ -390,7 +389,7 @@ export function ProgramAttendanceMarkData({ slug, programId, mode = "teacher" }:
   }
 
   if (loading) {
-    return <DirectorySkeleton layout="management" />;
+    return <div className="min-h-48 bg-white" aria-label="Loading attendance" aria-busy="true" />;
   }
 
   if (error && !context.program) {
@@ -795,7 +794,7 @@ export function ProgramAttendanceHistoryData({ slug, programId, mode = "teacher"
   }, [rows]);
 
   if (loading) {
-    return <DirectorySkeleton layout="management" />;
+    return <div className="min-h-48 bg-white" aria-label="Loading attendance history" aria-busy="true" />;
   }
   if (error && !program) {
     return <EmptyState title="Could not load attendance" text={error} onRetry={() => window.location.reload()} />;

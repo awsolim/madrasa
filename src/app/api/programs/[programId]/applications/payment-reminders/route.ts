@@ -1,4 +1,4 @@
-import { getAppBaseUrl } from "@/lib/email/resend";
+import { getTenantAppUrl } from "@/lib/email/resend";
 import { sendProfileNotificationEmails } from "@/lib/email/notifications";
 import { recordFinanceAuditEvent } from "@/lib/finance/audit";
 import { logServerError } from "@/lib/monitoring/log-error";
@@ -72,7 +72,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
 
     const { data: mosque } = await supabase.from("mosques").select("slug").eq("id", program.mosque_id).maybeSingle();
     if (!mosque) return Response.json({ error: "Masjid not found." }, { status: 404 });
-    const portalPath = `/m/${mosque.slug}/portal/classes?tab=applications`;
+    const portalPath = "/portal/classes?tab=applications";
     const today = new Date().toISOString().slice(0, 10);
     let sent = 0;
     let skipped = 0;
@@ -88,7 +88,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
           subject: `Payment reminder: ${program.title}`,
           title: "Complete Your Registration",
           message: customMessage || `Your application to ${program.title} has been approved and is waiting for payment. Complete payment in Madrasa to finish registration and activate enrollment.`,
-          action: { label: "Complete Payment", href: `${getAppBaseUrl()}${portalPath}` },
+          action: { label: "Complete Payment", href: getTenantAppUrl(mosque.slug, portalPath) },
         },
       );
       sent += delivery.sent;

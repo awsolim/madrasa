@@ -1,7 +1,7 @@
-import { getProgramManagerProfileIds } from "@/lib/push/program-recipients";
+import { getProgramLeadershipProfileIds } from "@/lib/push/program-recipients";
 import { sendPushNotification } from "@/lib/push/send-push";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
-import { getAppBaseUrl } from "@/lib/email/resend";
+import { getTenantAppUrl } from "@/lib/email/resend";
 import { sendProfileNotificationEmails } from "@/lib/email/notifications";
 import { logServerError } from "@/lib/monitoring/log-error";
 
@@ -72,7 +72,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
     const { data: mosque } = await supabase.from("mosques").select("slug").eq("id", program.mosque_id).maybeSingle();
     const { data: instructor } = await supabase.from("profiles").select("full_name, email").eq("id", user.id).maybeSingle();
     const instructorLabel = instructor?.full_name || instructor?.email || "An instructor";
-    const managerIds = (await getProgramManagerProfileIds(supabase, { id: programId, ...program })).filter((id) => id !== user.id);
+    const managerIds = (await getProgramLeadershipProfileIds(supabase, { id: programId, ...program })).filter((id) => id !== user.id);
 
     if (mosque && managerIds.length) {
       const message = body.eventType === "joined"
@@ -85,11 +85,13 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
         url: `/m/${mosque.slug}/teacher/classes/${programId}/instructors`,
       });
       await sendProfileNotificationEmails(supabase, managerIds, {
+        includeAdmins: true,
+        adminAction: { label: "View Instructors", href: getTenantAppUrl(mosque.slug, `/admin/programs/${programId}/instructors`) },
         eventKey: `instructor-${body.eventType}:${programId}:${user.id}`,
         subject: `${body.eventType === "joined" ? "Instructor joined" : "Instructor resigned"}: ${program.title}`,
         title: body.eventType === "joined" ? "Instructor Joined" : "Instructor Resigned",
         message,
-        action: { label: "View Instructors", href: `${getAppBaseUrl()}/m/${mosque.slug}/teacher/classes/${programId}/instructors` },
+        action: { label: "View Instructors", href: getTenantAppUrl(mosque.slug, `/teacher/classes/${programId}/instructors`) },
         replyTo: instructor?.email ?? null,
       }).catch(() => null);
     }

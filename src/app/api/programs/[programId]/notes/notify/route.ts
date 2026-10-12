@@ -1,6 +1,6 @@
 import { sendPushNotification } from "@/lib/push/send-push";
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
-import { getAppBaseUrl } from "@/lib/email/resend";
+import { getTenantAppUrl } from "@/lib/email/resend";
 import { sendProfileNotificationEmails } from "@/lib/email/notifications";
 import { logServerError } from "@/lib/monitoring/log-error";
 
@@ -76,7 +76,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
       subject: `New note: ${program.title}`,
       title: `A Note Was Added for ${program.title}`,
       message: notificationBody(note.message, note.attachments),
-      action: { label: "View Note", href: `${getAppBaseUrl()}/m/${mosque.slug}/portal/announcements?tab=notes` },
+      action: { label: "View Note", href: getTenantAppUrl(mosque.slug, "/portal/announcements?tab=notes") },
     }).catch(() => null);
 
     return Response.json({ ok: true });

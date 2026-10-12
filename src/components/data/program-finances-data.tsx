@@ -4,13 +4,12 @@
 import {
   FinanceActionModal,
   FinanceDetailsDrawer,
-  FinanceAddNoteModal,
   formatFinanceDate,
   formatFinanceShortDate,
   hasCurrentPaymentBypass,
   type FinanceActionEndpoint,
 } from "@/components/data/student-record-file";
-export { FinanceActionModal, FinanceDetailsDrawer, FinanceAddNoteModal } from "@/components/data/student-record-file";
+export { FinanceActionModal, FinanceDetailsDrawer } from "@/components/data/student-record-file";
 import { selectCurrentPaymentTerms } from "@/lib/current-payment-terms";
 import { loadStudentActivity } from "@/lib/student-activity";
 import Link from "@/components/layout/workspace-link";
@@ -146,7 +145,6 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
   const [initialPage] = useState(() => readPrivatePage<CachedFinancesPage>(cacheKey));
   const [program, setProgram] = useState<Program | null>(initialPage?.program ?? null);
   const [rows, setRows] = useState<FinanceEnrollmentRow[]>(initialPage?.rows ?? []);
-  const [auditEvents, setAuditEvents] = useState<ProgramFinanceAuditEvent[]>(initialPage?.auditEvents ?? []);
   const [, setAuditActorsById] = useState<Record<string, Profile>>(initialPage?.auditActorsById ?? {});
   const [view, setView] = useState<"overview" | "billing" | "transactions">("overview");
   const [analytics, setAnalytics] = useState<ProgramFinanceAnalytics | null>(null);
@@ -163,7 +161,6 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [actionTarget, setActionTarget] = useState<{ row: FinanceEnrollmentRow; action: FinanceAction } | null>(null);
   const [detailsTarget, setDetailsTarget] = useState<FinanceEnrollmentRow | null>(null);
-  const [noteTarget, setNoteTarget] = useState<FinanceEnrollmentRow | null>(null);
   const [removeTarget, setRemoveTarget] = useState<FinanceEnrollmentRow | null>(null);
   const [removeBusy, setRemoveBusy] = useState(false);
   const [removeError, setRemoveError] = useState<string | null>(null);
@@ -241,7 +238,6 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
       clearPrivatePage(`finances:${slug}:${programId}:${mode}:${userId}`);
       setProgram(snapshot.program);
       setRows([]);
-      setAuditEvents([]);
       setAuditActorsById({});
       setError("Finance access has not been enabled for this class.");
       setLoading(false);
@@ -282,7 +278,6 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
         };
       });
     setRows(mappedRows);
-    setAuditEvents(auditRows);
     const actorsById = Object.fromEntries(profileRows.filter((profile) => auditActorIds.includes(profile.id)).map((profile) => [profile.id, profile]));
     setAuditActorsById(actorsById);
     // The snapshot includes only the latest 20 audit events. Load all recorded
@@ -375,19 +370,6 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
   return (
     <section className="space-y-5 bg-white px-4 pb-28 pt-4 text-[#26323A]">
       {error ? <p role="status" className="rounded-xl bg-[#FFF6E8] px-4 py-3 text-sm text-[#79521B]">Could not refresh finances. Showing the last loaded records.</p> : null}
-      <div className="rounded-[28px] bg-[#17624F] p-5 text-white shadow-[0_18px_45px_rgba(23,98,79,0.22)]">
-        <div className="grid gap-5 md:grid-cols-[1fr_auto] md:items-end">
-          <div>
-            <h2 className="mt-0 text-2xl font-semibold leading-7">{program.title}</h2>
-          </div>
-          <div className="grid grid-cols-3 gap-4 text-center">
-            <FinanceSummaryFigure value={rows.length.toString()} label="Total records" />
-            <FinanceSummaryFigure value={activeRows.length.toString()} label="Active students" />
-            <FinanceSummaryFigure value={formatCurrencyAmount(estimatedMonthlyCents)} label="Expected monthly" />
-          </div>
-        </div>
-      </div>
-
       <div className="flex items-center gap-3">
       <div className="grid min-w-0 flex-1 grid-cols-3 rounded-full bg-[#EEF3F2] p-1 md:max-w-lg">
         {([['overview', 'Overview'], ['billing', 'Billing'], ['transactions', 'Transactions']] as const).map(([value, label]) => (
@@ -397,7 +379,7 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
         <Link href={`${mode === "admin" ? `/m/${slug}/admin/programs` : `/m/${slug}/teacher/classes`}/${programId}/exports`} className="inline-flex h-10 shrink-0 items-center rounded-full border border-[#C7D6D1] bg-white px-4 text-sm font-semibold text-[#17624F] hover:bg-[#F5F9F7]">Export</Link>
       </div>
 
-      {view === "overview" ? <ProgramFinanceOverview analytics={analytics} fallbackProjectedMonthlyCents={estimatedMonthlyCents} /> : view === "transactions" ? <ProgramFinanceTransactions transactions={analytics?.transactions ?? []} refundEvents={refundEvents} rows={rows} refundsError={refundsError} onOpenStudent={(studentProfileId) => { const row = rows.find((item) => item.enrollment.student_profile_id === studentProfileId); if (row) setDetailsTarget(row); }} /> : null}
+      {view === "overview" ? (analytics ? <ProgramFinanceOverview analytics={analytics} fallbackProjectedMonthlyCents={estimatedMonthlyCents} /> : <div className="min-h-64" aria-label="Loading finance overview" aria-busy="true" />) : view === "transactions" ? (analytics ? <ProgramFinanceTransactions transactions={analytics.transactions ?? []} refundEvents={refundEvents} rows={rows} refundsError={refundsError} onRefresh={() => void loadFinanceRows()} onOpenStudent={(studentProfileId) => { const row = rows.find((item) => item.enrollment.student_profile_id === studentProfileId); if (row) setDetailsTarget(row); }} /> : <div className="min-h-64" aria-label="Loading transactions" aria-busy="true" />) : null}
 
       {view === "billing" ? <>
 
@@ -492,9 +474,6 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
         </div>
       </div>
 
-      <Link href={`${mode === "admin" ? `/m/${slug}/admin/programs` : `/m/${slug}/teacher/classes`}/${programId}/finances/audit`} className="inline-flex min-h-11 items-center rounded-full bg-[#EEF6F7] px-4 text-sm font-semibold text-[#17624F]">
-        View audit trail{auditEvents.length ? ` (${auditEvents.length})` : ""}
-      </Link>
       </> : null}
 
       {detailsTarget ? (
@@ -502,7 +481,7 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
           row={detailsTarget}
           program={program}
           initialTab={searchParams.get("from") === "students" ? "overview" : "finances"}
-          childDialogOpen={Boolean(actionTarget || noteTarget || removeTarget)}
+          childDialogOpen={Boolean(actionTarget || removeTarget)}
           onClose={() => {
             setDetailsTarget(null);
             if (searchParams.get("from") === "students") {
@@ -518,7 +497,10 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
           }}
           onAction={(action) => {
             const row = detailsTarget;
-            if (action === "add_note") setNoteTarget(row);
+            if (action === "add_note") {
+              const basePath = pathname.replace(/\/finances$/, "");
+              router.push(`${basePath}/students/${row.enrollment.student_profile_id}/notes`);
+            }
             else if (action === "remove_student") { setRemoveError(null); setRemoveTarget(row); }
             else setActionTarget({ row, action });
           }}
@@ -532,17 +514,6 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
           program={program}
           onClose={() => {
             setActionTarget(null);
-          }}
-          onSuccess={() => void loadFinanceRows()}
-        />
-      ) : null}
-
-      {noteTarget ? (
-        <FinanceAddNoteModal
-          row={noteTarget}
-          program={program}
-          onClose={() => {
-            setNoteTarget(null);
           }}
           onSuccess={() => void loadFinanceRows()}
         />
@@ -646,11 +617,12 @@ function FinanceMetric({ label, value, note }: { label: string; value: string; n
 }
 
 
-function ProgramFinanceTransactions({ transactions, refundEvents, rows, refundsError, onOpenStudent }: {
+function ProgramFinanceTransactions({ transactions, refundEvents, rows, refundsError, onRefresh, onOpenStudent }: {
   transactions: NonNullable<ProgramFinanceAnalytics["transactions"]>;
   refundEvents: ProgramFinanceAuditEvent[];
   rows: FinanceEnrollmentRow[];
   refundsError: boolean;
+  onRefresh: () => void;
   onOpenStudent: (studentProfileId: string) => void;
 }) {
   const [query, setQuery] = useState("");
@@ -671,25 +643,16 @@ function ProgramFinanceTransactions({ transactions, refundEvents, rows, refundsE
   const filtered = entries.filter((entry) => !query.trim() || `${entry.studentName} ${entry.parentName ?? ""} ${entry.amountCents} ${entry.paidAt} ${entry.amountCents < 0 ? "refund" : "payment"}`.toLowerCase().includes(query.trim().toLowerCase()));
   return <div className="space-y-4">
     {refundsError ? <p role="status" className="text-sm text-[#8A5A00]">Refund records could not be fully loaded. Refresh to try again.</p> : null}
-    <label className="flex min-h-11 items-center gap-2 rounded-[14px] border border-[#D6DCE0] bg-[#F8FAFB] px-3 text-[#6B747B] md:max-w-xl"><SearchIcon /><input aria-label="Search transactions" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search student, parent or payment" className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-[#26323A] outline-none" />{query ? <button type="button" aria-label="Clear search" onClick={() => setQuery("")} className="h-8 w-8 rounded-full text-lg hover:bg-black/5">×</button> : null}</label>
+    <div className="flex items-center gap-2 md:max-w-2xl"><label className="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-[14px] border border-[#D6DCE0] bg-[#F8FAFB] px-3 text-[#6B747B]"><SearchIcon /><input aria-label="Search transactions" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search transactions" className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-[#26323A] outline-none" />{query ? <button type="button" aria-label="Clear search" onClick={() => setQuery("")} className="h-8 w-8 rounded-full text-lg hover:bg-black/5">×</button> : null}</label><button type="button" onClick={onRefresh} className="inline-flex h-11 shrink-0 items-center gap-1.5 rounded-[14px] border border-[#D6DCE0] bg-white px-3 text-xs font-semibold text-[#52616A] hover:bg-[#F7FAFB]" aria-label="Refresh transactions"><span aria-hidden="true">↻</span><span className="hidden sm:inline">Refresh</span></button></div>
     <div className="overflow-hidden rounded-[20px] border border-[#DFE7E5]"><table className="w-full table-fixed text-left text-sm">
       <thead className="bg-[#F5F8F7] text-xs uppercase text-[#657178]"><tr><th className="w-[44%] px-3 py-3 md:px-4">Student</th><th className="w-[27%] px-2 py-3 md:px-4">Date</th><th className="w-[29%] px-3 py-3 text-right md:px-4">Amount</th></tr></thead>
       <tbody className="divide-y divide-[#EDF1F0]">{filtered.map((transaction) => <tr key={transaction.id} role="button" tabIndex={0} onClick={() => onOpenStudent(transaction.studentProfileId)} onKeyDown={(event) => { if (event.target !== event.currentTarget) return; if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpenStudent(transaction.studentProfileId); } }} className="cursor-pointer transition hover:bg-[#F5F9F8] focus-visible:bg-[#F5F9F8] focus-visible:outline-none">
         <td className="break-words px-3 py-4 md:px-4"><p className="font-semibold">{transaction.studentName}</p>{transaction.parentName ? <p className="mt-1 text-xs text-[#657178]">{transaction.parentName}</p> : null}</td>
-        <td className="px-2 py-4 text-xs text-[#657178] md:px-4 md:text-sm">{new Date(transaction.paidAt).toLocaleDateString("en-CA", { month: "short", day: "numeric", year: "numeric", timeZone: "America/Edmonton" })}</td>
-        <td className="px-3 py-4 text-right md:px-4"><p className={cn("break-words font-semibold tabular-nums", transaction.amountCents < 0 && "text-[#B42318]")}>{new Intl.NumberFormat("en-CA", { style: "currency", currency: transaction.currency.toUpperCase() }).format(transaction.amountCents / 100)}</p>{transaction.amountCents < 0 ? <p className="mt-1 text-xs text-[#B42318]">Refund</p> : null}{transaction.receiptUrl ? <a href={transaction.receiptUrl} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()} className="mt-1 inline-block text-xs font-semibold text-[#17624F]">Receipt</a> : null}</td>
+        <td className="px-2 py-4 text-xs text-[#657178] md:px-4 md:text-sm">{new Date(transaction.paidAt).toLocaleString("en-CA", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", timeZone: "America/Edmonton" })}</td>
+        <td className="px-3 py-4 text-right md:px-4"><p className={cn("break-words font-semibold tabular-nums", transaction.amountCents < 0 && "text-[#B42318]")}>{new Intl.NumberFormat("en-CA", { style: "currency", currency: transaction.currency.toUpperCase() }).format(transaction.amountCents / 100)}</p>{transaction.amountCents < 0 ? <p className="mt-1 text-xs text-[#B42318]">Refund</p> : null}{transaction.receiptUrl ? <a href={transaction.receiptUrl} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()} className="mt-1 inline-block text-xs font-semibold text-[#1769AA] underline decoration-[#1769AA]/50 underline-offset-2 hover:decoration-[#1769AA]">View receipt</a> : null}</td>
       </tr>)}{!filtered.length ? <tr><td colSpan={3} className="px-4 py-10 text-center text-[#657178]">No matching transactions.</td></tr> : null}</tbody>
     </table></div>
   </div>;
-}
-
-function FinanceSummaryFigure({ value, label }: { value: string; label: string }) {
-  return (
-    <div>
-      <p className="text-3xl font-semibold leading-none text-white md:text-4xl">{value}</p>
-      <p className="mt-2 text-[10px] font-semibold uppercase tracking-[0.16em] text-white/65">{label}</p>
-    </div>
-  );
 }
 
 
