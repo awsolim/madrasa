@@ -2,10 +2,11 @@ import "server-only";
 
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
 import type { Database } from "@/lib/supabase/types";
-import { escapeHtml, getTenantAppUrl, sendEmail } from "@/lib/email/resend";
+import { escapeHtml, getTenantAppUrl, notificationPreferenceInstructionsHtml, notificationPreferenceInstructionsText, sendEmail } from "@/lib/email/resend";
 import { getProgramApplicationReviewerProfileIds } from "@/lib/push/program-recipients";
 import { sendPushNotification } from "@/lib/push/send-push";
 import { sendProfileNotificationEmails } from "@/lib/email/notifications";
+import { filterNotificationRecipients } from "@/lib/notifications/preferences";
 
 type EnrollmentRequest = Database["public"]["Tables"]["enrollment_requests"]["Row"];
 type Program = Database["public"]["Tables"]["programs"]["Row"];
@@ -53,6 +54,7 @@ function renderShell(title: string, body: string, action?: { label: string; href
         <h1 style="margin:0 0 18px;font-size:24px;line-height:1.25;color:#26323a;">${escapeHtml(title)}</h1>
         <div style="font-size:15px;line-height:1.7;color:#52616a;">${body}</div>
         ${actionHtml}
+        ${notificationPreferenceInstructionsHtml}
       </div>
     </div>
   `;
@@ -127,12 +129,14 @@ export async function sendEnrollmentSubmittedEmails(requestIds: string[], userId
         title: `New application · ${program.title}`,
         body: requesterText,
         url: teacherInboxUrl(mosque.slug),
+        category: "applications",
       });
 
       const managerDelivery = await sendProfileNotificationEmails(supabase, managerIds, {
         includeAdmins: true,
         adminAction: { label: "Review Request", href: getTenantAppUrl(mosque.slug, `/admin/programs/${program.id}/applications`) },
         eventKey: `application-submitted:${request.id}:staff`,
+        category: "applications",
         subject: `New enrollment request for ${program.title}`,
         title: "New Enrollment Request",
         message: `${requesterText} Class: ${program.title}.`,
@@ -141,11 +145,14 @@ export async function sendEnrollmentSubmittedEmails(requestIds: string[], userId
       });
 
       const recipient = parent ?? student;
-      const confirmation = recipient?.email ? await sendEmail({
+      const recipientAllowsEmail = recipient
+        ? (await filterNotificationRecipients(supabase, [recipient.id], "applications", "email")).length > 0
+        : false;
+      const confirmation = recipient?.email && recipientAllowsEmail ? await sendEmail({
         to: recipient.email,
         subject: `Application received: ${program.title}`,
         html: renderShell("Application Successfully Submitted", `<p style="margin:0 0 12px;">We received ${escapeHtml(parent ? `your application for ${studentName}` : "your application")}.</p><p style="margin:0;"><strong>Class:</strong> ${escapeHtml(program.title)}</p>`, { label: "View Application", href: portalInboxUrl(mosque.slug) }),
-        text: `Application successfully submitted\nClass: ${program.title}\nView it here: ${portalInboxUrl(mosque.slug)}`,
+        text: `Application successfully submitted\nClass: ${program.title}\nView it here: ${portalInboxUrl(mosque.slug)}\n\n${notificationPreferenceInstructionsText}`,
         idempotencyKey: `application-submitted:${request.id}:applicant`,
       }) : { ok: true as const, skipped: true as const, reason: "Applicant profile has no email." };
 
@@ -179,6 +186,10 @@ export async function sendEnrollmentReviewedEmail(requestId: string, reviewerUse
   if (!recipient?.email) {
     return { sent: 0, skipped: 1 };
   }
+  const [recipientId] = await filterNotificationRecipients(supabase, [recipient.id], "applications", "email");
+  if (!recipientId) {
+    return { sent: 0, skipped: 1 };
+  }
 
   const studentName = profileName(context.student, "the student");
   const isParentRequest = Boolean(context.parent);
@@ -202,7 +213,7 @@ export async function sendEnrollmentReviewedEmail(requestId: string, reviewerUse
     to: recipient.email,
     subject: `${title}: ${className}`,
     html: renderShell(title, body, { label: needsConfirmation ? "Complete Registration" : "Open Inbox", href: actionHref }),
-    text: `${title}\nClass: ${className}\nStatus: ${status}\n${action}\n${actionHref}`,
+    text: `${title}\nClass: ${className}\nStatus: ${status}\n${action}\n${actionHref}\n\n${notificationPreferenceInstructionsText}`,
     idempotencyKey: `application-reviewed:${context.request.id}:${status}`,
   });
 

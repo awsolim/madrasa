@@ -96,9 +96,11 @@ export async function POST(request: Request) {
           title: "Withdrawal request rejected",
           body: message,
           url: `/m/${mosque.slug}/portal/classes`,
+          category: "withdrawals",
         });
         await sendProfileNotificationEmails(supabase, [withdrawalRequest.parent_profile_id, withdrawalRequest.student_profile_id], {
           eventKey: `withdrawal-reviewed:${withdrawalRequest.id}:rejected`,
+          category: "withdrawals",
           subject: `Withdrawal request update: ${program.title}`,
           title: "Withdrawal Request Rejected",
           message,
@@ -199,9 +201,11 @@ export async function POST(request: Request) {
         title: "Withdrawal request approved",
         body: message,
         url: `/m/${mosque.slug}/portal/classes`,
+        category: "withdrawals",
       });
       await sendProfileNotificationEmails(supabase, [withdrawalRequest.parent_profile_id, withdrawalRequest.student_profile_id], {
         eventKey: `withdrawal-reviewed:${withdrawalRequest.id}:approved`,
+        category: "withdrawals",
         subject: `Withdrawal request approved: ${program.title}`,
         title: "Withdrawal Request Approved",
         message,

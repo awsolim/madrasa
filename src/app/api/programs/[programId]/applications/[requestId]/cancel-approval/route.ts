@@ -73,6 +73,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
         title: "Application under review again",
         body: `Your application to ${program.title} was moved back to pending review.`,
         url: `/m/${mosque.slug}/portal/classes?tab=applications`,
+        category: "applications",
       });
     }
 

@@ -4,6 +4,7 @@ import webpush from "web-push";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
 import { logServerError } from "@/lib/monitoring/log-error";
+import { filterNotificationRecipients, type NotificationCategory } from "@/lib/notifications/preferences";
 
 export type PushDeliveryResult = {
   attempted: number;
@@ -40,14 +41,15 @@ function ensureVapidConfigured() {
  */
 export async function sendPushNotification(
   supabase: SupabaseClient<Database>,
-  options: { recipientProfileIds: string | (string | null | undefined)[]; title: string; body: string; url?: string },
+  options: { recipientProfileIds: string | (string | null | undefined)[]; title: string; body: string; url?: string; category?: NotificationCategory },
 ): Promise<PushDeliveryResult> {
   const result: PushDeliveryResult = { attempted: 0, delivered: 0, expired: 0, failed: 0, configured: true };
   try {
     ensureVapidConfigured();
-    const recipientIds = Array.from(
+    const requestedRecipientIds = Array.from(
       new Set((Array.isArray(options.recipientProfileIds) ? options.recipientProfileIds : [options.recipientProfileIds]).filter((id): id is string => Boolean(id))),
     );
+    const recipientIds = await filterNotificationRecipients(supabase, requestedRecipientIds, options.category, "push");
     if (recipientIds.length === 0) {
       return result;
     }

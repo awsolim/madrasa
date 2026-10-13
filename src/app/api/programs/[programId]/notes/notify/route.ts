@@ -70,9 +70,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
       title: `New note: ${program.title}`,
       body: notificationBody(note.message, note.attachments),
       url: `/m/${mosque.slug}/portal/announcements?tab=notes`,
+      category: "messages",
     });
     await sendProfileNotificationEmails(supabase, [note.recipient_profile_id], {
       eventKey: `student-note:${note.id}`,
+      category: "messages",
       subject: `New note: ${program.title}`,
       title: `A Note Was Added for ${program.title}`,
       message: notificationBody(note.message, note.attachments),

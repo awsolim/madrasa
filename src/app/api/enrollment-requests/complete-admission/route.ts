@@ -77,9 +77,11 @@ export async function POST(request: Request) {
           title: "Registration completed",
           body: message,
           url: `/m/${mosque.slug}/teacher/inbox`,
+          category: "applications",
         });
         await sendProfileNotificationEmails(supabase, managerIds, {
           includeAdmins: true,
+          category: "applications",
           adminAction: { label: "Open Students", href: getTenantAppUrl(mosque.slug, `/admin/programs/${enrollmentRequest.program_id}/students`) },
           eventKey: `registration-completed:${enrollmentRequest.id}`,
           subject: `Registration completed: ${program.title}`,

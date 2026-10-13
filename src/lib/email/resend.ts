@@ -49,6 +49,12 @@ export function escapeHtml(value: string | null | undefined) {
     .replaceAll("'", "&#039;");
 }
 
+export const notificationPreferenceInstructionsText =
+  "Don't want email notifications? Open the app and go to Me > Notifications to choose which updates are emailed to you.";
+
+export const notificationPreferenceInstructionsHtml =
+  '<p style="margin:24px 0 0;border-top:1px solid #ece8df;padding-top:16px;color:#7b858c;font-size:12px;line-height:1.6;"><strong>Don&rsquo;t want email notifications?</strong><br>Open the app and go to <strong>Me &gt; Notifications</strong> to choose which updates are emailed to you.</p>';
+
 export function renderEmailShell(input: {
   eyebrow?: string;
   title: string;

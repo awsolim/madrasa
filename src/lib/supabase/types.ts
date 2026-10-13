@@ -204,6 +204,18 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["push_subscriptions"]["Row"]>;
         Relationships: [];
       };
+      notification_delivery_preferences: {
+        Row: {
+          profile_id: string;
+          category: string;
+          push_enabled: boolean;
+          email_enabled: boolean;
+          updated_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["notification_delivery_preferences"]["Row"]> & { profile_id: string; category: string };
+        Update: Partial<Database["public"]["Tables"]["notification_delivery_preferences"]["Row"]>;
+        Relationships: [];
+      };
       system_error_logs: {
         Row: {
           id: string;

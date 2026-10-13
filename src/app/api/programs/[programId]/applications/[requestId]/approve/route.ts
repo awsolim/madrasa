@@ -136,9 +136,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
         title: "Application approved",
         body: approvalMessage,
         url: portalPath,
+        category: "applications",
       });
       await sendProfileNotificationEmails(supabase, [enrollmentRequest.parent_profile_id, enrollmentRequest.student_profile_id], {
         eventKey: `application-approved:${requestId}`,
+        category: "applications",
         subject: `Application approved: ${program.title}`,
         title: "Application Approved",
         message: approvalMessage,

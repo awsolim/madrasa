@@ -91,6 +91,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
         title: "Payment waived",
         body: `Payment for ${program.title} was waived. Complete registration to activate the class.`,
         url: `/m/${mosque.slug}/registration/${requestId}`,
+        category: "applications",
       });
     }
 

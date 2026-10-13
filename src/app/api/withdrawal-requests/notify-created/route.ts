@@ -67,11 +67,13 @@ export async function POST(request: Request) {
         title: "Withdrawal requested",
         body: message,
         url: `/m/${mosque.slug}/teacher/inbox?tab=withdrawals`,
+        category: "withdrawals",
       });
       await sendProfileNotificationEmails(supabase, managerIds, {
         includeAdmins: true,
         adminAction: { label: "Review Request", href: getTenantAppUrl(mosque.slug, `/admin/programs/${body.programId}/students`) },
         eventKey: `withdrawal-requested:${withdrawalRequest.id}`,
+        category: "withdrawals",
         subject: `Withdrawal requested: ${program.title}`,
         title: "New Withdrawal Request",
         message,

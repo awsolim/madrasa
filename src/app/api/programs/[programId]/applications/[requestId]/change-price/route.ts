@@ -109,6 +109,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
         title: `Payment plan updated · ${program.title}`,
         body: `Your approved price is now $${(priceCents / 100).toFixed(2)}.`,
         url: `/m/${mosque.slug}/registration/${requestId}`,
+        category: "applications",
       });
     }
 

@@ -108,9 +108,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
       title: `New announcement: ${program.title}`,
       body: notificationBody(announcement.message, announcement.attachments),
       url: `/m/${mosque.slug}/portal/announcements`,
+      category: "messages",
     });
     await sendProfileNotificationEmails(supabase, recipientProfileIds, {
       eventKey: `announcement:${announcement.id}`,
+      category: "messages",
       subject: `New announcement: ${program.title}`,
       title: `New Announcement from ${program.title}`,
       message: notificationBody(announcement.message, announcement.attachments),

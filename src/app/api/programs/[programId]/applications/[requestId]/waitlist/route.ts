@@ -76,6 +76,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
         title: `Waitlist update · ${program.title}`,
         body: student?.full_name ? `${student.full_name}’s application was added to the waitlist.` : "Your application was added to the waitlist.",
         url: `/m/${mosque.slug}/portal/classes?tab=applications`,
+        category: "applications",
       });
     }
 

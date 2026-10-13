@@ -83,9 +83,11 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
         title: body.eventType === "joined" ? "Instructor joined" : "Instructor resigned",
         body: message,
         url: `/m/${mosque.slug}/teacher/classes/${programId}/instructors`,
+        category: "class_updates",
       });
       await sendProfileNotificationEmails(supabase, managerIds, {
         includeAdmins: true,
+        category: "class_updates",
         adminAction: { label: "View Instructors", href: getTenantAppUrl(mosque.slug, `/admin/programs/${programId}/instructors`) },
         eventKey: `instructor-${body.eventType}:${programId}:${user.id}`,
         subject: `${body.eventType === "joined" ? "Instructor joined" : "Instructor resigned"}: ${program.title}`,

@@ -113,7 +113,7 @@ async function ensureFixedDurationSchedule(
 async function notifyProgramManagers(
   supabase: ReturnType<typeof createSupabaseServiceClient>,
   programId: string,
-  payload: { title: string; body: string; eventKey: string; includeAdmins?: boolean },
+  payload: { title: string; body: string; eventKey: string; category: "billing_alerts" | "payment_activity"; includeAdmins?: boolean },
 ) {
   const { data: program } = await supabase
     .from("programs")
@@ -137,9 +137,11 @@ async function notifyProgramManagers(
     title: payload.title,
     body: payload.body,
     url: `/m/${mosque.slug}/teacher/inbox`,
+    category: payload.category,
   });
   await sendProfileNotificationEmails(supabase, managerIds, {
     includeAdmins: payload.includeAdmins,
+    category: payload.category,
     adminAction: { label: "Open Finances", href: getTenantAppUrl(mosque.slug, `/admin/programs/${programId}/finances`) },
     eventKey: payload.eventKey,
     subject: `${payload.title}: ${program.title}`,
@@ -287,6 +289,7 @@ async function upsertPaidEnrollmentFromSession(
       eventKey: `stripe-checkout:${session.id}`,
       title: "Payment received",
       body: isOneTimePayment ? `${studentLabel} completed payment and enrollment is active.` : `${studentLabel} started a subscription and enrollment is active.`,
+      category: "payment_activity",
       includeAdmins: true,
     });
   }
@@ -430,6 +433,7 @@ async function handleInvoicePaid(invoice: Stripe.Invoice, stripeAccountId: strin
       eventKey: `stripe-invoice-paid:${invoice.id}`,
       title: "Payment received",
       body: `A recurring payment from ${studentLabel} was received.`,
+      category: "payment_activity",
     });
   }
 }
@@ -470,6 +474,7 @@ async function handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
     eventKey: `stripe-invoice-failed:${invoice.id}`,
     title: "Payment failed",
     body: `A payment from ${studentLabel} failed. Billing will show as past due.`,
+    category: "billing_alerts",
     includeAdmins: true,
   });
 

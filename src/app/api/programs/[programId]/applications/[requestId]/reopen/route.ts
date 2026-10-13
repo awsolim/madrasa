@@ -65,6 +65,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
         title: "Application reopened",
         body: `Your application to ${program.title} was reopened and is back under review.`,
         url: `/m/${mosque.slug}/portal/classes?tab=applications`,
+        category: "applications",
       });
     }
 

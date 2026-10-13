@@ -3302,8 +3302,9 @@ export function PortalAccountData({ slug }: { slug: string }) {
     notifications: (
       <>
         <AccountSubpageHeader title="Notifications" onBack={closePanel} />
-        <div className="mt-8">
+        <div className="mt-8 space-y-6">
           <PushNotificationToggle />
+          <NotificationDeliveryPreferences slug={slug} />
         </div>
       </>
     ),
@@ -12542,6 +12543,14 @@ function usePushSubscription() {
           });
         }
       }
+      const session = await loadCachedSession();
+      if (session?.user.id) {
+        await createSupabaseBrowserClient()
+          .from("notification_delivery_preferences")
+          .update({ email_enabled: true, updated_at: new Date().toISOString() })
+          .eq("profile_id", session.user.id)
+          .in("category", ["applications", "class_updates", "billing_alerts", "withdrawals"]);
+      }
       setSubscribed(false);
       setStatus("Notifications are disabled on this device.");
     } catch {
@@ -12584,7 +12593,7 @@ function PushNotificationToggle() {
     <section>
       <div className="flex items-center justify-between gap-3 rounded-2xl border border-[#E6EAED] bg-white px-4 py-4">
         <div className="min-w-0">
-          <p className="text-sm font-semibold text-[#26323A]">Push notifications</p>
+          <p className="text-sm font-semibold text-[#26323A]">Device notifications</p>
           <p className="mt-0.5 text-xs leading-5 text-[#6B747B]">
             {!supported
               ? "Install and open this app from your Home Screen to enable notifications on iPhone."
@@ -12597,25 +12606,202 @@ function PushNotificationToggle() {
                     : "Enable notifications on this browser or install the app for the full experience."}
           </p>
           {error ? <p className="mt-1 text-xs font-semibold text-[#C0392B]">{error}</p> : null}
-          {status ? <p className="mt-1 text-xs font-semibold text-[#17624F]">{status}</p> : null}
+          {status ? <p className="mt-1 text-xs text-[#52616A]">{status}</p> : null}
+          {subscribed ? (
+            <button type="button" onClick={() => void test()} disabled={testing} className="mt-2 text-xs font-semibold text-[#17624F] underline decoration-[#17624F]/35 underline-offset-4 disabled:opacity-60">
+              {testing ? "Sending test…" : "Send a test notification"}
+            </button>
+          ) : null}
         </div>
         <button
           type="button"
+          role="switch"
+          aria-checked={subscribed}
+          aria-label="Device notifications"
           onClick={() => (subscribed ? void disable() : void enable())}
           disabled={busy || !supported || permission === "denied"}
           className={cn(
-            "min-h-9 shrink-0 rounded-full px-4 text-xs font-semibold transition-colors disabled:opacity-60",
-            subscribed ? "bg-[#E2F6E8] text-[#258A43]" : "bg-[#F0F4F5] text-[#52616A]",
+            "relative h-7 w-12 shrink-0 rounded-full transition-colors disabled:opacity-50",
+            subscribed ? "bg-[#17624F]" : "bg-[#DCE2E5]",
           )}
         >
-          {busy ? "..." : subscribed ? "On" : "Off"}
+          <span className={cn("absolute left-1 top-1 h-5 w-5 rounded-full bg-white shadow-sm transition-transform", subscribed ? "translate-x-5" : "translate-x-0")} />
         </button>
       </div>
-      {subscribed ? (
-        <button type="button" onClick={() => void test()} disabled={testing} className="mt-2 min-h-10 w-full rounded-xl border border-[#CFE1DC] bg-[#F4FAF8] px-4 text-xs font-semibold text-[#17624F] disabled:opacity-60">
-          {testing ? "Sending test…" : "Send test notification"}
-        </button>
-      ) : null}
+    </section>
+  );
+}
+
+type DeliveryPreferenceCategory = "applications" | "messages" | "class_updates" | "billing_alerts" | "payment_activity" | "withdrawals";
+type DeliveryPreference = { push: boolean; email: boolean };
+
+const deliveryPreferenceOptions: Array<{ key: DeliveryPreferenceCategory; label: string; description: string; required: boolean; defaults: DeliveryPreference }> = [
+  { key: "applications", label: "Applications", description: "New applications and decisions", required: true, defaults: { push: true, email: true } },
+  { key: "messages", label: "Announcements and notes", description: "Updates sent by your class team", required: false, defaults: { push: true, email: false } },
+  { key: "class_updates", label: "Class updates", description: "Cancellations and important schedule changes", required: true, defaults: { push: true, email: true } },
+  { key: "billing_alerts", label: "Billing alerts", description: "Failed payments and billing problems", required: true, defaults: { push: true, email: true } },
+  { key: "payment_activity", label: "Payment activity", description: "Successful payments and new subscriptions", required: false, defaults: { push: true, email: false } },
+  { key: "withdrawals", label: "Withdrawals", description: "Withdrawal requests and decisions", required: true, defaults: { push: true, email: true } },
+];
+
+function NotificationDeliveryPreferences({ slug }: { slug: string }) {
+  const [preferences, setPreferences] = useState<Record<DeliveryPreferenceCategory, DeliveryPreference>>(() =>
+    Object.fromEntries(deliveryPreferenceOptions.map((option) => [option.key, option.defaults])) as Record<DeliveryPreferenceCategory, DeliveryPreference>,
+  );
+  const [loading, setLoading] = useState(true);
+  const [pushAvailable, setPushAvailable] = useState(false);
+  const [visibleCategories, setVisibleCategories] = useState<DeliveryPreferenceCategory[]>([]);
+  const [savingKey, setSavingKey] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let active = true;
+    void (async () => {
+      const session = await loadCachedSession();
+      if (!session) {
+        if (active) setLoading(false);
+        return;
+      }
+      const supabase = createSupabaseBrowserClient();
+      const [{ data, error: loadError }, { data: subscriptions }, { data: profileRow }] = await Promise.all([
+        supabase.from("notification_delivery_preferences").select("category, push_enabled, email_enabled").eq("profile_id", session.user.id),
+        supabase.from("push_subscriptions").select("id").eq("profile_id", session.user.id).limit(1),
+        supabase.from("profiles").select("account_type").eq("id", session.user.id).maybeSingle(),
+      ]);
+      if (!active) return;
+      if (loadError) {
+        setError("Notification preferences could not be loaded.");
+      } else {
+        setPreferences((current) => {
+          const next = { ...current };
+          for (const row of data ?? []) {
+            if (deliveryPreferenceOptions.some((option) => option.key === row.category)) {
+              next[row.category as DeliveryPreferenceCategory] = { push: row.push_enabled, email: row.email_enabled };
+            }
+          }
+          return next;
+        });
+      }
+      setPushAvailable(Boolean(subscriptions?.length));
+
+      const accountType = profileRow?.account_type?.toLowerCase();
+      if (accountType === "student" || accountType === "parent") {
+        setVisibleCategories(["applications", "messages", "class_updates", "billing_alerts", "withdrawals"]);
+      } else if (accountType === "admin") {
+        setVisibleCategories(["applications", "class_updates", "billing_alerts", "payment_activity", "withdrawals"]);
+      } else {
+        const { data: mosque } = await supabase.from("mosques").select("id").eq("slug", slug).maybeSingle();
+        const { data: programs } = mosque?.id
+          ? await supabase.from("programs").select("id, director_profile_id, teacher_profile_id").eq("mosque_id", mosque.id)
+          : { data: [] };
+        if (!active) return;
+
+        const programRows = programs ?? [];
+        const programIds = programRows.map((program) => program.id);
+        const isDirector = programRows.some((program) =>
+          program.director_profile_id === session.user.id || program.teacher_profile_id === session.user.id,
+        );
+        const { data: assignments } = programIds.length
+          ? await supabase
+              .from("program_teachers")
+              .select("can_view_applications, can_decide_applications, can_manage_finances, can_manage_enrollments")
+              .eq("teacher_profile_id", session.user.id)
+              .in("program_id", programIds)
+          : { data: [] };
+        if (!active) return;
+
+        if (isDirector) {
+          setVisibleCategories(["applications", "class_updates", "billing_alerts", "payment_activity", "withdrawals"]);
+        } else {
+          const rows = assignments ?? [];
+          const categories: DeliveryPreferenceCategory[] = ["class_updates"];
+          if (rows.some((row) => row.can_view_applications || row.can_decide_applications)) categories.unshift("applications");
+          if (rows.some((row) => row.can_manage_finances)) categories.push("billing_alerts", "payment_activity");
+          if (rows.some((row) => row.can_manage_enrollments)) categories.push("withdrawals");
+          setVisibleCategories(categories);
+        }
+      }
+      setLoading(false);
+    })();
+    return () => { active = false; };
+  }, [slug]);
+
+  async function togglePreference(category: DeliveryPreferenceCategory, channel: "push" | "email") {
+    const option = deliveryPreferenceOptions.find((item) => item.key === category);
+    const current = preferences[category];
+    const next = { ...current, [channel]: !current[channel] };
+    if (option?.required && !next.push && !next.email) {
+      setError("Keep push or email enabled for important updates.");
+      return;
+    }
+    if (option?.required && !next.email && !pushAvailable) {
+      setError("Enable push notifications on a device before turning off email for important updates.");
+      return;
+    }
+    const session = await loadCachedSession();
+    if (!session) return;
+    const savingId = `${category}:${channel}`;
+    setSavingKey(savingId);
+    setError(null);
+    const { error: saveError } = await createSupabaseBrowserClient().from("notification_delivery_preferences").upsert({
+      profile_id: session.user.id,
+      category,
+      push_enabled: next.push,
+      email_enabled: next.email,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "profile_id,category" });
+    if (saveError) {
+      setError("That preference could not be saved.");
+    } else {
+      setPreferences((currentPreferences) => ({ ...currentPreferences, [category]: next }));
+    }
+    setSavingKey(null);
+  }
+
+  return (
+    <section>
+      <div className="mb-3 flex items-end justify-between gap-4 px-1">
+        <div>
+          <h2 className="text-sm font-semibold text-[#26323A]">What you receive</h2>
+          <p className="mt-0.5 text-xs leading-5 text-[#6B747B]">Choose device notifications, email, or both.</p>
+        </div>
+        <div className="grid shrink-0 grid-cols-2 gap-3 text-[10px] font-semibold uppercase tracking-wide text-[#8A949B]">
+          <span className="w-12 text-center">Device</span>
+          <span className="w-12 text-center">Email</span>
+        </div>
+      </div>
+      <div className="divide-y divide-[#E6EAED] overflow-hidden rounded-2xl border border-[#E6EAED] bg-white">
+        {deliveryPreferenceOptions.filter((option) => visibleCategories.includes(option.key)).map((option) => {
+          const value = preferences[option.key];
+          return (
+            <div key={option.key} className="flex min-h-[72px] items-center gap-3 px-4 py-3">
+              <div className="min-w-0 flex-1">
+                <p className="text-sm font-semibold text-[#26323A]">{option.label}</p>
+                <p className="mt-0.5 text-xs leading-4 text-[#6B747B]">{option.description}</p>
+              </div>
+              {(["push", "email"] as const).map((channel) => {
+                const enabled = value[channel];
+                return (
+                  <button
+                    key={channel}
+                    type="button"
+                    role="switch"
+                    aria-checked={enabled}
+                    aria-label={`${option.label} by ${channel === "push" ? "device notification" : "email"}`}
+                    disabled={loading || savingKey !== null}
+                    onClick={() => void togglePreference(option.key, channel)}
+                    className={cn("relative h-7 w-12 shrink-0 rounded-full transition-colors disabled:opacity-50", enabled ? "bg-[#17624F]" : "bg-[#DCE2E5]")}
+                  >
+                    <span className={cn("absolute left-1 top-1 h-5 w-5 rounded-full bg-white shadow-sm transition-transform", enabled ? "translate-x-5" : "translate-x-0")} />
+                  </button>
+                );
+              })}
+            </div>
+          );
+        })}
+      </div>
+      <p className="mt-3 px-1 text-xs leading-5 text-[#7B858C]">Important updates must keep at least one delivery method enabled.</p>
+      {error ? <p className="mt-2 px-1 text-xs font-semibold text-[#C0392B]">{error}</p> : null}
     </section>
   );
 }

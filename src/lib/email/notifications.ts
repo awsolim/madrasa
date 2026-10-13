@@ -1,8 +1,9 @@
 import "server-only";
 
 import type { SupabaseClient } from "@supabase/supabase-js";
-import { escapeHtml, renderEmailShell, sendEmail } from "@/lib/email/resend";
+import { escapeHtml, notificationPreferenceInstructionsHtml, notificationPreferenceInstructionsText, renderEmailShell, sendEmail } from "@/lib/email/resend";
 import type { Database } from "@/lib/supabase/types";
+import { filterNotificationRecipients, type NotificationCategory } from "@/lib/notifications/preferences";
 
 type NotificationEmail = {
   eventKey: string;
@@ -14,6 +15,7 @@ type NotificationEmail = {
   eyebrow?: string;
   includeAdmins?: boolean;
   adminAction?: { label: string; href: string };
+  category?: NotificationCategory;
 };
 
 export async function sendProfileNotificationEmails(
@@ -21,7 +23,8 @@ export async function sendProfileNotificationEmails(
   profileIds: Array<string | null | undefined>,
   email: NotificationEmail,
 ) {
-  const ids = Array.from(new Set(profileIds.filter((id): id is string => Boolean(id))));
+  const requestedIds = Array.from(new Set(profileIds.filter((id): id is string => Boolean(id))));
+  const ids = await filterNotificationRecipients(supabase, requestedIds, email.category, "email");
   if (!ids.length) return { sent: 0, skipped: 0, failed: 0, reasons: [] as string[] };
 
   const { data: profiles, error } = await supabase.from("profiles").select("id, email, account_type").in("id", ids);
@@ -33,17 +36,15 @@ export async function sendProfileNotificationEmails(
       .map((profile) => [profile.email!.trim().toLowerCase(), profile]),
   ).values());
   const results = await Promise.allSettled(recipients.map((profile) => {
-    const action = profile.account_type?.toLowerCase() === "admin" ? email.adminAction ?? email.action : email.action;
     return sendEmail({
     to: profile.email as string,
     subject: email.subject,
     html: renderEmailShell({
       eyebrow: email.eyebrow,
       title: email.title,
-      body: `<p style="margin:0;">${escapeHtml(email.message)}</p>`,
-      action,
+      body: `<p style="margin:0;">${escapeHtml(email.message)}</p><p style="margin:18px 0 0;color:#26323a;font-weight:600;">Open the app to view or respond to this update.</p>${notificationPreferenceInstructionsHtml}`,
     }),
-    text: `${email.title}\n\n${email.message}${action ? `\n\n${action.label}: ${action.href}` : ""}`,
+    text: `${email.title}\n\n${email.message}\n\nOpen the app to view or respond to this update.\n\n${notificationPreferenceInstructionsText}`,
     replyTo: email.replyTo,
     idempotencyKey: `${email.eventKey}:${profile.id}`,
   }); }));

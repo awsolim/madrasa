@@ -76,6 +76,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
         title: `Application update · ${program.title}`,
         body: student?.full_name ? `${student.full_name}’s application was not accepted.` : "Your application was not accepted.",
         url: `/m/${mosque.slug}/portal/classes?tab=applications`,
+        category: "applications",
       });
     }
 
