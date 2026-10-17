@@ -4,6 +4,7 @@ import { AdminClassesData, AdminHomeData, AdminMasjidData, AdminMasjidFinancesDa
 import { ProgramApplicationsData } from "@/components/data/application-management-data";
 import { TeacherProgramCreateData, TeacherProgramSettingsData } from "@/components/data/program-builder-data";
 import { ProgramFinancesData } from "@/components/data/program-finances-data";
+import { AdminMasjidUsageData } from "@/components/data/admin-masjid-usage";
 import { PageTitleBar } from "@/components/layout/page-title-bar";
 import { cn } from "@/lib/utils";
 
@@ -75,6 +76,17 @@ export function AdminMasjidInformationPage({ slug }: { slug: string }) {
       <PageTitleBar title="Masjid Information" backHref={`/m/${slug}/admin/masjid`} backLabel="Masjid" tone="teal" />
       <AdminWorkspace>
         <AdminMasjidInformationData slug={slug} />
+      </AdminWorkspace>
+    </>
+  );
+}
+
+export function AdminMasjidUsagePage({ slug }: { slug: string }) {
+  return (
+    <>
+      <PageTitleBar title="Usage" backHref={`/m/${slug}/admin/masjid`} backLabel="Masjid" tone="teal" />
+      <AdminWorkspace>
+        <AdminMasjidUsageData slug={slug} />
       </AdminWorkspace>
     </>
   );

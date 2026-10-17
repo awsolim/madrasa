@@ -4701,6 +4701,7 @@ export function AdminMasjidData({ slug }: { slug: string }) {
           <div className="divide-y divide-[#E3E8EC] border-t border-[#E3E8EC]">
             <TeacherActionLink href={`/m/${slug}/admin/masjid/information`} icon={<EditClassIcon />} label="Masjid Information" />
             <TeacherActionLink href={`/m/${slug}/admin/students`} icon={<StudentsIcon />} label="Manage Members" count={memberCount} />
+            <TeacherActionLink href={`/m/${slug}/admin/masjid/usage`} icon={<UsageIcon />} label="Usage" />
             <TeacherActionLink href={`/m/${slug}/admin/finances`} icon={<FinanceIcon />} label="Manage Finances" />
           </div>
         </div>
@@ -5309,10 +5310,15 @@ type AdminMember = MosqueMembership & {
   childProfiles?: Profile[];
   synthetic?: boolean;
 };
+type AdminMemberActivity = { profileId: string; hasAccount: boolean; lastActiveAt: string | null; activeDays30: number };
+type AdminMemberUsageFilter = "all" | "accounts" | "active7" | "active30" | "unrecorded";
 
 export function AdminMembersData({ slug }: { slug: string }) {
   const [members, setMembers] = useState<AdminMember[]>([]);
+  const [memberActivity, setMemberActivity] = useState<Record<string, AdminMemberActivity>>({});
+  const [memberActivityAvailable, setMemberActivityAvailable] = useState(true);
   const [activeType, setActiveType] = useState<"student" | "parent" | "teacher" | "admin">("student");
+  const [usageFilter, setUsageFilter] = useState<AdminMemberUsageFilter>("all");
   const [loading, setLoading] = useState(true);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [toast, setToast] = useState<EditorToastState | null>(null);
@@ -5330,7 +5336,10 @@ export function AdminMembersData({ slug }: { slug: string }) {
     setLoading(true);
     setError(null);
     const supabase = createSupabaseBrowserClient();
-    const { data, error } = await supabase.rpc("get_admin_members_snapshot", { p_slug: slug });
+    const [{ data, error }, usageResult] = await Promise.all([
+      supabase.rpc("get_admin_members_snapshot", { p_slug: slug }),
+      supabase.rpc("get_admin_masjid_usage", { p_slug: slug, p_days: 30 }),
+    ]);
     if (error) {
       setError(friendlyErrorMessage(error, "Could not load members."));
       setLoading(false);
@@ -5348,6 +5357,9 @@ export function AdminMembersData({ slug }: { slug: string }) {
       links: Array<{ id: string; mosque_id: string; parent_profile_id: string; child_profile_id: string; created_at: string }>;
       profiles: Profile[];
     } | null;
+    const usageSnapshot = usageResult.data as unknown as { members?: AdminMemberActivity[] } | null;
+    setMemberActivityAvailable(!usageResult.error && Boolean(usageSnapshot));
+    setMemberActivity(Object.fromEntries((usageSnapshot?.members ?? []).map((activity) => [activity.profileId, activity])));
 
     if (!snapshot) {
       setMembers([]);
@@ -5513,10 +5525,22 @@ export function AdminMembersData({ slug }: { slug: string }) {
     { id: "teacher", label: "Teachers" },
     { id: "admin", label: "Admins" },
   ];
-  const visibleMembers =
+  const roleMembers =
     activeType === "student"
       ? members.filter((member) => member.role === "student" || (member.role === "parent" && (member.enrollmentContexts?.length ?? 0) > 0))
       : members.filter((member) => member.role === activeType);
+  const now = Date.now();
+  const visibleMembers = roleMembers.filter((member) => {
+    const activity = memberActivity[member.profile_id];
+    if (usageFilter === "accounts") return activity?.hasAccount === true;
+    if (usageFilter === "unrecorded") return activity?.hasAccount === true && !activity.lastActiveAt;
+    if (usageFilter === "active7" || usageFilter === "active30") {
+      if (!activity?.lastActiveAt) return false;
+      const days = usageFilter === "active7" ? 7 : 30;
+      return now - new Date(activity.lastActiveAt).getTime() < days * 24 * 60 * 60 * 1000;
+    }
+    return true;
+  });
 
   return (
     <section className="space-y-4 bg-[var(--workspace)] p-4">
@@ -5537,6 +5561,16 @@ export function AdminMembersData({ slug }: { slug: string }) {
           </button>
         ))}
       </div>
+      <div className="flex items-center justify-between gap-3 border-y border-[#E1E7E9] py-3">
+        <label htmlFor="member-usage-filter" className="text-xs font-semibold text-[#52616A]">Account activity</label>
+        <select id="member-usage-filter" value={usageFilter} disabled={!memberActivityAvailable} onChange={(event) => setUsageFilter(event.target.value as AdminMemberUsageFilter)} className="h-9 max-w-[190px] rounded-full border border-[#CAD4D8] bg-white px-3 text-xs font-semibold text-[#26323A] outline-none focus:border-[#17624F] disabled:opacity-50">
+          <option value="all">All profiles</option>
+          <option value="accounts">Has an app account</option>
+          <option value="active7">Active in 7 days</option>
+          <option value="active30">Active in 30 days</option>
+          <option value="unrecorded">No recorded activity</option>
+        </select>
+      </div>
       <p className="text-xs font-semibold uppercase tracking-wide text-[#8A949B]">Showing {visibleMembers.length} result{visibleMembers.length === 1 ? "" : "s"}</p>
       {visibleMembers.length === 0 ? (
         <MiniEmpty text={`No active ${activeType} members found.`} />
@@ -5546,6 +5580,7 @@ export function AdminMembersData({ slug }: { slug: string }) {
             <AdminMemberRow
               key={member.id}
               member={member}
+              activity={memberActivity[member.profile_id]}
               viewType={activeType}
               busyId={busyId}
               onRequestToggleTeacherCreation={() => setPermissionTarget({ type: "class_creation", member, enabled: !member.can_create_programs })}
@@ -5567,12 +5602,14 @@ export function AdminMembersData({ slug }: { slug: string }) {
 
 function AdminMemberRow({
   member,
+  activity,
   viewType,
   busyId,
   onRequestToggleTeacherCreation,
   onRequestToggleFinance,
 }: {
   member: AdminMember;
+  activity?: AdminMemberActivity;
   viewType: "student" | "parent" | "teacher" | "admin";
   busyId: string | null;
   onRequestToggleTeacherCreation: () => void;
@@ -5586,6 +5623,13 @@ function AdminMemberRow({
   const enrollmentContexts = member.enrollmentContexts ?? [];
   const teacherClassContexts = member.teacherClassContexts ?? [];
   const childProfiles = member.childProfiles ?? [];
+  const activityLabel = !activity
+    ? "Activity unavailable"
+    : !activity.hasAccount
+      ? "No app account"
+      : activity.lastActiveAt
+        ? `Last active ${formatMemberActivityDate(activity.lastActiveAt)}`
+        : "No activity recorded";
 
   return (
     <article>
@@ -5593,7 +5637,7 @@ function AdminMemberRow({
         <Avatar src={member.profile?.avatar_url ?? null} name={name} />
         <div className="min-w-0 flex-1">
           <h3 className="truncate text-[15px] font-semibold leading-5 text-[#26323A]">{name}</h3>
-          <p className="mt-0.5 truncate text-xs font-medium text-[#7B858C]">{roleLabel}</p>
+          <p className="mt-0.5 truncate text-xs font-medium text-[#7B858C]">{roleLabel} · {activityLabel}</p>
         </div>
         <button
           type="button"
@@ -5636,6 +5680,8 @@ function AdminMemberRow({
                 </>
               ) : null}
               {member.role === "admin" ? <RequestDetail label="Status" value={titleCase(member.status)} singleLine /> : null}
+              <RequestDetail label="App account" value={!activity ? "Unavailable" : activity.hasAccount ? "Registered" : "None"} singleLine />
+              <RequestDetail label="Last active" value={!activity ? "Unavailable" : activity.lastActiveAt ? formatMemberActivityDate(activity.lastActiveAt) : "No recorded activity"} singleLine />
             </dl>
             {isStudentView && member.parentProfile ? (
               <div className="mt-3 rounded-[18px] bg-[#F7FAFB] px-4 py-3">
@@ -9059,6 +9105,14 @@ function FinanceIcon() {
   );
 }
 
+function UsageIcon() {
+  return (
+    <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden>
+      <path d="M4 19V10M10 19V5M16 19v-7M22 19H2" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
 function PermissionClassIcon() {
   return (
     <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
@@ -11035,7 +11089,6 @@ function TeacherClassCard({
           {isDirector ? <TeacherActionLink href={`${classBasePath}/${program.id}/instructors`} icon={<InstructorManageIcon />} label="Instructors" count={counts?.instructors} /> : null}
           {isDirector || permissions?.can_announce ? <TeacherActionLink href={`${classBasePath}/${program.id}/announcement`} icon={<MegaphoneIcon />} label="Make Announcement" /> : null}
           <TeacherActionLink href={attendanceHistoryHref(mosqueSlug, program.id, classBasePath)} icon={<AttendanceIcon />} label="Attendance History" />
-          {isDirector || permissions?.can_view_student_records || permissions?.can_view_applications || permissions?.can_decide_applications || permissions?.can_manage_finances ? <TeacherActionLink href={`${classBasePath}/${program.id}/exports`} icon={<ClipboardIcon />} label="Reports" /> : null}
           {isDirector || permissions?.can_edit_class ? <TeacherActionLink href={`${classBasePath}/${program.id}`} icon={<EditClassIcon />} label="Edit Class" /> : null}
           {!isDirector ? <TeacherActionButton icon={<XIcon />} label="Resign from Class" onClick={() => setResignOpen(true)} /> : null}
         </div>
@@ -13323,6 +13376,16 @@ function formatMemberDate(value: string | null) {
     return value;
   }
   return new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric", year: "numeric" }).format(date);
+}
+
+function formatMemberActivityDate(value: string) {
+  const date = new Date(value);
+  const today = new Date();
+  if (date.toDateString() === today.toDateString()) return "today";
+  const yesterday = new Date(today);
+  yesterday.setDate(today.getDate() - 1);
+  if (date.toDateString() === yesterday.toDateString()) return "yesterday";
+  return new Intl.DateTimeFormat("en-CA", { month: "short", day: "numeric", year: date.getFullYear() === today.getFullYear() ? undefined : "numeric" }).format(date);
 }
 
 function calculateAge(dateOfBirth: string | null) {

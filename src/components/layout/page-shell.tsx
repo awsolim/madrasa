@@ -6,6 +6,7 @@ import { PrimaryNavPrefetch } from "@/components/layout/primary-nav-prefetch";
 import { WorkspaceNavigationProvider } from "@/components/layout/workspace-navigation";
 import { WorkspacePages } from "@/components/layout/workspace-pages";
 import { NavigationDiagnostics } from "@/components/monitoring/navigation-diagnostics";
+import { MasjidActivityTracker } from "@/components/monitoring/masjid-activity-tracker";
 import { PushNotificationManager } from "@/components/pwa/push-notification-manager";
 
 const defaultAppName = "Madrasa";
@@ -85,6 +86,7 @@ export function AppChrome({
     <WorkspaceNavigationProvider slug={slug} section={section}>
       <PrimaryNavPrefetch slug={slug} section={section} />
       <NavigationDiagnostics />
+      <MasjidActivityTracker slug={slug} />
       {section !== "public" ? <PushNotificationManager settingsHref={notificationSettingsHref} /> : null}
       <AppTopBar appName={defaultAppName} mosqueSlug={slug} homeHref={`/m/${slug}`} navItems={resolvedNav} mobileNavItems={resolvedMobileNav} />
       <MobileBottomNav mosqueSlug={slug} navItems={resolvedNav} mobileNavItems={resolvedMobileNav} />

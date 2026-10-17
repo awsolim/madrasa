@@ -204,6 +204,18 @@ export type Database = {
         Update: Partial<Database["public"]["Tables"]["push_subscriptions"]["Row"]>;
         Relationships: [];
       };
+      mosque_user_activity_daily: {
+        Row: {
+          mosque_id: string;
+          profile_id: string;
+          activity_date: string;
+          first_seen_at: string;
+          last_seen_at: string;
+        };
+        Insert: Partial<Database["public"]["Tables"]["mosque_user_activity_daily"]["Row"]> & { mosque_id: string; profile_id: string };
+        Update: Partial<Database["public"]["Tables"]["mosque_user_activity_daily"]["Row"]>;
+        Relationships: [];
+      };
       notification_delivery_preferences: {
         Row: {
           profile_id: string;
@@ -834,6 +846,14 @@ export type Database = {
       is_platform_admin: {
         Args: { check_profile_id?: string };
         Returns: boolean;
+      };
+      record_mosque_user_activity: {
+        Args: { p_slug: string };
+        Returns: void;
+      };
+      get_admin_masjid_usage: {
+        Args: { p_slug: string; p_days?: number };
+        Returns: Json;
       };
       is_program_director: {
         Args: { check_program_id: string; check_profile_id?: string };

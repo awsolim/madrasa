@@ -376,7 +376,7 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
           <button key={value} type="button" onClick={() => setView(value)} className={cn("h-10 rounded-full text-sm font-semibold transition", view === value ? "bg-white text-[#17624F] shadow-sm" : "text-[#657178]")}>{label}</button>
         ))}
       </div>
-        <Link href={`${mode === "admin" ? `/m/${slug}/admin/programs` : `/m/${slug}/teacher/classes`}/${programId}/exports`} className="inline-flex h-10 shrink-0 items-center rounded-full border border-[#C7D6D1] bg-white px-4 text-sm font-semibold text-[#17624F] hover:bg-[#F5F9F7]">Export</Link>
+        <Link href={`${mode === "admin" ? `/m/${slug}/admin/programs` : `/m/${slug}/teacher/classes`}/${programId}/exports?type=finance_summary`} className="inline-flex h-10 shrink-0 items-center rounded-full border border-[#C7D6D1] bg-white px-4 text-sm font-semibold text-[#17624F] hover:bg-[#F5F9F7]">Export</Link>
       </div>
 
       {view === "overview" ? (analytics ? <ProgramFinanceOverview analytics={analytics} fallbackProjectedMonthlyCents={estimatedMonthlyCents} /> : <div className="min-h-64" aria-label="Loading finance overview" aria-busy="true" />) : view === "transactions" ? (analytics ? <ProgramFinanceTransactions transactions={analytics.transactions ?? []} refundEvents={refundEvents} rows={rows} refundsError={refundsError} onRefresh={() => void loadFinanceRows()} onOpenStudent={(studentProfileId) => { const row = rows.find((item) => item.enrollment.student_profile_id === studentProfileId); if (row) setDetailsTarget(row); }} /> : <div className="min-h-64" aria-label="Loading transactions" aria-busy="true" />) : null}
