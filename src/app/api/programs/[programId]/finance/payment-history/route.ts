@@ -36,22 +36,24 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
       return Response.json({ error: access.error }, { status: access.status });
     }
 
-    const { data: payments, error: paymentsError } = await supabase
-      .from("program_payments")
-      .select("id, amount_cents, currency, paid_at, receipt_url")
-      .eq("program_id", programId)
-      .eq("student_profile_id", body.studentProfileId)
-      .order("paid_at", { ascending: false })
-      .limit(50);
-
+    const [paymentsResult, refundEventsResult] = await Promise.all([
+      supabase
+        .from("program_payments")
+        .select("id, amount_cents, currency, paid_at, receipt_url")
+        .eq("program_id", programId)
+        .eq("student_profile_id", body.studentProfileId)
+        .order("paid_at", { ascending: false })
+        .limit(50),
+      supabase
+        .from("program_finance_audit_events")
+        .select("metadata")
+        .eq("program_id", programId)
+        .eq("student_profile_id", body.studentProfileId)
+        .in("event_type", ["payment_refund_issued", "withdrawal_refund_issued"]),
+    ]);
+    const { data: payments, error: paymentsError } = paymentsResult;
+    const { data: refundEvents, error: refundEventsError } = refundEventsResult;
     if (paymentsError) throw paymentsError;
-
-    const { data: refundEvents, error: refundEventsError } = await supabase
-      .from("program_finance_audit_events")
-      .select("metadata")
-      .eq("program_id", programId)
-      .eq("student_profile_id", body.studentProfileId)
-      .in("event_type", ["payment_refund_issued", "withdrawal_refund_issued"]);
     if (refundEventsError) throw refundEventsError;
     const refundedByPayment = new Map<string, number>();
     for (const event of refundEvents ?? []) {

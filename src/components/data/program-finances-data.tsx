@@ -8,6 +8,7 @@ import {
   formatFinanceShortDate,
   hasCurrentPaymentBypass,
   type FinanceActionEndpoint,
+  type FinanceChargeRow,
 } from "@/components/data/student-record-file";
 export { FinanceActionModal, FinanceDetailsDrawer } from "@/components/data/student-record-file";
 import { selectCurrentPaymentTerms } from "@/lib/current-payment-terms";
@@ -166,6 +167,12 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
   const [removeError, setRemoveError] = useState<string | null>(null);
   const [loading, setLoading] = useState(!initialPage);
   const [error, setError] = useState<string | null>(null);
+  const detailsPaymentHistory = useMemo(
+    () => detailsTarget && analytics
+      ? buildPaymentHistory(analytics.transactions ?? [], refundEvents, detailsTarget.enrollment.student_profile_id)
+      : null,
+    [analytics, detailsTarget, refundEvents],
+  );
 
   useEffect(() => {
     const timeout = window.setTimeout(() => {
@@ -480,6 +487,7 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
         <FinanceDetailsDrawer
           row={detailsTarget}
           program={program}
+          initialPaymentHistory={detailsPaymentHistory}
           initialTab={searchParams.get("from") === "students" ? "overview" : "finances"}
           childDialogOpen={Boolean(actionTarget || removeTarget)}
           onClose={() => {
@@ -535,6 +543,39 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
       }} /> : null}
     </section>
   );
+}
+
+function buildPaymentHistory(
+  transactions: NonNullable<ProgramFinanceAnalytics["transactions"]>,
+  refundEvents: ProgramFinanceAuditEvent[],
+  studentProfileId: string,
+): FinanceChargeRow[] {
+  const refundedByPayment = new Map<string, number>();
+  for (const event of refundEvents) {
+    if (event.student_profile_id !== studentProfileId) continue;
+    const metadata = event.metadata && typeof event.metadata === "object" && !Array.isArray(event.metadata)
+      ? event.metadata as Record<string, unknown>
+      : {};
+    const paymentId = typeof metadata.programPaymentId === "string" ? metadata.programPaymentId : null;
+    const amount = typeof metadata.amountCents === "number" ? metadata.amountCents : 0;
+    if (paymentId && amount > 0) {
+      refundedByPayment.set(paymentId, (refundedByPayment.get(paymentId) ?? 0) + amount);
+    }
+  }
+
+  return transactions
+    .filter((payment) => payment.studentProfileId === studentProfileId)
+    .map((payment) => ({
+      id: payment.id,
+      amountCents: payment.amountCents,
+      currency: payment.currency,
+      createdAt: payment.paidAt,
+      receiptUrl: payment.receiptUrl,
+      refundedAmountCents: refundedByPayment.get(payment.id) ?? 0,
+      taxReceiptStatus: "not_applicable",
+      taxReceiptEligibleAmountCents: null,
+      taxReceiptNumber: null,
+    }));
 }
 
 

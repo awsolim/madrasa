@@ -148,15 +148,29 @@ export function AuthPanel({ mode, slug, returnTo }: { mode: AuthMode; slug: stri
       return;
     }
 
-    const { error: signInError } = await supabase.auth.signInWithPassword({
+    let { error: signInError } = await supabase.auth.signInWithPassword({
       email: trimmedEmail,
       password,
     });
 
+    // A mobile PWA can briefly lose its connection while waking or switching
+    // between Wi-Fi and cellular. Retry that transport failure once without
+    // making the user re-enter valid credentials.
+    if (signInError && isTransientAuthError(signInError.message)) {
+      ({ error: signInError } = await supabase.auth.signInWithPassword({
+        email: trimmedEmail,
+        password,
+      }));
+    }
+
     setSubmitting(false);
 
     if (signInError) {
-      setError(signInError.message);
+      setError(
+        isTransientAuthError(signInError.message)
+          ? "We could not reach the sign-in service. Check your connection and try again."
+          : signInError.message,
+      );
       return;
     }
 
@@ -560,6 +574,17 @@ function getSignupErrorMessage(message: string) {
     return "This email is already in use. Log in to your account or reset your password.";
   }
   return message;
+}
+
+function isTransientAuthError(message: string) {
+  const normalized = message.toLowerCase();
+  return (
+    normalized.includes("abort") ||
+    normalized.includes("fetch") ||
+    normalized.includes("network") ||
+    normalized.includes("timeout") ||
+    normalized.includes("failed to connect")
+  );
 }
 
 function isAtLeastAge(dateValue: string, minimumAge: number) {

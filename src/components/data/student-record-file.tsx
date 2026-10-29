@@ -350,6 +350,7 @@ function RefundPaymentManager({ programId, studentName, payerName, payments, loa
 export function FinanceDetailsDrawer({
   row,
   program,
+  initialPaymentHistory,
   initialTab = "overview",
   canViewFinances = true,
   canManageEnrollments = true,
@@ -359,6 +360,7 @@ export function FinanceDetailsDrawer({
 }: {
   row: FinanceEnrollmentRow;
   program: Program;
+  initialPaymentHistory?: FinanceChargeRow[] | null;
   initialTab?: "overview" | "history" | "finances" | "actions";
   canViewFinances?: boolean;
   canManageEnrollments?: boolean;
@@ -370,8 +372,8 @@ export function FinanceDetailsDrawer({
   const drawerPathname = usePathname();
   const [activeTab, setActiveTab] = useState<"overview" | "history" | "finances" | "actions">(initialTab);
   const [trackNames, setTrackNames] = useState<string[]>([]);
-  const [history, setHistory] = useState<FinanceChargeRow[] | null>(null);
-  const [historyLoading, setHistoryLoading] = useState(true);
+  const [history, setHistory] = useState<FinanceChargeRow[] | null>(initialPaymentHistory ?? null);
+  const [historyLoading, setHistoryLoading] = useState(initialPaymentHistory == null);
   const [historyError, setHistoryError] = useState<string | null>(null);
   const [studentEvents, setStudentEvents] = useState<StudentActivity[] | null>(null);
   const [eventsLoading, setEventsLoading] = useState(true);
@@ -385,6 +387,11 @@ export function FinanceDetailsDrawer({
     let cancelled = false;
     const timeout = window.setTimeout(() => {
       if (canViewFinances) {
+        if (initialPaymentHistory) {
+          setHistory(initialPaymentHistory);
+          setHistoryLoading(false);
+          setHistoryError(null);
+        } else {
         setHistoryLoading(true);
         setHistoryError(null);
         void callFinanceAction<{ charges: FinanceChargeRow[] }>(program.id, "payment-history", { studentProfileId }).then((result) => {
@@ -398,6 +405,7 @@ export function FinanceDetailsDrawer({
         }
         setHistory(result.data.charges ?? []);
         });
+        }
       } else setHistoryLoading(false);
 
       setEventsLoading(true);
@@ -409,7 +417,7 @@ export function FinanceDetailsDrawer({
       cancelled = true;
       window.clearTimeout(timeout);
     };
-  }, [canViewFinances, program.id, studentProfileId]);
+  }, [canViewFinances, initialPaymentHistory, program.id, studentProfileId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -744,7 +752,7 @@ type StudentFileAction = FinanceAction | "add_note" | "remove_student";
 
 
 
-type FinanceChargeRow = {
+export type FinanceChargeRow = {
   id: string;
   amountCents: number;
   currency: string;
