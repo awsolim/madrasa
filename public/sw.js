@@ -1,12 +1,20 @@
-const CACHE_NAME = "madrasa-shell-v6";
+const CACHE_NAME = "madrasa-shell-v7";
 const OFFLINE_URL = "/offline.html";
 const SHELL_ASSETS = [OFFLINE_URL, "/favicon.svg"];
 
+const emergencyOfflinePage = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#f2f4f5"><title>Madrasa is offline</title>
+<style>:root{color:#26323a;background:#f2f4f5;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}body{min-height:100vh;margin:0;display:grid;place-items:center;padding:24px;box-sizing:border-box}main{width:min(360px,100%);box-sizing:border-box;border:1px solid #dfe5e7;border-radius:20px;background:#fff;padding:28px}h1{margin:0 0 10px;font-size:24px}p{margin:0 0 22px;color:#657078;line-height:1.5}button{width:100%;border:0;border-radius:12px;background:#176b57;color:#fff;padding:13px 18px;font:inherit;font-weight:700}</style>
+</head><body><main><h1>You are offline</h1><p>Check your connection, then try again.</p><button onclick="location.reload()">Try again</button></main>
+<script>addEventListener("online",()=>location.reload())</script></body></html>`;
+
 self.addEventListener("install", (event) => {
   event.waitUntil(
-    caches
-      .open(CACHE_NAME)
-      .then((cache) => cache.addAll(SHELL_ASSETS))
+    caches.open(CACHE_NAME)
+      // A secondary icon failing to download must not prevent the offline page
+      // or the new service worker from being installed.
+      .then((cache) => Promise.allSettled(SHELL_ASSETS.map((asset) => cache.add(asset))))
       .then(() => self.skipWaiting()),
   );
 });
@@ -38,7 +46,10 @@ self.addEventListener("fetch", (event) => {
     event.respondWith(
       fetch(request).catch(async () => {
         const cache = await caches.open(CACHE_NAME);
-        return (await cache.match(OFFLINE_URL)) || new Response("Offline", { status: 503, headers: { "content-type": "text/plain" } });
+        return (await cache.match(OFFLINE_URL)) || new Response(emergencyOfflinePage, {
+          status: 503,
+          headers: { "content-type": "text/html; charset=utf-8", "cache-control": "no-store" },
+        });
       }),
     );
     return;
