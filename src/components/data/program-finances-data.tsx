@@ -19,6 +19,7 @@ import { useSearchParams } from "next/navigation";
 import { useWorkspacePathname as usePathname, useWorkspaceRouter as useRouter } from "@/components/layout/workspace-navigation";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { EmptyState } from "@/components/data/empty-state";
+import { DurableReceiptLink } from "@/components/data/durable-receipt-link";
 import { DirectorySkeleton } from "@/components/data/data-loading";
 import { useHideMobileChromeWhileMounted, useModalFocusTrap } from "@/hooks/use-modal-behavior";
 import { getCachedSessionSnapshot, loadCachedSession } from "@/lib/client-cache";
@@ -386,7 +387,7 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
         <Link href={`${mode === "admin" ? `/m/${slug}/admin/programs` : `/m/${slug}/teacher/classes`}/${programId}/exports?type=finance_summary`} className="inline-flex h-10 shrink-0 items-center rounded-full border border-[#C7D6D1] bg-white px-4 text-sm font-semibold text-[#17624F] hover:bg-[#F5F9F7]">Export</Link>
       </div>
 
-      {view === "overview" ? (analytics ? <ProgramFinanceOverview analytics={analytics} fallbackProjectedMonthlyCents={estimatedMonthlyCents} /> : <div className="min-h-64" aria-label="Loading finance overview" aria-busy="true" />) : view === "transactions" ? (analytics ? <ProgramFinanceTransactions transactions={analytics.transactions ?? []} refundEvents={refundEvents} rows={rows} refundsError={refundsError} onRefresh={() => void loadFinanceRows()} onOpenStudent={(studentProfileId) => { const row = rows.find((item) => item.enrollment.student_profile_id === studentProfileId); if (row) setDetailsTarget(row); }} /> : <div className="min-h-64" aria-label="Loading transactions" aria-busy="true" />) : null}
+      {view === "overview" ? (analytics ? <ProgramFinanceOverview analytics={analytics} fallbackProjectedMonthlyCents={estimatedMonthlyCents} /> : <div className="min-h-64" aria-label="Loading finance overview" aria-busy="true" />) : view === "transactions" ? (analytics ? <ProgramFinanceTransactions programId={programId} transactions={analytics.transactions ?? []} refundEvents={refundEvents} rows={rows} refundsError={refundsError} onRefresh={() => void loadFinanceRows()} onOpenStudent={(studentProfileId) => { const row = rows.find((item) => item.enrollment.student_profile_id === studentProfileId); if (row) setDetailsTarget(row); }} /> : <div className="min-h-64" aria-label="Loading transactions" aria-busy="true" />) : null}
 
       {view === "billing" ? <>
 
@@ -658,7 +659,8 @@ function FinanceMetric({ label, value, note }: { label: string; value: string; n
 }
 
 
-function ProgramFinanceTransactions({ transactions, refundEvents, rows, refundsError, onRefresh, onOpenStudent }: {
+function ProgramFinanceTransactions({ programId, transactions, refundEvents, rows, refundsError, onRefresh, onOpenStudent }: {
+  programId: string;
   transactions: NonNullable<ProgramFinanceAnalytics["transactions"]>;
   refundEvents: ProgramFinanceAuditEvent[];
   rows: FinanceEnrollmentRow[];
@@ -690,7 +692,7 @@ function ProgramFinanceTransactions({ transactions, refundEvents, rows, refundsE
       <tbody className="divide-y divide-[#EDF1F0]">{filtered.map((transaction) => <tr key={transaction.id} role="button" tabIndex={0} onClick={() => onOpenStudent(transaction.studentProfileId)} onKeyDown={(event) => { if (event.target !== event.currentTarget) return; if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onOpenStudent(transaction.studentProfileId); } }} className="cursor-pointer transition hover:bg-[#F5F9F8] focus-visible:bg-[#F5F9F8] focus-visible:outline-none">
         <td className="break-words px-3 py-4 md:px-4"><p className="font-semibold">{transaction.studentName}</p>{transaction.parentName ? <p className="mt-1 text-xs text-[#657178]">{transaction.parentName}</p> : null}</td>
         <td className="px-2 py-4 text-xs text-[#657178] md:px-4 md:text-sm">{new Date(transaction.paidAt).toLocaleString("en-CA", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", timeZone: "America/Edmonton" })}</td>
-        <td className="px-3 py-4 text-right md:px-4"><p className={cn("break-words font-semibold tabular-nums", transaction.amountCents < 0 && "text-[#B42318]")}>{new Intl.NumberFormat("en-CA", { style: "currency", currency: transaction.currency.toUpperCase() }).format(transaction.amountCents / 100)}</p>{transaction.amountCents < 0 ? <p className="mt-1 text-xs text-[#B42318]">Refund</p> : null}{transaction.receiptUrl ? <a href={transaction.receiptUrl} target="_blank" rel="noreferrer" onClick={(event) => event.stopPropagation()} className="mt-1 inline-block text-xs font-semibold text-[#1769AA] underline decoration-[#1769AA]/50 underline-offset-2 hover:decoration-[#1769AA]">View receipt</a> : null}</td>
+        <td className="px-3 py-4 text-right md:px-4"><p className={cn("break-words font-semibold tabular-nums", transaction.amountCents < 0 && "text-[#B42318]")}>{new Intl.NumberFormat("en-CA", { style: "currency", currency: transaction.currency.toUpperCase() }).format(transaction.amountCents / 100)}</p>{transaction.amountCents < 0 ? <p className="mt-1 text-xs text-[#B42318]">Refund</p> : <DurableReceiptLink programId={programId} paymentId={transaction.id} className="mt-1 text-xs" />}</td>
       </tr>)}{!filtered.length ? <tr><td colSpan={3} className="px-4 py-10 text-center text-[#657178]">No matching transactions.</td></tr> : null}</tbody>
     </table></div>
   </div>;

@@ -9,6 +9,7 @@ import { useEffect, useRef, useState } from "react";
 import { useHideMobileChromeWhileMounted, useModalFocusTrap } from "@/hooks/use-modal-behavior";
 import { friendlyErrorMessage } from "@/lib/errors";
 import { invalidatePrivateSnapshots, loadPrivateSnapshot } from "@/lib/query-cache";
+import { DurableReceiptLink } from "@/components/data/durable-receipt-link";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { Database } from "@/lib/supabase/types";
 import { cn } from "@/lib/utils";
@@ -541,14 +542,8 @@ export function FinanceDetailsDrawer({
                     {charge.refundedAmountCents > 0 ? <p className="mt-1 text-xs font-semibold text-[#8A5A00]">{formatCurrencyAmount(charge.refundedAmountCents)} refunded · {formatCurrencyAmount(Math.max(0, charge.amountCents - charge.refundedAmountCents))} retained</p> : null}
                     <p className="mt-0.5 text-xs text-[#7B858C]">
                       {new Date(charge.createdAt).toLocaleString("en-CA", { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit", timeZone: "America/Edmonton" })}
-                      {charge.receiptUrl ? (
-                        <>
-                          {" - "}
-                          <a href={charge.receiptUrl} target="_blank" rel="noreferrer" className="font-semibold text-[#1769AA] underline decoration-[#1769AA]/50 underline-offset-2">
-                            View receipt
-                          </a>
-                        </>
-                      ) : null}
+                      {" - "}
+                      <DurableReceiptLink programId={program.id} paymentId={charge.id} />
                     </p>
                   </div>
                 ))}

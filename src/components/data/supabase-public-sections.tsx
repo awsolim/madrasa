@@ -14,6 +14,7 @@ export type { Mosque, PaymentType, Profile, Program, ProgramBuilderStatus, Progr
 
 
 import { FinanceActionModal, FinanceDetailsDrawer } from "@/components/data/student-record-file";
+import { DurableReceiptLink } from "@/components/data/durable-receipt-link";
 import dynamic from "next/dynamic";
 import { selectCurrentPaymentTerms } from "@/lib/current-payment-terms";
 import { loadStudentActivity, type StudentActivity } from "@/lib/student-activity";
@@ -2529,6 +2530,7 @@ type EditableProfileField = "fullName" | "password" | "email" | "dateOfBirth" | 
 
 type BillingPaymentRow = {
   id: string;
+  programId: string;
   programTitle: string;
   studentName: string | null;
   amountCents: number;
@@ -2657,6 +2659,7 @@ export function PortalAccountData({ slug }: { slug: string }) {
     setPayments(
       rows.map((row) => ({
         id: row.id,
+        programId: row.program_id ?? "",
         programTitle: (row.program_id && programTitleById.get(row.program_id)) || "Class",
         studentName: row.student_profile_id ? studentNameById.get(row.student_profile_id) ?? null : null,
         amountCents: row.amount_cents,
@@ -3279,14 +3282,8 @@ export function PortalAccountData({ slug }: { slug: string }) {
                     </div>
                     <p className="mt-1 text-xs text-[#7B858C]">
                       {formatFinanceDate(payment.paidAt)}
-                      {payment.receiptUrl ? (
-                        <>
-                          {" - "}
-                          <a href={payment.receiptUrl} target="_blank" rel="noreferrer" className="underline">
-                            View receipt
-                          </a>
-                        </>
-                      ) : null}
+                      {" - "}
+                      <DurableReceiptLink programId={payment.programId} paymentId={payment.id} />
                     </p>
                     {taxReceiptStatusLabel(payment.taxReceiptStatus) ? (
                       <p className="mt-1 text-xs font-semibold text-[#17624F]">{taxReceiptStatusLabel(payment.taxReceiptStatus)}</p>
