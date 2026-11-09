@@ -42,6 +42,8 @@ export type Database = {
           publication_status: string;
           application_status: string;
           lifecycle_status: string;
+          access_ends_at?: string | null;
+          lifecycle_operation_id?: string | null;
           application_mode: string;
           accepting_applications: boolean;
           application_open_at: string | null;
@@ -101,6 +103,25 @@ export type Database = {
         };
         Insert: Partial<Database["public"]["Tables"]["programs"]["Row"]>;
         Update: Partial<Database["public"]["Tables"]["programs"]["Row"]>;
+        Relationships: [];
+      };
+      program_lifecycle_operations: {
+        Row: {
+          id: string;
+          program_id: string;
+          actor_profile_id: string;
+          action: string;
+          status: string;
+          plan: Json;
+          completed_steps: string[];
+          lease_until: string | null;
+          last_error: string | null;
+          notifications_sent_at: string | null;
+          created_at: string;
+          completed_at: string | null;
+        };
+        Insert: Partial<Database["public"]["Tables"]["program_lifecycle_operations"]["Row"]>;
+        Update: Partial<Database["public"]["Tables"]["program_lifecycle_operations"]["Row"]>;
         Relationships: [];
       };
       profiles: {
@@ -758,6 +779,15 @@ export type Database = {
     };
     Views: Record<string, never>;
     Functions: {
+      begin_program_lifecycle_operation: {
+        Args: { p_program_id: string; p_actor: string; p_plan: Json };
+        Returns: string;
+      };
+      finish_program_lifecycle_operation: {
+        Args: { p_operation_id: string };
+        Returns: undefined;
+      };
+      finalize_ended_classes: { Args: Record<string, never>; Returns: undefined };
       create_parent_child_profile: {
         Args: {
           child_full_name: string;

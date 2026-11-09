@@ -53,6 +53,9 @@ export async function POST(request: Request, { params }: { params: Promise<{ pro
     if (programError || !program) {
       return Response.json({ error: programError?.message ?? "Class not found." }, { status: 404 });
     }
+    if (program.lifecycle_operation_id || program.access_ends_at || ["paused", "cancelled", "completed", "archived"].includes(program.lifecycle_status) || program.publication_status === "archived") {
+      return Response.json({ error: "Billing plans cannot be changed while the class is paused, ending, or archived." }, { status: 409 });
+    }
     if (!program.stripe_product_id) {
       return Response.json({ error: "Stripe is not configured for this class yet." }, { status: 409 });
     }

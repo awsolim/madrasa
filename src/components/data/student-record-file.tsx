@@ -436,18 +436,18 @@ export function FinanceDetailsDrawer({
 
   const checkoutLinkStatus = row.subscription?.status === "checkout_started" ? "Checkout sent, awaiting completion" : "No pending checkout";
   const recordActions: StudentRecordAction[] = [];
+  const archived = program.publication_status === "archived";
+  const billingLocked = archived || Boolean(program.access_ends_at || program.lifecycle_operation_id) || ["paused", "cancelled", "completed", "archived"].includes(program.lifecycle_status);
   if (canViewFinances) {
-    recordActions.push(
-      { id: "change_price", label: "Manage payment plan", description: "Change paid terms or waive future payments." },
-      { id: "refund_payment", label: "Refund a payment", description: "Review payment history and return a custom amount." },
-    );
+    if (!billingLocked) recordActions.push({ id: "change_price", label: "Manage payment plan", description: "Change paid terms or waive future payments." });
+    recordActions.push({ id: "refund_payment", label: "Refund a payment", description: "Review payment history and return a custom amount." });
   }
+  if (!archived) recordActions.push({ id: "add_note", label: "Add note", description: "Add an internal note to this class record." });
   recordActions.push(
-    { id: "add_note", label: "Add note", description: "Add an internal note to this class record." },
     { id: "download_history", label: "Download student history", description: "Export this student's permitted class history as a structured Excel report." },
   );
-  if (canViewFinances && hasActiveRecurringSubscription(row.subscription)) recordActions.push({ id: "end_subscription", label: "End subscription", description: "Stop recurring billing while preserving payment history.", tone: "danger" });
-  if (canManageEnrollments) recordActions.push({ id: "remove_student", label: "Remove from class", description: "End this enrollment while preserving the student's history.", tone: "danger" });
+  if (!archived && !program.lifecycle_operation_id && canViewFinances && hasActiveRecurringSubscription(row.subscription)) recordActions.push({ id: "end_subscription", label: "End subscription", description: "Stop recurring billing while preserving payment history.", tone: "danger" });
+  if (!archived && !program.lifecycle_operation_id && canManageEnrollments) recordActions.push({ id: "remove_student", label: "Remove from class", description: "End this enrollment while preserving the student's history.", tone: "danger" });
 
   return createPortal(
     <div className="fixed inset-0 z-[2147483647] flex justify-end bg-[#26323A]/35 backdrop-blur-sm">

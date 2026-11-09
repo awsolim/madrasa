@@ -74,7 +74,7 @@ export async function POST(request: Request) {
     }
 
     const programStatusFields = toProgramStatusFields(program);
-    if (programStatusFields.publicationStatus === "draft" || ["cancelled", "archived", "completed"].includes(programStatusFields.lifecycleStatus)) {
+    if (program.lifecycle_operation_id || program.access_ends_at || programStatusFields.publicationStatus === "draft" || ["paused", "cancelled", "archived", "completed"].includes(programStatusFields.lifecycleStatus)) {
       return Response.json({ error: "This program is no longer available for payment." }, { status: 409 });
     }
 
@@ -176,7 +176,7 @@ export async function POST(request: Request) {
       stripeRequestOptions,
     );
 
-    await supabase.from("program_subscriptions").upsert(
+    const { error: subscriptionSaveError } = await supabase.from("program_subscriptions").upsert(
       {
         mosque_id: enrollmentRequest.mosque_id,
         program_id: enrollmentRequest.program_id,
@@ -197,11 +197,21 @@ export async function POST(request: Request) {
       { onConflict: "program_id,student_profile_id" },
     );
 
-    await markPaymentTermsCheckoutStarted(supabase, {
-      paymentTermsId: paymentTerms.id,
-      stripeCheckoutSessionId: session.id,
-      stripePriceId: dynamicPrice.id,
-    });
+    try {
+      if (subscriptionSaveError) throw subscriptionSaveError;
+      await markPaymentTermsCheckoutStarted(supabase, {
+        paymentTermsId: paymentTerms.id,
+        stripeCheckoutSessionId: session.id,
+        stripePriceId: dynamicPrice.id,
+      });
+      const { data: currentProgram, error: currentError } = await supabase.from("programs").select("lifecycle_operation_id,access_ends_at,lifecycle_status,publication_status").eq("id", program.id).single();
+      if (currentError || currentProgram.lifecycle_operation_id || currentProgram.access_ends_at || ["paused", "cancelled", "completed", "archived"].includes(currentProgram.lifecycle_status) || currentProgram.publication_status === "archived") {
+        throw new Error("The class is no longer accepting payments.");
+      }
+    } catch (error) {
+      await stripe.checkout.sessions.expire(session.id, {}, stripeRequestOptions);
+      throw error;
+    }
 
     return Response.json({ url: session.url });
   } catch (error) {

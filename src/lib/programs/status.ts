@@ -19,6 +19,8 @@ export type ProgramStatusFields = {
   isOngoing: boolean;
   billingEndBehavior?: BillingEndBehavior;
   offersAnnualPayment?: boolean;
+  accessEndsAt?: string | null;
+  lifecycleOperationId?: string | null;
 };
 
 const PUBLICATION_STATUSES: readonly PublicationStatus[] = ["draft", "published", "hidden", "archived"];
@@ -77,6 +79,8 @@ export function toProgramStatusFields(row: {
   end_date?: string | null;
   is_ongoing?: boolean | null;
   billing_end_behavior?: string | null;
+  access_ends_at?: string | null;
+  lifecycle_operation_id?: string | null;
 }): ProgramStatusFields {
   return {
     publicationStatus: coerce(row.publication_status, PUBLICATION_STATUSES, "published"),
@@ -88,6 +92,8 @@ export function toProgramStatusFields(row: {
     endDate: row.end_date ?? null,
     isOngoing: Boolean(row.is_ongoing),
     billingEndBehavior: row.billing_end_behavior ? coerce(row.billing_end_behavior, ["manual_cancel", "program_end", "fixed_months"] as const, "manual_cancel") : undefined,
+    accessEndsAt: row.access_ends_at,
+    lifecycleOperationId: row.lifecycle_operation_id,
   };
 }
 
@@ -100,6 +106,8 @@ const NEVER_ACCEPTS_LIFECYCLE: readonly LifecycleStatus[] = ["completed", "cance
  */
 export function normalizeProgramStatusFields(fields: ProgramStatusFields): ProgramStatusFields {
   const forceClosed =
+    Boolean(fields.accessEndsAt || fields.lifecycleOperationId) ||
+    fields.lifecycleStatus === "paused" ||
     fields.publicationStatus === "draft" ||
     fields.publicationStatus === "archived" ||
     NEVER_ACCEPTS_LIFECYCLE.includes(fields.lifecycleStatus);

@@ -16,6 +16,8 @@ export type { Mosque, PaymentType, Profile, Program, ProgramBuilderStatus, Progr
 import { FinanceActionModal, FinanceDetailsDrawer } from "@/components/data/student-record-file";
 import { DurableReceiptLink } from "@/components/data/durable-receipt-link";
 import dynamic from "next/dynamic";
+import { ClassLifecycleDialog } from "@/components/data/class-lifecycle-dialog";
+import { isClosedClass } from "@/lib/programs/lifecycle-policy";
 import { selectCurrentPaymentTerms } from "@/lib/current-payment-terms";
 import { loadStudentActivity, type StudentActivity } from "@/lib/student-activity";
 
@@ -4401,6 +4403,7 @@ export function TeacherClassesData({ slug }: { slug: string }) {
   const [tab, setTab] = useState<"mine" | "other">(initialTeacherClassesTab === "other" ? "other" : "mine");
   const [hiddenProgramIds, setHiddenProgramIds] = useState<Set<string>>(new Set());
   const [toast, setToast] = useState<EditorToastState | null>(null);
+  const [showArchived, setShowArchived] = useState(false);
 
   useEffect(() => {
     const nextTab = searchParams.get("tab");
@@ -4450,7 +4453,7 @@ export function TeacherClassesData({ slug }: { slug: string }) {
     return <EmptyState title="Could not load classes" text={error} onRetry={() => window.location.reload()} />;
   }
 
-  const visiblePrograms = programs.filter((program) => !hiddenProgramIds.has(program.id));
+  const visiblePrograms = programs.filter((program) => !hiddenProgramIds.has(program.id) && (program.publication_status === "archived") === showArchived);
   const assignedProgramIds = new Set(programs.map((program) => program.id));
   const otherPrograms = allPrograms.filter((program) => !assignedProgramIds.has(program.id) && program.is_active);
 
@@ -4477,8 +4480,9 @@ export function TeacherClassesData({ slug }: { slug: string }) {
       <div className="space-y-4 p-4">
         {tab === "mine" ? (
           <>
+          <div className="flex justify-end"><button type="button" onClick={() => setShowArchived((value) => !value)} className="min-h-10 rounded-full border border-[#D6DCE0] px-4 text-sm font-semibold text-[#52616A]">{showArchived ? "Current" : "Archived"}</button></div>
           {visiblePrograms.length === 0 ? (
-            <EmptyState title="No assigned classes" text="Classes you direct or instruct will appear here." />
+            <EmptyState title={showArchived ? "No archived classes" : "No assigned classes"} text={showArchived ? "Classes remain available here after they are ended and archived." : "Classes you direct or instruct will appear here."} />
           ) : (
             <div className="grid gap-4 md:grid-cols-2">
               {visiblePrograms.map((program) => (
@@ -4528,6 +4532,7 @@ export function AdminClassesData({ slug }: { slug: string }) {
   const { programs, programCounts, canCreateClass, loading, error } = useTeacherPrograms(slug);
   const [toast, setToast] = useState<EditorToastState | null>(null);
   const [hiddenProgramIds, setHiddenProgramIds] = useState<Set<string>>(new Set());
+  const [showArchived, setShowArchived] = useState(false);
 
   useEffect(() => {
     const queuedToast = readQueuedEditorToast();
@@ -4569,11 +4574,12 @@ export function AdminClassesData({ slug }: { slug: string }) {
     <section className="space-y-4 bg-[var(--workspace)] p-4">
       <EditorToast toast={toast} onClose={() => setToast(null)} />
       <AdminMosqueSwitcher slug={slug} target="programs" />
-      {programs.filter((program) => !hiddenProgramIds.has(program.id)).length === 0 ? (
-        <EmptyState title="No classes yet" text="Classes created for this masjid will appear here." />
+      <div className="flex justify-end"><button type="button" onClick={() => setShowArchived((value) => !value)} className="min-h-10 rounded-full border border-[#D6DCE0] px-4 text-sm font-semibold text-[#52616A]">{showArchived ? "Current" : "Archived"}</button></div>
+      {programs.filter((program) => !hiddenProgramIds.has(program.id) && (program.publication_status === "archived") === showArchived).length === 0 ? (
+        <EmptyState title={showArchived ? "No archived classes" : "No classes yet"} text={showArchived ? "Ended and archived classes remain available here for reference." : "Classes created for this masjid will appear here."} />
       ) : (
         <div className="grid gap-4 md:grid-cols-2">
-          {programs.filter((program) => !hiddenProgramIds.has(program.id)).map((program) => (
+          {programs.filter((program) => !hiddenProgramIds.has(program.id) && (program.publication_status === "archived") === showArchived).map((program) => (
             <TeacherClassCard
               key={program.id}
               program={program}
@@ -7117,10 +7123,8 @@ export async function fetchTeacherPrograms(slug: string): Promise<TeacherProgram
   }
   const hydratedTrackRows = applyLinkedSessionsToTracks(trackRows ?? [], snapshot.sessions ?? [], snapshot.links ?? []);
   const programsWithTracks = (mosquePrograms ?? [])
-    // Keep active programs plus the viewer's own unpublished drafts (so a director can find
-    // and finish one) — but never resurface archived/cancelled (i.e. deleted) programs, which
-    // are also is_active=false but should stay gone for everyone.
-    .filter((program) => program.is_active || program.publication_status === "draft")
+    // Staff retain access to ended and archived records; the class list filters
+    // archives separately, and upcoming-session generation excludes closed classes.
     .map((program) => ({
       ...program,
       scheduleTracks: hydratedTrackRows.filter((track) => track.program_id === program.id),
@@ -9660,6 +9664,8 @@ function EnrolledClassList({ programs, mosqueSlug }: { programs: ProgramWithTeac
             <div className="space-y-2">
               <span className="inline-flex min-h-7 items-center rounded-full bg-[#E6F5EE] px-3 text-xs font-bold uppercase tracking-wide text-[#17624F]">Enrolled</span>
               <h3 className="line-clamp-2 text-lg font-semibold leading-6 text-[#26323A]">{program.title}</h3>
+              {program.lifecycle_status === "paused" ? <p className="border-l-2 border-[#9BAAA4] pl-3 text-sm leading-6 text-[#52616A]">Class paused. Monthly collection is suspended; your enrollment is retained.</p> : null}
+              {program.access_ends_at ? <p className="border-l-2 border-[#9BAAA4] pl-3 text-sm leading-6 text-[#52616A]">This class is ending. Future recurring billing has stopped. Access ends {new Date(program.access_ends_at).toLocaleString("en-CA", { timeZone: program.schedule_timezone || "America/Edmonton", dateStyle: "medium", timeStyle: "short" })}.</p> : null}
               <p className="mt-1 text-sm text-[#6B747B]">{scheduleSummary(program.schedule, program.schedule_notes).full}</p>
             </div>
             <AudienceDetails age={formatAgeRange(program.age_range_text)} gender={formatGender(program.audience_gender)} />
@@ -10377,6 +10383,7 @@ function HomeUpcomingRows({
   const programKey = programs.map((program) => program.id).sort().join("|");
   const cancellationLoadKey = `${programKey}:${weekStartKey}:${weekEndKey}`;
   const lessonSources: Array<{ program: ProgramScheduleSource; ownerLabel?: string; ownerLabelsByTrackId?: Record<string, string[]> }> = programs.flatMap((program) => {
+    if (isClosedClass(program) || program.lifecycle_status === "paused" || program.lifecycle_operation_id || (program.access_ends_at && new Date(program.access_ends_at).getTime() <= Date.now())) return [];
     const trackOwners = ownerLabelsByTrackId[program.id];
     if (trackOwners && Object.keys(trackOwners).length > 0) {
       return [{ program, ownerLabelsByTrackId: trackOwners }];
@@ -10386,12 +10393,12 @@ function HomeUpcomingRows({
   });
   const cancellationKeys = new Set(cancellations.map((cancellation) => sessionCancellationKey(cancellation.program_id, cancellation.session_date, cancellation.start_time)));
   const lessons = weekLessons(lessonSources, week)
-    .filter((lesson) => !cancellationKeys.has(lessonCancellationKey(lesson)))
+    .filter((lesson) => !cancellationKeys.has(lessonCancellationKey(lesson)) && (!lesson.program.access_ends_at || lesson.startsAt.getTime() < new Date(lesson.program.access_ends_at).getTime()))
     .sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime());
   const upcomingLessons = lessons.filter((lesson) => !lessonHasEnded(lesson));
   const futureFallbackLessons =
     upcomingLessons.length === 0
-      ? nextFutureLessons(lessonSources, week, 3).filter((lesson) => !cancellationKeys.has(lessonCancellationKey(lesson)))
+      ? nextFutureLessons(lessonSources, week, 3).filter((lesson) => !cancellationKeys.has(lessonCancellationKey(lesson)) && (!lesson.program.access_ends_at || lesson.startsAt.getTime() < new Date(lesson.program.access_ends_at).getTime()))
       : [];
 
   useEffect(() => {
@@ -10978,8 +10985,6 @@ function TeacherClassCard({
   counts,
   onResigned,
   onResignError,
-  onDeleted,
-  onDeleteError,
 }: {
   program: ProgramScheduleSource;
   mosqueSlug: string;
@@ -10995,8 +11000,9 @@ function TeacherClassCard({
 }) {
   const [resignOpen, setResignOpen] = useState(false);
   const [resigning, setResigning] = useState(false);
-  const [deleteOpen, setDeleteOpen] = useState(false);
-  const [deleting, setDeleting] = useState(false);
+  const [lifecycleOpen, setLifecycleOpen] = useState(false);
+  const archived = program.publication_status === "archived";
+  const closed = isClosedClass(program);
   const age = formatAgeRange(program.age_range_text);
   const gender = formatGender(program.audience_gender);
   const isDirector = role === "director";
@@ -11005,8 +11011,8 @@ function TeacherClassCard({
   const publicHref = `/m/${mosqueSlug}/programs/${program.id}?preview=student&returnTo=${teacherClassesReturnTo}`;
   // The cover/title always opens the public view, for directors and instructors alike --
   // "Edit Class" stays reachable as its own row below, not overloaded onto the cover tap.
-  const primaryHref = publicHref;
-  const primaryLabel = "Public Page";
+  const primaryHref = archived ? `${classBasePath}/${program.id}/students` : publicHref;
+  const primaryLabel = archived ? "Student records" : "Public Page";
 
   async function resignFromClass() {
     setResigning(true);
@@ -11022,32 +11028,9 @@ function TeacherClassCard({
     void notifyInstructorEvent(program.id, "resigned");
   }
 
-  async function deleteClass() {
-    setDeleting(true);
-    const accessToken = await getCurrentAccessToken();
-    if (!accessToken) {
-      setDeleting(false);
-      onDeleteError?.("Log in required.");
-      return;
-    }
-
-    const response = await fetch(`/api/programs/${program.id}`, {
-      method: "DELETE",
-      headers: { Authorization: `Bearer ${accessToken}` },
-    });
-    const result = (await response.json().catch(() => ({}))) as { error?: string };
-    setDeleting(false);
-    if (!response.ok) {
-      onDeleteError?.(result.error ?? "Could not delete class.");
-      return;
-    }
-    setDeleteOpen(false);
-    onDeleted?.();
-  }
-
   return (
     <article className="relative overflow-hidden rounded-[22px] border border-[#CBD8DE] bg-white shadow-[0_16px_40px_rgba(38,50,58,0.09)]">
-      {isDirector ? <ClassCardActionMenu onDelete={() => setDeleteOpen(true)} /> : null}
+      {isDirector && !archived ? <ClassCardActionMenu onDelete={() => setLifecycleOpen(true)} /> : null}
       <TransitionLink href={primaryHref} label={primaryLabel} className="relative block transition-opacity hover:opacity-95">
         <ProgramHero program={program} />
         <span className={cn("absolute left-3 top-3 z-10 inline-flex min-h-7 items-center rounded-full bg-white/92 px-3 text-xs font-bold uppercase tracking-wide shadow-[0_6px_16px_rgba(38,50,58,0.18)] backdrop-blur", controlLabel ? "text-[#2F6077]" : isDirector ? "text-[#17624F]" : "text-[#2F6077]")}>
@@ -11066,6 +11049,8 @@ function TeacherClassCard({
           <TransitionLink href={primaryHref} label={primaryLabel} className="line-clamp-2 text-lg font-semibold leading-6 text-[#26323A] hover:text-[#17624F]">
             {program.title}
           </TransitionLink>
+          {program.access_ends_at ? <p className="text-xs leading-5 text-[#845A1E]">Billing stopped · Access ends {new Date(program.access_ends_at).toLocaleDateString("en-CA", { timeZone: program.schedule_timezone || "America/Edmonton" })}</p> : null}
+          {program.lifecycle_operation_id ? <p className="text-xs leading-5 text-[#A22F25]">Class update unfinished · Open Class lifecycle to continue</p> : null}
         </div>
         <AudienceDetails age={age} gender={gender} />
         {program.teacher && program.coverDirectorVisibility !== "hidden" ? (
@@ -11079,31 +11064,29 @@ function TeacherClassCard({
         ) : null}
         <p className="pt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#6B747B]">Teacher Actions</p>
         <div className="divide-y divide-[#E3E8EC] border-t border-[#E3E8EC]">
-          <TeacherActionLink href={publicHref} icon={<ExternalLinkIcon />} label="View Public Page" previewLabel="Class Details" />
+          {!archived ? <TeacherActionLink href={publicHref} icon={<ExternalLinkIcon />} label="View Public Page" previewLabel="Class Details" /> : null}
           <TeacherActionLink href={`${classBasePath}/${program.id}/students`} icon={<StudentsIcon />} label="Students" count={counts?.students} />
           {isDirector || permissions?.can_view_applications || permissions?.can_decide_applications ? <TeacherActionLink href={`${classBasePath}/${program.id}/applications`} icon={<ClipboardIcon />} label="Applications" count={counts?.applications} urgent /> : null}
           {isDirector || permissions?.can_manage_finances ? <TeacherActionLink href={`${classBasePath}/${program.id}/finances`} icon={<FinanceIcon />} label="Finances" /> : null}
-          {isDirector ? <TeacherActionLink href={`${classBasePath}/${program.id}/instructors`} icon={<InstructorManageIcon />} label="Instructors" count={counts?.instructors} /> : null}
-          {isDirector || permissions?.can_announce ? <TeacherActionLink href={`${classBasePath}/${program.id}/announcement`} icon={<MegaphoneIcon />} label="Make Announcement" /> : null}
+          {isDirector && !archived ? <TeacherActionLink href={`${classBasePath}/${program.id}/instructors`} icon={<InstructorManageIcon />} label="Instructors" count={counts?.instructors} /> : null}
+          {!closed && (isDirector || permissions?.can_announce) ? <TeacherActionLink href={`${classBasePath}/${program.id}/announcement`} icon={<MegaphoneIcon />} label="Make Announcement" /> : null}
           <TeacherActionLink href={attendanceHistoryHref(mosqueSlug, program.id, classBasePath)} icon={<AttendanceIcon />} label="Attendance History" />
-          {isDirector || permissions?.can_edit_class ? <TeacherActionLink href={`${classBasePath}/${program.id}`} icon={<EditClassIcon />} label="Edit Class" /> : null}
-          {!isDirector ? <TeacherActionButton icon={<XIcon />} label="Resign from Class" onClick={() => setResignOpen(true)} /> : null}
+          {!closed && !program.access_ends_at && !program.lifecycle_operation_id && (isDirector || permissions?.can_edit_class) ? <TeacherActionLink href={`${classBasePath}/${program.id}`} icon={<EditClassIcon />} label="Edit Class" /> : null}
+          {!isDirector && !archived ? <TeacherActionButton icon={<XIcon />} label="Resign from Class" onClick={() => setResignOpen(true)} /> : null}
         </div>
       </div>
+      {lifecycleOpen ? <ClassLifecycleDialog programId={program.id} onClose={() => setLifecycleOpen(false)} onUpdated={() => {
+        invalidateQueryPrefix("teacher-programs:");
+        invalidateQueryPrefix("admin-programs:");
+        invalidatePrivateSnapshots("");
+        window.dispatchEvent(new Event("tareeqah:notifications-changed"));
+      }} /> : null}
       {resignOpen ? (
         <ConfirmInstructorResignModal
           programTitle={program.title}
           busy={resigning}
           onCancel={() => setResignOpen(false)}
           onConfirm={() => void resignFromClass()}
-        />
-      ) : null}
-      {deleteOpen ? (
-        <ConfirmClassDeleteModal
-          programTitle={program.title}
-          busy={deleting}
-          onCancel={() => setDeleteOpen(false)}
-          onConfirm={() => void deleteClass()}
         />
       ) : null}
     </article>
@@ -11183,7 +11166,7 @@ function ClassCardActionMenu({ onDelete }: { onDelete: () => void }) {
             }}
             className="flex min-h-10 w-full items-center rounded-[12px] px-3 text-left font-semibold text-[#C83F31] transition-colors hover:bg-[#FFF1EF]"
           >
-            Delete class
+            Class lifecycle
           </button>
         </div>
       ) : null}
@@ -12004,7 +11987,11 @@ function ProgramTeacherStaffTools({ program, initialSnapshot }: { program: Progr
                     Remove
                   </button>
                 </div>
-                <InstructorPermissionEditor assignment={assignment} onSave={(update) => saveInstructorPermissions(assignment.id, update)} />
+                <InstructorPermissionEditor
+                  assignment={assignment}
+                  instructorName={assignment.profile?.full_name || assignment.profile?.email || "Instructor"}
+                  onSave={(update) => saveInstructorPermissions(assignment.id, update)}
+                />
               </div>
             ))}
           </div>
@@ -12069,10 +12056,12 @@ function instructorPermissions(assignment: ProgramTeacher): InstructorPermission
   };
 }
 
-function InstructorPermissionEditor({ assignment, onSave }: { assignment: ProgramTeacher; onSave: (update: InstructorPermissions) => Promise<boolean> }) {
+function InstructorPermissionEditor({ assignment, instructorName, onSave }: { assignment: ProgramTeacher; instructorName: string; onSave: (update: InstructorPermissions) => Promise<boolean> }) {
   const [saved, setSaved] = useState(() => instructorPermissions(assignment));
   const [draft, setDraft] = useState(() => instructorPermissions(assignment));
   const [busy, setBusy] = useState(false);
+  const [open, setOpen] = useState(false);
+  const modalRef = useRef<HTMLDivElement>(null);
   const fields: Array<{ key: keyof InstructorPermissions; label: string; detail: string }> = [
     { key: "can_view_student_records", label: "View student records", detail: "See contact, parent, and student history details" },
     { key: "can_manage_enrollments", label: "Manage enrollments", detail: "Move or remove enrolled students" },
@@ -12085,6 +12074,13 @@ function InstructorPermissionEditor({ assignment, onSave }: { assignment: Progra
   const changed = fields.some(({ key }) => draft[key] !== saved[key]);
   const allEnabled = fields.every(({ key }) => draft[key]);
   const noneEnabled = fields.every(({ key }) => !draft[key]);
+  const enabledCount = fields.filter(({ key }) => saved[key]).length;
+  useModalFocusTrap(modalRef, open, () => {
+    if (!busy) {
+      setDraft(saved);
+      setOpen(false);
+    }
+  });
 
   async function save() {
     setBusy(true);
@@ -12094,27 +12090,55 @@ function InstructorPermissionEditor({ assignment, onSave }: { assignment: Progra
     if (ok) {
       setSaved(next);
       setDraft(next);
+      setOpen(false);
     }
   }
 
   return (
-    <div className="mt-4 border-t border-[#E3E8EC] pt-3">
-      <div className="mb-2 flex items-center justify-between gap-2">
-        <p className="text-xs font-semibold uppercase tracking-wide text-[#52616A]">Class permissions</p>
-        <div className="flex h-8 shrink-0 items-center gap-0.5 rounded-full border border-[#DDE6E3] bg-[#F4F7F6] p-0.5">
-          <button type="button" disabled={busy || allEnabled} onClick={() => setDraft(Object.fromEntries(fields.map(({ key }) => [key, true])) as InstructorPermissions)} className="h-7 whitespace-nowrap rounded-full px-2.5 text-[11px] font-semibold leading-none text-[#17624F] transition hover:bg-white disabled:opacity-40">Add all</button>
-          <button type="button" disabled={busy || noneEnabled} onClick={() => setDraft(Object.fromEntries(fields.map(({ key }) => [key, false])) as InstructorPermissions)} className="h-7 whitespace-nowrap rounded-full px-2.5 text-[11px] font-semibold leading-none text-[#52616A] transition hover:bg-white disabled:opacity-40">Remove all</button>
-        </div>
-      </div>
-      <div className="divide-y divide-[#E3E8EC]">
-        {fields.map(({ key, label, detail }) => (
-          <label key={key} className="flex min-h-14 cursor-pointer items-center justify-between gap-3 py-2">
-            <span className="min-w-0"><span className="block text-sm font-semibold text-[#26323A]">{label}</span><span className="block text-xs text-[#6B747B]">{detail}</span></span>
-            <input type="checkbox" checked={draft[key]} disabled={busy} onChange={(event) => setDraft((current) => ({ ...current, [key]: event.target.checked, ...(key === "can_decide_applications" && event.target.checked ? { can_view_applications: true } : {}), ...(key === "can_view_applications" && !event.target.checked ? { can_decide_applications: false } : {}) }))} className="h-5 w-5 shrink-0 accent-[#17624F]" />
-          </label>
-        ))}
-      </div>
-      {changed ? <div className="mt-3 flex items-center justify-between gap-3"><span className="text-xs font-medium text-[#8B5B18]">Unsaved changes</span><div className="flex gap-2"><button type="button" disabled={busy} onClick={() => setDraft(saved)} className="min-h-10 px-3 text-sm font-semibold text-[#52616A]">Cancel</button><button type="button" disabled={busy} onClick={() => void save()} className="min-h-10 rounded-[8px] bg-[#17624F] px-4 text-sm font-semibold text-white disabled:opacity-50">{busy ? "Saving…" : "Save changes"}</button></div></div> : null}
+    <div className="mt-3 flex items-center justify-between gap-3 border-t border-[#EEF2F4] pt-3">
+      <p className="text-xs text-[#6B747B]">{enabledCount} of {fields.length} permissions enabled</p>
+      <button type="button" onClick={() => setOpen(true)} className="min-h-9 rounded-full border border-[#D6E1DD] px-3 text-sm font-semibold text-[#17624F] transition hover:bg-[#F2F7F5]">
+        Permissions
+      </button>
+      {open && typeof document !== "undefined" ? createPortal(
+        <div className="fixed inset-0 z-[2147483647] flex items-center justify-center bg-[#26323A]/40 px-4 py-[max(20px,env(safe-area-inset-top))] backdrop-blur-sm" onMouseDown={(event) => {
+          if (event.target === event.currentTarget && !busy) {
+            setDraft(saved);
+            setOpen(false);
+          }
+        }}>
+          <div ref={modalRef} role="dialog" aria-modal="true" aria-labelledby={`permissions-${assignment.id}`} tabIndex={-1} className="flex max-h-[min(720px,calc(100svh-40px))] w-full max-w-md flex-col overflow-hidden rounded-[24px] bg-white text-[#26323A] shadow-[0_24px_70px_rgba(38,50,58,0.24)] outline-none">
+            <div className="flex items-start justify-between gap-4 border-b border-[#E8EDEF] px-5 py-4">
+              <div className="min-w-0">
+                <h2 id={`permissions-${assignment.id}`} className="text-lg font-semibold">Permissions</h2>
+                <p className="mt-0.5 truncate text-sm text-[#6B747B]">{instructorName}</p>
+              </div>
+              <button type="button" disabled={busy} onClick={() => { setDraft(saved); setOpen(false); }} className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-[#F1F5F6] text-[#52616A] disabled:opacity-50" aria-label="Close permissions">
+                <XIcon />
+              </button>
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto px-5">
+              <div className="flex items-center justify-end gap-1 border-b border-[#E8EDEF] py-2">
+                <button type="button" disabled={busy || allEnabled} onClick={() => setDraft(Object.fromEntries(fields.map(({ key }) => [key, true])) as InstructorPermissions)} className="min-h-8 rounded-full px-3 text-xs font-semibold text-[#17624F] hover:bg-[#F2F7F5] disabled:opacity-40">All</button>
+                <button type="button" disabled={busy || noneEnabled} onClick={() => setDraft(Object.fromEntries(fields.map(({ key }) => [key, false])) as InstructorPermissions)} className="min-h-8 rounded-full px-3 text-xs font-semibold text-[#52616A] hover:bg-[#F3F6F8] disabled:opacity-40">None</button>
+              </div>
+              <div className="divide-y divide-[#E8EDEF]">
+                {fields.map(({ key, label, detail }) => (
+                  <label key={key} className="flex min-h-16 cursor-pointer items-center justify-between gap-4 py-3">
+                    <span className="min-w-0"><span className="block text-sm font-semibold text-[#26323A]">{label}</span><span className="mt-0.5 block text-xs leading-5 text-[#6B747B]">{detail}</span></span>
+                    <input type="checkbox" checked={draft[key]} disabled={busy} onChange={(event) => setDraft((current) => ({ ...current, [key]: event.target.checked, ...(key === "can_decide_applications" && event.target.checked ? { can_view_applications: true } : {}), ...(key === "can_view_applications" && !event.target.checked ? { can_decide_applications: false } : {}) }))} className="h-5 w-5 shrink-0 accent-[#17624F]" />
+                  </label>
+                ))}
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2 border-t border-[#E8EDEF] px-5 py-4">
+              <button type="button" disabled={busy} onClick={() => { setDraft(saved); setOpen(false); }} className="min-h-10 px-3 text-sm font-semibold text-[#52616A] disabled:opacity-50">Cancel</button>
+              <button type="button" disabled={busy || !changed} onClick={() => void save()} className="min-h-10 rounded-[9px] bg-[#17624F] px-5 text-sm font-semibold text-white disabled:opacity-45">{busy ? "Saving…" : "Save"}</button>
+            </div>
+          </div>
+        </div>,
+        document.body,
+      ) : null}
     </div>
   );
 }

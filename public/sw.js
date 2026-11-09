@@ -81,6 +81,7 @@ self.addEventListener("push", (event) => {
   event.waitUntil(
     self.registration.showNotification(data.title || "Madrasa", {
       body: data.body,
+      ...(data.tag ? { tag: data.tag } : {}),
       icon: "/icon-192x192.png",
       badge: "/icon-192x192.png",
       data: {

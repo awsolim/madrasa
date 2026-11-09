@@ -41,7 +41,7 @@ function ensureVapidConfigured() {
  */
 export async function sendPushNotification(
   supabase: SupabaseClient<Database>,
-  options: { recipientProfileIds: string | (string | null | undefined)[]; title: string; body: string; url?: string; category?: NotificationCategory },
+  options: { recipientProfileIds: string | (string | null | undefined)[]; title: string; body: string; url?: string; category?: NotificationCategory; tag?: string },
 ): Promise<PushDeliveryResult> {
   const result: PushDeliveryResult = { attempted: 0, delivered: 0, expired: 0, failed: 0, configured: true };
   try {
@@ -61,7 +61,7 @@ export async function sendPushNotification(
 
     result.attempted = subscriptions.length;
 
-    const payload = JSON.stringify({ title: options.title, body: options.body, url: options.url ?? "/" });
+    const payload = JSON.stringify({ title: options.title, body: options.body, url: options.url ?? "/", tag: options.tag });
 
     await Promise.all(
       subscriptions.map(async (subscription) => {

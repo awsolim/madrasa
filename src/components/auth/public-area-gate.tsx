@@ -177,7 +177,7 @@ function TenantBootState({ mosqueName, mosqueLogoUrl, message = "Opening your ac
           <button type="button" onClick={onRetry} className="mt-6 min-h-11 rounded-full bg-[#17624F] px-6 text-sm font-semibold text-white">Try again</button>
         ) : (
           <div className="mt-7 h-1 w-32 overflow-hidden rounded-full bg-[#DCE6E2]" aria-hidden>
-            <span className="block h-full w-1/2 animate-pulse rounded-full bg-[#17624F]" />
+            <span className="tenant-boot-progress block h-full rounded-full bg-[#17624F]" />
           </div>
         )}
       </div>

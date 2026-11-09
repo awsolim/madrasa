@@ -5,7 +5,7 @@ import { parseEnv } from "node:util";
 const testEnvironment = parseEnv(readFileSync(".env.test.local", "utf8"));
 const nextBin = "node_modules/next/dist/bin/next";
 
-const child = spawn(process.execPath, [nextBin, "dev"], {
+const child = spawn(process.execPath, [nextBin, "dev", ...process.argv.slice(2)], {
   env: { ...process.env, ...testEnvironment },
   stdio: "inherit",
   windowsHide: true,

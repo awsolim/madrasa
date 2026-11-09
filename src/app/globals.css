@@ -80,6 +80,31 @@ a {
   text-decoration: none;
 }
 
+@keyframes tenant-boot-progress {
+  0% {
+    width: 4%;
+  }
+  28% {
+    width: 38%;
+  }
+  68% {
+    width: 72%;
+  }
+  100% {
+    width: 100%;
+  }
+}
+
+.tenant-boot-progress {
+  animation: tenant-boot-progress 3.2s cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tenant-boot-progress {
+    animation-duration: 0.01ms;
+  }
+}
+
 /* Filled controls must always preserve readable white foregrounds, including
    links styled as buttons inside error states and nested themed containers. */
 .text-white {
