@@ -62,22 +62,28 @@ export async function POST(request: Request) {
     const managerIds = await getProgramEnrollmentRecipientProfileIds(supabase, { id: body.programId, ...program });
     if (mosque) {
       const message = `${student?.full_name || student?.email || "A student"} requested to withdraw from ${program.title}.`;
-      await sendPushNotification(supabase, {
-        recipientProfileIds: managerIds,
-        title: "Withdrawal requested",
-        body: message,
-        url: `/m/${mosque.slug}/teacher/inbox?tab=withdrawals`,
+      const { data: admins, error: adminError } = await supabase.from("mosque_memberships").select("profile_id")
+        .eq("mosque_id", program.mosque_id).eq("role", "admin").eq("status", "active");
+      if (adminError) throw adminError;
+      const adminIds = new Set((admins ?? []).map(item => item.profile_id));
+      const query = `?view=withdrawals&requestId=${encodeURIComponent(withdrawalRequest.id)}`;
+      const adminPath = `/admin/programs/${body.programId}/students${query}`;
+      const teacherPath = `/teacher/classes/${body.programId}/students${query}`;
+      await Promise.all([true, false].map(isAdmin => sendPushNotification(supabase, {
+        recipientProfileIds: managerIds.filter(id => adminIds.has(id) === isAdmin),
+        title: "Withdrawal requested", body: message,
+        url: `/m/${mosque.slug}${isAdmin ? adminPath : teacherPath}`,
         category: "withdrawals",
-      });
+      })));
       await sendProfileNotificationEmails(supabase, managerIds, {
         includeAdmins: true,
-        adminAction: { label: "Review Request", href: getTenantAppUrl(mosque.slug, `/admin/programs/${body.programId}/students`) },
+        adminAction: { label: "Review Request", href: getTenantAppUrl(mosque.slug, adminPath) },
         eventKey: `withdrawal-requested:${withdrawalRequest.id}`,
         category: "withdrawals",
         subject: `Withdrawal requested: ${program.title}`,
         title: "New Withdrawal Request",
         message,
-        action: { label: "Review Request", href: getTenantAppUrl(mosque.slug, "/teacher/inbox?tab=withdrawals") },
+        action: { label: "Review Request", href: getTenantAppUrl(mosque.slug, teacherPath) },
         replyTo: student?.email ?? null,
       }).catch(() => null);
     }

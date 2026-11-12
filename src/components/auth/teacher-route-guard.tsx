@@ -4,11 +4,13 @@ import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { QuietPageLoadingState } from "@/components/data/data-loading";
 import { loadCachedSession, loadCachedUserAccess } from "@/lib/client-cache";
+import { useSessionIdentity } from "@/hooks/use-session-identity";
 
 export function TeacherRouteGuard({ children, slug }: { children: React.ReactNode; slug: string }) {
   const pathname = usePathname();
   const router = useRouter();
-  const [isAllowed, setIsAllowed] = useState(false);
+  const sessionIdentity = useSessionIdentity();
+  const [allowedUserId, setAllowedUserId] = useState<string | null>(null);
   const [accessError, setAccessError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
 
@@ -32,9 +34,10 @@ export function TeacherRouteGuard({ children, slug }: { children: React.ReactNod
       }
 
       if (access.resolutionError) { setAccessError(access.resolutionError); return; }
+      setAccessError(null);
 
       if (access.isTeacher || access.isMosqueAdmin) {
-        setIsAllowed(true);
+        setAllowedUserId(session.user.id);
         return;
       }
 
@@ -46,11 +49,11 @@ export function TeacherRouteGuard({ children, slug }: { children: React.ReactNod
     return () => {
       active = false;
     };
-  }, [pathname, router, slug, attempt]);
+  }, [pathname, router, slug, attempt, sessionIdentity]);
 
   if (accessError) return <main className="p-6 text-center"><p role="alert">{accessError}</p><button className="mt-4 rounded-lg border px-5 py-3" onClick={() => { setAccessError(null); setAttempt(value => value + 1); }}>Try again</button></main>;
 
-  if (!isAllowed) {
+  if (!sessionIdentity || allowedUserId !== sessionIdentity) {
     return <QuietPageLoadingState />;
   }
 

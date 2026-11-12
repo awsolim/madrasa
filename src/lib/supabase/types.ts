@@ -779,6 +779,18 @@ export type Database = {
     };
     Views: Record<string, never>;
     Functions: {
+      get_program_withdrawals: {
+        Args: { p_program_id: string; p_reviewed?: boolean; p_offset?: number; p_request_id?: string };
+        Returns: Json;
+      };
+      get_class_action_counts: {
+        Args: { p_slug: string };
+        Returns: Json;
+      };
+      get_notification_counts: {
+        Args: { p_slug: string; p_audience: string };
+        Returns: Json;
+      };
       begin_program_lifecycle_operation: {
         Args: { p_program_id: string; p_actor: string; p_plan: Json };
         Returns: string;
@@ -1001,6 +1013,14 @@ export type Database = {
       };
       get_program_finance_analytics: {
         Args: { p_program_id: string };
+        Returns: Json;
+      };
+      get_program_finance_overview: {
+        Args: { p_program_id: string };
+        Returns: Json;
+      };
+      get_program_finance_transactions: {
+        Args: { p_program_id: string; p_search?: string; p_offset?: number; p_limit?: number };
         Returns: Json;
       };
       get_teacher_announcements_snapshot: {

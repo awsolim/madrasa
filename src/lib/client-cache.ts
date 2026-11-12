@@ -4,6 +4,7 @@ import type { Session } from "@supabase/supabase-js";
 import { emptyUserAccess, loadUserAccessByMosqueSlug, type UserAccess } from "@/lib/authz";
 import { clearAllQueryCache } from "@/lib/query-cache";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { canHaveProfilePhoto } from "@/lib/profile-images";
 
 type MosqueChrome = {
   name: string;
@@ -44,9 +45,8 @@ function writeStoredJson(key: string, value: unknown) {
 let sessionLoaded = false;
 let cachedSession: Session | null = null;
 let sessionPromise: Promise<Session | null> | null = null;
+let sessionRevision = 0;
 let authListenerStarted = false;
-let lastSeenUserId: string | null = null;
-let hasSeenFirstAuthEvent = false;
 
 const sessionSubscribers = new Set<(session: Session | null) => void>();
 const mosqueChromeCache = new Map<string, MosqueChrome>();
@@ -65,6 +65,8 @@ export function getCachedSessionSnapshot() {
 }
 
 export function setCachedSessionSnapshot(session: Session | null) {
+  if (sessionLoaded && (cachedSession?.user.id ?? null) !== (session?.user.id ?? null)) clearUserScopedCaches();
+  sessionRevision += 1;
   sessionLoaded = true;
   cachedSession = session;
   sessionSubscribers.forEach((listener) => listener(session));
@@ -85,9 +87,13 @@ export async function loadCachedSession() {
   }
 
   if (!sessionPromise) {
+    const revision = sessionRevision;
     sessionPromise = createSupabaseBrowserClient()
       .auth.getSession()
       .then(({ data }) => {
+        // A read begun before sign-in/sign-out must not overwrite that newer
+        // auth event when its promise eventually resolves.
+        if (revision !== sessionRevision) return cachedSession;
         setCachedSessionSnapshot(data.session);
         return data.session;
       })
@@ -294,13 +300,13 @@ export async function loadCachedProfileSummary(userId: string) {
   const promise = (async () => {
     const { data } = await createSupabaseBrowserClient()
       .from("profiles")
-      .select("full_name, avatar_url")
+      .select("full_name, avatar_url, account_type")
       .eq("id", userId)
       .maybeSingle();
 
     const summary = {
       fullName: data?.full_name?.trim() || null,
-      avatarUrl: data?.avatar_url?.trim() || null,
+      avatarUrl: canHaveProfilePhoto(data?.account_type) ? data?.avatar_url?.trim() || null : null,
     };
     profileSummaryCache.set(userId, summary);
     profileNameCache.set(userId, summary.fullName);
@@ -352,7 +358,8 @@ export async function performClientLogout() {
   }
   clearUserScopedCaches();
   setCachedSessionSnapshot(null);
-  await createSupabaseBrowserClient().auth.signOut();
+  // Signing out on this device must not revoke sessions on other devices.
+  await createSupabaseBrowserClient().auth.signOut({ scope: "local" });
 }
 
 function startAuthListener() {
@@ -362,20 +369,9 @@ function startAuthListener() {
 
   authListenerStarted = true;
   createSupabaseBrowserClient().auth.onAuthStateChange((_event, session) => {
-    const nextUserId = session?.user.id ?? null;
-    // Clear on sign-out (nextUserId null) AND on a direct switch to a different signed-in
-    // user (nextUserId changed but non-null) — the known account-switch flow already calls
-    // clearUserScopedCaches() explicitly and signs out first, but this is a defensive backstop
-    // for any future auth flow that swaps identities without passing through a null session.
-    // The very first callback firing (INITIAL_SESSION, right after this listener is registered)
-    // must never itself count as a "change": lastSeenUserId starts unset regardless of whether
-    // a session already exists, so treating that first event as a transition would wipe every
-    // page's freshly-warmed cache moments after any already-signed-in user loads the app.
-    if (hasSeenFirstAuthEvent && nextUserId !== lastSeenUserId) {
-      clearUserScopedCaches();
-    }
-    hasSeenFirstAuthEvent = true;
-    lastSeenUserId = nextUserId;
+    // Initialization can finish after a newer sign-in or sign-out. The initial
+    // callback must not replace an identity we have already resolved explicitly.
+    if (_event === "INITIAL_SESSION" && sessionLoaded) return;
     setCachedSessionSnapshot(session);
   });
 }

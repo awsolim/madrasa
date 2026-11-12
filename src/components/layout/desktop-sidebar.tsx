@@ -22,6 +22,7 @@ import {
   subscribeCachedSession,
 } from "@/lib/client-cache";
 import { cn } from "@/lib/utils";
+import { canHaveProfilePhoto } from "@/lib/profile-images";
 
 export function DesktopSidebar({
   appName,
@@ -243,7 +244,7 @@ function DesktopProfileLink({ mosqueSlug, accountHref }: { mosqueSlug: string; a
   });
   const [profileAvatarUrl, setProfileAvatarUrl] = useState<string | null>(() => {
     const summary = cachedSession?.user.id ? getCachedProfileSummary(cachedSession.user.id) : undefined;
-    return summary?.avatarUrl ?? cachedSession?.user.user_metadata?.avatar_url ?? null;
+    return summary?.avatarUrl ?? null;
   });
   const [resolved, setResolved] = useState(() => {
     if (cachedSession === null) return true;
@@ -298,7 +299,7 @@ function DesktopProfileLink({ mosqueSlug, accountHref }: { mosqueSlug: string; a
       if (!cancelled) {
         setAccess(nextAccess);
         setProfileName(profileSummary.fullName ?? session.user.user_metadata?.full_name ?? null);
-        setProfileAvatarUrl(profileSummary.avatarUrl ?? session.user.user_metadata?.avatar_url ?? null);
+        setProfileAvatarUrl(profileSummary.avatarUrl ?? null);
         setResolved(true);
       }
     });
@@ -326,7 +327,7 @@ function DesktopProfileLink({ mosqueSlug, accountHref }: { mosqueSlug: string; a
 
   return (
     <Link href={accountHref} className="flex min-h-16 items-center gap-3 rounded-3xl bg-[#F5F7F8] px-3 py-3 transition-colors hover:bg-[#EEF4F5]">
-      {profileAvatarUrl ? (
+      {profileAvatarUrl && canHaveProfilePhoto(access.accountType) ? (
         <span className="h-11 w-11 shrink-0 rounded-full bg-cover bg-center" style={{ backgroundImage: `url("${profileAvatarUrl}")` }} aria-hidden />
       ) : session === null ? (
         <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#E5F3EF] text-[var(--brand-green)]">

@@ -7,6 +7,7 @@ import { FlatButton } from "@/components/ui/flat-button";
 import { getDefaultLandingHref, loadUserAccessByMosqueSlug } from "@/lib/authz";
 import { normalizePhoneNumber, phoneCountryCodes } from "@/lib/phone";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
+import { setCachedSessionSnapshot } from "@/lib/client-cache";
 import { cn } from "@/lib/utils";
 
 type AuthMode = "login" | "signup";
@@ -132,6 +133,7 @@ export function AuthPanel({ mode, slug, returnTo }: { mode: AuthMode; slug: stri
       }
 
       if (data.session) {
+        setCachedSessionSnapshot(data.session);
         const access = await loadUserAccessByMosqueSlug(activeSlug).catch(() => null);
         if (!access) { setError("Signed in, but your account details could not load. Please try again."); return; }
         const landingHref = returnTo ?? getDefaultLandingHref(activeSlug, access);
@@ -148,7 +150,7 @@ export function AuthPanel({ mode, slug, returnTo }: { mode: AuthMode; slug: stri
       return;
     }
 
-    let { error: signInError } = await supabase.auth.signInWithPassword({
+    let { data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
       email: trimmedEmail,
       password,
     });
@@ -157,7 +159,7 @@ export function AuthPanel({ mode, slug, returnTo }: { mode: AuthMode; slug: stri
     // between Wi-Fi and cellular. Retry that transport failure once without
     // making the user re-enter valid credentials.
     if (signInError && isTransientAuthError(signInError.message)) {
-      ({ error: signInError } = await supabase.auth.signInWithPassword({
+      ({ data: signInData, error: signInError } = await supabase.auth.signInWithPassword({
         email: trimmedEmail,
         password,
       }));
@@ -175,11 +177,13 @@ export function AuthPanel({ mode, slug, returnTo }: { mode: AuthMode; slug: stri
     }
 
     if (returnTo) {
+      if (signInData.session) setCachedSessionSnapshot(signInData.session);
       router.replace(returnTo);
       router.refresh();
       return;
     }
 
+    if (signInData.session) setCachedSessionSnapshot(signInData.session);
     const access = await loadUserAccessByMosqueSlug(activeSlug).catch(() => null);
         if (!access) { setError("Signed in, but your account details could not load. Please try again."); return; }
     router.replace(getDefaultLandingHref(activeSlug, access));

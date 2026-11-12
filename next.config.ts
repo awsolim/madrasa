@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { profileImageRemotePatterns } from "./src/lib/profile-images";
 
 const nextConfig: NextConfig = {
   devIndicators: false,
@@ -37,12 +38,7 @@ const nextConfig: NextConfig = {
     ];
   },
   images: {
-    remotePatterns: [
-      {
-        protocol: "https",
-        hostname: "**.supabase.co",
-      },
-    ],
+    remotePatterns: [...profileImageRemotePatterns],
   },
 };
 

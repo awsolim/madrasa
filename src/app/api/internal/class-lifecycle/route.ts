@@ -13,8 +13,8 @@ export async function POST(request: Request) {
   }
   const db = createSupabaseServiceClient();
   const start = Date.now();
-  const { error: finalizeError } = await db.rpc("finalize_ended_classes", {});
-  if (finalizeError) return Response.json({ error: "Could not finalize class access." }, { status: 500 });
+  // pg_cron owns access finalization independently of the web deployment.
+  // This worker only resumes unfinished operations and delivers notifications.
   const { data: operations, error } = await db.from("program_lifecycle_operations").select("id,program_id,status")
     .or("status.eq.processing,and(status.neq.processing,notifications_sent_at.is.null,action.neq.archive)")
     .or(`lease_until.is.null,lease_until.lt.${new Date().toISOString()}`).order("created_at").limit(10);

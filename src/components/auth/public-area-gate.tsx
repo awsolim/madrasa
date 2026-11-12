@@ -8,6 +8,7 @@ import { AppChrome } from "@/components/layout/page-shell";
 import { getDefaultLandingHref } from "@/lib/authz";
 import { loadCachedSession, loadCachedUserAccess } from "@/lib/client-cache";
 import { browserHref } from "@/lib/navigation-paths";
+import { useSessionIdentity } from "@/hooks/use-session-identity";
 
 type GateState = "checking" | "redirecting" | "signed-in" | "signed-out" | "error";
 
@@ -24,6 +25,7 @@ export function PublicAreaGate({
 }) {
   const pathname = usePathname();
   const router = useRouter();
+  const sessionIdentity = useSessionIdentity();
   const [state, setState] = useState<GateState>("checking");
 
   useEffect(() => {
@@ -60,7 +62,7 @@ export function PublicAreaGate({
     return () => {
       cancelled = true;
     };
-  }, [pathname, router, slug]);
+  }, [pathname, router, slug, sessionIdentity]);
 
   if (state === "signed-in") {
     return (

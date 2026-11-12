@@ -188,6 +188,11 @@ function hydrateFromStorage() {
       }
       try {
         const parsed = JSON.parse(raw) as { data: unknown; updatedAt: number };
+        if (queryFailure(parsed.data)) {
+          window.localStorage.removeItem(storageKey);
+          i -= 1;
+          continue;
+        }
         if (typeof parsed.updatedAt !== "number" || now - parsed.updatedAt > MAX_PERSIST_AGE_MS) {
           continue;
         }
@@ -207,6 +212,11 @@ hydrateFromStorage();
 
 function notify(key: string) {
   subscribers.get(key)?.forEach((listener) => listener());
+}
+
+function queryFailure(data: unknown): string | null {
+  if (!data || typeof data !== "object" || !("error" in data)) return null;
+  return typeof data.error === "string" && data.error.trim() ? data.error : null;
 }
 
 function subscribe(key: string, listener: () => void) {
@@ -231,6 +241,11 @@ async function runFetch<T>(key: string, fetcher: () => Promise<T>, persist = tru
   const startedAt = typeof performance === "undefined" ? Date.now() : performance.now();
   const promise = fetcher()
     .then((data) => {
+      // Several mature fetchers return an error envelope instead of rejecting.
+      // It must not become a persisted, fresh result (e.g. "Log in required"
+      // surviving a subsequent successful login).
+      const failure = queryFailure(data);
+      if (failure) throw new Error(failure);
       if (epoch !== privateCacheEpoch) return data;
       const entry = { data, updatedAt: Date.now() };
       cache.set(key, entry);

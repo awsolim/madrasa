@@ -61,7 +61,7 @@ export async function POST(request: Request) {
       return Response.json({ error: "This withdrawal request has already been reviewed." }, { status: 409 });
     }
 
-    const { data: canManage, error: manageError } = await supabase.rpc("can_manage_program", {
+    const { data: canManage, error: manageError } = await supabase.rpc("can_manage_program_enrollments", {
       check_program_id: withdrawalRequest.program_id,
       check_profile_id: user.id,
     });
@@ -71,7 +71,11 @@ export async function POST(request: Request) {
     }
 
     const now = new Date().toISOString();
-    const { data: program } = await supabase.from("programs").select("title, mosque_id").eq("id", withdrawalRequest.program_id).maybeSingle();
+    const { data: program } = await supabase.from("programs").select("title, mosque_id, publication_status, lifecycle_operation_id").eq("id", withdrawalRequest.program_id).maybeSingle();
+    if (!program) return Response.json({ error: "Class not found." }, { status: 404 });
+    if (program.publication_status === "archived" || program.lifecycle_operation_id) {
+      return Response.json({ error: "This class is archived or has a class operation in progress. The withdrawal cannot be reviewed yet." }, { status: 409 });
+    }
     const { data: mosque } = program ? await supabase.from("mosques").select("slug").eq("id", program.mosque_id).maybeSingle() : { data: null };
 
     if (body.status === "rejected") {
@@ -128,8 +132,6 @@ export async function POST(request: Request) {
       }
     }
 
-    await cancelProgramSubscription(supabase, subscription);
-
     let refundId: string | null = null;
     if (refundAmountCents > 0) {
       const { data: payment, error: paymentError } = await supabase
@@ -153,6 +155,9 @@ export async function POST(request: Request) {
         }).eq("id", payment.id);
         if (linkError) throw linkError;
       }
+      // Validate the payment and remaining refundable balance before ending
+      // billing. Invalid refund input must leave the subscription untouched.
+      await cancelProgramSubscription(supabase, subscription);
       const refund = await getStripe().refunds.create({
         charge: resolved.charge.id,
         amount: refundAmountCents,
@@ -169,6 +174,8 @@ export async function POST(request: Request) {
         metadata: { withdrawalRequestId: withdrawalRequest.id, programPaymentId: payment.id, stripeRefundId: refund.id, amountCents: refundAmountCents, currency: payment.currency },
       });
     }
+
+    if (refundAmountCents === 0) await cancelProgramSubscription(supabase, subscription);
 
     const { error: updateError } = await supabase
       .from("withdrawal_requests")

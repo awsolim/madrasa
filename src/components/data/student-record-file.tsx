@@ -1,4 +1,5 @@
 "use client";
+import { StudentWithdrawalNotice } from "@/components/data/program-withdrawals";
 import { loadStudentActivity, type StudentActivity } from "@/lib/student-activity";
 import { createPortal } from "react-dom";
 import type { StudentRecordAction } from "@/components/data/student-record-actions";
@@ -8,7 +9,7 @@ import type { ReactNode } from "react";
 import { useEffect, useRef, useState } from "react";
 import { useHideMobileChromeWhileMounted, useModalFocusTrap } from "@/hooks/use-modal-behavior";
 import { friendlyErrorMessage } from "@/lib/errors";
-import { invalidatePrivateSnapshots, loadPrivateSnapshot } from "@/lib/query-cache";
+import { invalidatePrivateSnapshots, invalidateQueryPrefix, loadPrivateSnapshot } from "@/lib/query-cache";
 import { DurableReceiptLink } from "@/components/data/durable-receipt-link";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { Database } from "@/lib/supabase/types";
@@ -471,6 +472,7 @@ export function FinanceDetailsDrawer({
         </div>
 
         <div className="min-h-0 flex-1 space-y-5 overflow-y-auto px-5 py-5">
+          {canManageEnrollments ? <StudentWithdrawalNotice programId={program.id} studentId={studentProfileId} onNavigate={onClose} /> : null}
           {activeTab === "overview" ? <>
             <dl className="grid grid-cols-2 gap-x-5 gap-y-2 rounded-[16px] border border-[#E1E8EC] bg-[#FAFCFC] p-3">
               <FinanceRecordFact label="Age">{displayAge(row.student)}</FinanceRecordFact>
@@ -724,6 +726,7 @@ async function callFinanceAction<T = Record<string, unknown>>(
       ? await loadPrivateSnapshot(`payment-history:${programId}:${payload.studentProfileId}:${sessionData.session!.user.id}`, run)
       : await run();
     if (endpoint !== "payment-history") {
+      invalidateQueryPrefix(`finance-transactions:${programId}:`);
       invalidatePrivateSnapshots(`payment-history:${programId}:`);
       invalidatePrivateSnapshots(`student-activity:${programId}:`);
     }

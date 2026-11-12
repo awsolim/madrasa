@@ -374,7 +374,7 @@ function FamilyChildRow({
   return (
     <article>
       <div className="flex items-center gap-3 py-3">
-        <FamilyAvatar src={child.avatar_url} name={childName} />
+        <FamilyAvatar name={childName} />
         <div className="min-w-0 flex-1">
           <h3 className="truncate text-[15px] font-semibold leading-5 text-[#26323A]">{childName}</h3>
           <p className="mt-0.5 truncate text-xs font-medium text-[#7B858C]">
@@ -542,11 +542,7 @@ function FamilyInput({ label, value, onChange, type = "text", required = false }
   );
 }
 
-function FamilyAvatar({ src, name }: { src: string | null; name: string }) {
-  if (src) {
-    return <img src={src} alt="" className="h-11 w-11 shrink-0 rounded-full object-cover" />;
-  }
-
+function FamilyAvatar({ name }: { name: string }) {
   return (
     <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-[#E7F3F8] text-sm font-semibold text-[#2F8FB3]">
       {initials(name)}

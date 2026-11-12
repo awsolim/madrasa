@@ -45,9 +45,11 @@ import { ConfirmModal } from "@/components/ui/confirm-modal";
 import { FlatLink } from "@/components/ui/flat-button";
 import { useHideMobileChromeWhileMounted, useModalFocusTrap } from "@/hooks/use-modal-behavior";
 import { useStudentNotificationCounts, useTeacherNotificationCounts } from "@/hooks/use-notification-counts";
+import { ProgramWithdrawals, useProgramWithdrawals } from "@/components/data/program-withdrawals";
 import { getAccountLabel, getDefaultLandingHref, loadUserAccessByMosqueSlug } from "@/lib/authz";
 import { getCachedMosqueChrome, getCachedProfileSummary, getCachedSessionSnapshot, getCachedUserAccess, loadCachedSession, loadCachedUserAccess, loadMosqueChrome, performClientLogout, setCachedProfileName, setCachedProfileSummary, subscribeCachedSession } from "@/lib/client-cache";
 import { friendlyErrorMessage } from "@/lib/errors";
+import { canHaveProfilePhoto, supportedProfileImage } from "@/lib/profile-images";
 import { attachmentDisplayName, attachmentMetaLabel, formatAttachmentSize, normalizeMessageAttachments, type MessageAttachment } from "@/lib/messages/attachments";
 import { buildAnnouncementThreads, buildNoteThreads } from "@/lib/messages/threads";
 import { detectMobilePlatform, isStandalone } from "@/lib/pwa/install";
@@ -1084,7 +1086,7 @@ export function ProgramDetailData({ slug, programId, section = "public" }: { slu
             <section className="overflow-hidden rounded-[24px] bg-[#17624F] p-4 text-white shadow-[0_16px_34px_rgba(23,98,79,0.20)]">
               <p className="text-center text-[11px] font-semibold uppercase tracking-[0.18em] text-white/70">Program Director</p>
               <div className="mt-4 flex flex-col items-center gap-3 text-center">
-                <Avatar src={program.teacher?.avatar_url ?? null} name={teacherName} />
+                <Avatar src={program.teacher?.avatar_url ?? null} name={teacherName} allowPhoto />
                 <div className="min-w-0">
                   <h2 className="truncate text-lg font-semibold text-white">{teacherName}</h2>
                 </div>
@@ -2567,6 +2569,7 @@ export function PortalAccountData({ slug }: { slug: string }) {
   const initialAccess = initialUser?.id ? getCachedUserAccess(slug, initialUser.id) : null;
   const initialMetadataName = typeof initialUser?.user_metadata?.full_name === "string" ? initialUser.user_metadata.full_name : "";
   const [profile, setProfile] = useState<Profile | null>(null);
+  const canEditPhoto = canHaveProfilePhoto(profile?.account_type);
   const [sessionEmail, setSessionEmail] = useState(initialUser?.email ?? "");
   const [fallbackName, setFallbackName] = useState(initialProfileSummary?.fullName ?? (initialMetadataName || initialUser?.email?.split("@")[0] || "Guest"));
   const [accountLabel, setAccountLabel] = useState(initialAccess ? getAccountLabel(initialAccess) : "Account");
@@ -2861,6 +2864,7 @@ export function PortalAccountData({ slug }: { slug: string }) {
   }
 
   function openPhotoPanel() {
+    if (!canEditPhoto) return;
     setHasPanelNavigated(true);
     setPanelMotion("forward");
     setPhotoDraftUrl(profileForm.avatarUrl);
@@ -2894,7 +2898,7 @@ export function PortalAccountData({ slug }: { slug: string }) {
   }
 
   async function saveAvatarUrl(nextAvatarUrl: string) {
-    if (!profile?.id) {
+    if (!profile?.id || !canEditPhoto) {
       return;
     }
 
@@ -3111,7 +3115,7 @@ export function PortalAccountData({ slug }: { slug: string }) {
     menu: (
       <>
         <div className="flex flex-col items-center pt-3 text-center">
-          <AccountAvatar src={profile?.avatar_url ?? null} name={displayName} />
+          <AccountAvatar src={profile?.avatar_url ?? null} name={displayName} allowPhoto={canEditPhoto} />
           <h1 className="mt-5 text-2xl font-semibold tracking-[-0.01em] text-[#1F2A31]">{displayName}</h1>
           <p className="mt-1 text-sm font-medium text-[#6B747B]">{accountType}</p>
         </div>
@@ -3141,13 +3145,15 @@ export function PortalAccountData({ slug }: { slug: string }) {
         <AccountSubpageHeader title="Account Settings" onBack={closePanel} />
         <div className="mt-8">
           <div className="-mx-1 flex items-center gap-4 border-b border-[#E3E8EC] px-1 pb-7">
-            <AccountAvatar src={profile?.avatar_url ?? null} name={displayName} size="sm" />
+            <AccountAvatar src={profile?.avatar_url ?? null} name={displayName} size="sm" allowPhoto={canEditPhoto} />
+            {canEditPhoto ? <>
             <button type="button" onClick={openPhotoPanel} className="min-h-10 rounded-full bg-[#F2F4F5] px-5 text-sm font-semibold text-[#26323A]">
               Edit photo
             </button>
             <button type="button" onClick={removeProfilePhoto} disabled={profileSaving} className="min-h-10 rounded-full bg-[#FCEDEC] px-5 text-sm font-semibold text-[#8F2D23] disabled:opacity-60">
               Remove
             </button>
+            </> : null}
           </div>
 
           <section className="mt-7">
@@ -3230,7 +3236,7 @@ export function PortalAccountData({ slug }: { slug: string }) {
         </div>
       </>
     ),
-    photo: (
+    photo: canEditPhoto ? (
       <EditProfilePhotoPanel
         previewUrl={photoDraftUrl || profile?.avatar_url || ""}
         name={displayName}
@@ -3244,7 +3250,7 @@ export function PortalAccountData({ slug }: { slug: string }) {
         onFileChange={handlePhotoFile}
         onConfirm={confirmPhotoChanges}
       />
-    ),
+    ) : null,
     family: (
       <>
         <AccountSubpageHeader title="Family" onBack={closePanel} />
@@ -3339,8 +3345,8 @@ export function PortalAccountData({ slug }: { slug: string }) {
     ),
   };
 
-  const mobilePanel = activePanel;
-  const desktopPanel = activePanel === "menu" ? "settings" : activePanel;
+  const mobilePanel = activePanel === "photo" && !canEditPhoto ? "settings" : activePanel;
+  const desktopPanel = mobilePanel === "menu" ? "settings" : mobilePanel;
 
   function renderAccountPanel(panel: AccountPanel) {
     return (
@@ -5637,7 +5643,7 @@ function AdminMemberRow({
   return (
     <article>
       <div className="flex items-center gap-3 py-3">
-        <Avatar src={member.profile?.avatar_url ?? null} name={name} />
+        <Avatar src={member.profile?.avatar_url ?? null} name={name} allowPhoto={canHaveProfilePhoto(member.profile?.account_type)} />
         <div className="min-w-0 flex-1">
           <h3 className="truncate text-[15px] font-semibold leading-5 text-[#26323A]">{name}</h3>
           <p className="mt-0.5 truncate text-xs font-medium text-[#7B858C]">{roleLabel} · {activityLabel}</p>
@@ -5827,6 +5833,8 @@ export function TeacherStudentsData({ slug, programId }: { slug: string; program
   const [waitlist, setWaitlist] = useState<RequestWithContext[]>([]);
   const [canDecideApplications, setCanDecideApplications] = useState(false);
   const [studentAccess, setStudentAccess] = useState({ applications: false, finances: false, records: false, enrollments: false });
+  const withdrawalView = searchParams.get("view") === "withdrawals";
+  const { data: withdrawalSummary } = useProgramWithdrawals(programId, studentAccess.enrollments);
   const studentBasePath = `/m/${slug}/${typeof window !== "undefined" && /\/admin\//.test(window.location.pathname) ? "admin/programs" : "teacher/classes"}/${programId}`;
   const [studentSearch, setStudentSearch] = useState(originStudentId ?? "");
   const [genderFilter, setGenderFilter] = useState("all");
@@ -6260,7 +6268,11 @@ export function TeacherStudentsData({ slug, programId }: { slug: string; program
       ) : null}
       <div className="space-y-5">
         {error ? <div className="border-l-4 border-[#E25241] bg-[#FDEDEA] p-3 text-sm text-[#A4352A]">{error}</div> : null}
-
+        {studentAccess.enrollments ? <div className="flex gap-1 border-b border-[#E3E8EC]" aria-label="Student management views">
+          <button type="button" aria-pressed={!withdrawalView} onClick={() => router.replace(studentBasePath + "/students", { scroll: false })} className={cn("min-h-12 border-b-2 px-3 text-sm font-semibold", !withdrawalView ? "border-[#17624F] text-[#17624F]" : "border-transparent text-[#657178]")}>Students <span className="ml-1 text-xs text-[#657178]">{students.length}</span></button>
+          <button type="button" aria-pressed={withdrawalView} onClick={() => router.replace(studentBasePath + "/students?view=withdrawals", { scroll: false })} className={cn("flex min-h-12 items-center gap-2 border-b-2 px-3 text-sm font-semibold", withdrawalView ? "border-[#17624F] text-[#17624F]" : "border-transparent text-[#657178]")}>Withdrawals{(withdrawalSummary?.pendingCount ?? 0) > 0 ? <ActionRowCount count={withdrawalSummary!.pendingCount} urgent /> : null}</button>
+        </div> : null}
+        {withdrawalView && studentAccess.enrollments ? <ProgramWithdrawals programId={programId} programTitle={program.title} readOnly={program.publication_status === "archived" || Boolean(program.lifecycle_operation_id)} /> : <>
         <section className="space-y-4">
           {tracks.length ? (
             <div className="rounded-[24px] bg-[#F6FAFA] p-3">
@@ -6336,7 +6348,7 @@ export function TeacherStudentsData({ slug, programId }: { slug: string; program
           </p>
           {hasVisibleStudents ? (
             <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-4">
-              {filteredStudents.map((student) => <StudentIdentityCard key={student.enrollment.id} item={student} onOpen={() => openStudentFile(student)} />)}
+              {filteredStudents.map((student) => <StudentIdentityCard key={student.enrollment.id} item={student} withdrawalPending={withdrawalSummary?.pendingStudentIds.includes(student.enrollment.student_profile_id)} onOpen={() => openStudentFile(student)} />)}
             </div>
           ) : (
             <EmptyState title={students.length ? "No matching students" : "No enrolled students"} text={students.length ? "Adjust the search or filters." : "Accepted students will appear here."} />
@@ -6357,6 +6369,7 @@ export function TeacherStudentsData({ slug, programId }: { slug: string; program
           </section>
         ) : null}
         {!cameFrom && program ? <ProgramStudentInviteTools program={program} /> : null}
+        </>}
       </div>
       {reviewTarget ? (
         <ApplicationDecisionModal
@@ -7015,7 +7028,7 @@ type TeacherProgramsResult = {
   allPrograms: ProgramScheduleSource[];
   roleByProgramId: Record<string, TeacherProgramRole>;
   permissionsByProgramId: Record<string, InstructorPermissions>;
-  programCounts: Record<string, { students: number; applications: number; instructors: number }>;
+  programCounts: Record<string, { students: number; applications?: number; instructors: number; pendingApplications: number; pendingWithdrawals?: number }>;
   canCreateClass: boolean;
   currentUserId: string | null;
   error: string | null;
@@ -7045,16 +7058,19 @@ export async function fetchTeacherPrograms(slug: string): Promise<TeacherProgram
   }
 
   const supabase = createSupabaseBrowserClient();
-  const [{ data, error }, { data: permissionRows, error: permissionError }] = await Promise.all([
+  const [{ data, error }, { data: permissionRows, error: permissionError }, { data: actionCountData, error: actionCountError }] = await Promise.all([
     supabase.rpc("get_teacher_programs_snapshot", { p_slug: slug }),
     supabase.from("program_teachers")
       .select("program_id, role, can_view_student_records, can_manage_enrollments, can_view_applications, can_decide_applications, can_edit_class, can_manage_finances, can_announce")
       .eq("teacher_profile_id", userId),
+    supabase.rpc("get_class_action_counts", { p_slug: slug }),
   ]);
   if (error) {
     return { ...emptyTeacherProgramsResult, currentUserId: userId, error: error.message };
   }
   if (permissionError) return { ...emptyTeacherProgramsResult, currentUserId: userId, error: permissionError.message };
+  // Supplemental badges must not block the roster/class list during a staged
+  // migration rollout or a failed count request. Unknown totals stay unknown.
 
   const snapshot = data as unknown as {
     error: string | null;
@@ -7092,7 +7108,6 @@ export async function fetchTeacherPrograms(slug: string): Promise<TeacherProgram
   const memberships = snapshot.memberships;
   const trackRows = snapshot.tracks;
   const activeEnrollmentRows = snapshot.activeEnrollments;
-  const pendingRequestRows = snapshot.pendingRequests;
   const instructorRows = snapshot.instructorRows;
   const directorProfileIds = Array.from(new Set((mosquePrograms ?? []).map((program) => program.director_profile_id ?? program.teacher_profile_id).filter((id): id is string => Boolean(id))));
   const programIds = (mosquePrograms ?? []).map((program) => program.id);
@@ -7108,15 +7123,13 @@ export async function fetchTeacherPrograms(slug: string): Promise<TeacherProgram
   const assignmentRoleByProgramId = Object.fromEntries(
     (assignments ?? []).map((assignment) => [assignment.program_id, assignment.role === "director" ? "director" : "instructor" as TeacherProgramRole]),
   ) as Record<string, TeacherProgramRole>;
-  const nextProgramCounts: Record<string, { students: number; applications: number; instructors: number }> = {};
+  const nextProgramCounts: TeacherProgramsResult["programCounts"] = {};
+  const actionCounts = (actionCountData ?? {}) as Record<string, { applications: number | null; pendingApplications: number | null; pendingWithdrawals: number | null }>;
   for (const programId of programIds) {
-    nextProgramCounts[programId] = { students: 0, applications: 0, instructors: 0 };
+    nextProgramCounts[programId] = { students: 0, applications: actionCountError ? undefined : actionCounts[programId]?.applications ?? 0, instructors: 0, pendingApplications: actionCounts[programId]?.pendingApplications ?? (snapshot.pendingRequests ?? []).filter(row => row.program_id === programId).length, pendingWithdrawals: actionCountError ? undefined : actionCounts[programId]?.pendingWithdrawals ?? 0 };
   }
   for (const row of activeEnrollmentRows ?? []) {
     if (nextProgramCounts[row.program_id]) nextProgramCounts[row.program_id].students += 1;
-  }
-  for (const row of pendingRequestRows ?? []) {
-    if (nextProgramCounts[row.program_id]) nextProgramCounts[row.program_id].applications += 1;
   }
   for (const row of instructorRows ?? []) {
     if (nextProgramCounts[row.program_id]) nextProgramCounts[row.program_id].instructors += 1;
@@ -7576,7 +7589,7 @@ export function StudentAnnouncementCard({ announcement }: { announcement: Announ
   const attachments = normalizeMessageAttachments(announcement.attachments);
   return (
     <article className="flex gap-3">
-      <Avatar src={announcement.author?.avatar_url ?? null} name={announcement.author?.full_name ?? "Teacher"} />
+      <Avatar src={announcement.author?.avatar_url ?? null} name={announcement.author?.full_name ?? "Teacher"} allowPhoto />
       <div className="min-w-0 flex-1 rounded-2xl rounded-tl-sm border border-[#E1E8EC] bg-[#FAFBFC] p-3 shadow-[0_6px_18px_rgba(38,50,58,0.05)]">
         <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
           <h3 className="text-sm font-semibold text-[#26323A]">{announcement.author?.full_name ?? "Teacher"}</h3>
@@ -7723,7 +7736,7 @@ export function StudentNoteBubble({
   return (
     <article className="flex gap-3">
       <div className="flex shrink-0 flex-col items-center gap-2">
-        <Avatar src={note.author?.avatar_url ?? null} name={authorName} />
+      <Avatar src={note.author?.avatar_url ?? null} name={authorName} allowPhoto />
         {viewer === "teacher" && onDelete ? (
           <button
             type="button"
@@ -7823,11 +7836,7 @@ function AnnouncementReadersDrawer({ readers, onClose }: { readers: Profile[]; o
               const name = reader.full_name || reader.email || "Reader";
               return (
                 <div key={reader.id} className="flex items-center gap-3 rounded-[14px] bg-[#F7FAFB] px-3 py-2">
-                  {reader.avatar_url ? (
-                    <Image src={reader.avatar_url} alt="" width={28} height={28} className="h-7 w-7 rounded-full object-cover" />
-                  ) : (
-                    <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#E7F3F8] text-[10px] font-semibold text-[#2F8FB3]">{initials(name)}</span>
-                  )}
+                  <span className="flex h-7 w-7 items-center justify-center rounded-full bg-[#E7F3F8] text-[10px] font-semibold text-[#2F8FB3]">{initials(name)}</span>
                   <span className="min-w-0 truncate text-sm font-semibold">{name}</span>
                 </div>
               );
@@ -7859,7 +7868,7 @@ function InstructorLifecycleNotificationCard({
   return (
     <article className={cn("rounded-[22px] border border-[#E1E8EC] bg-white p-4 shadow-[0_10px_24px_rgba(38,50,58,0.07)]", reviewed ? "opacity-70" : "")}>
       <div className="flex items-start gap-3">
-        <Avatar src={notification.instructor?.avatar_url ?? null} name={instructorName} />
+        <Avatar src={notification.instructor?.avatar_url ?? null} name={instructorName} allowPhoto />
         <div className="min-w-0 flex-1">
           <p className="text-sm leading-6 text-[#26323A]">
             <span className="font-semibold">{instructorName}</span> {actionText} <span className="font-semibold">{programTitle}</span>.
@@ -8353,7 +8362,7 @@ function TeacherStudentListControls({
 
 type StudentLinks = { basePath: string; access: { applications: boolean; finances: boolean; records: boolean; enrollments: boolean } };
 
-function StudentIdentityCard({ item, onOpen }: { item: TeacherStudentItem; onOpen: () => void }) {
+function StudentIdentityCard({ item, onOpen, withdrawalPending }: { item: TeacherStudentItem; onOpen: () => void; withdrawalPending?: boolean }) {
   const name = item.profile?.full_name?.trim() || "Student";
   const content = <>
     <div className="flex items-start justify-between gap-3">
@@ -8364,6 +8373,7 @@ function StudentIdentityCard({ item, onOpen }: { item: TeacherStudentItem; onOpe
       <h3 className="truncate text-[15px] font-semibold text-[#26323A]">{name}</h3>
       <p className="mt-1 text-xs font-medium text-[#748189]">{item.parent ? "Child student" : "Adult student"}</p>
       {item.parent?.full_name ? <p className="mt-2 truncate text-xs text-[#52616A]">Parent: {item.parent.full_name}</p> : null}
+      {withdrawalPending ? <p className="mt-2 text-xs font-semibold text-[#B42318]">Withdrawal pending</p> : null}
     </div>
   </>;
   const className = "block min-h-40 rounded-[20px] border border-[#DFE7EA] bg-white p-4 text-left shadow-[0_8px_24px_rgba(38,50,58,0.06)] transition hover:-translate-y-0.5 hover:border-[#B9D3CC] hover:shadow-[0_12px_28px_rgba(38,50,58,0.10)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2F8FB3]";
@@ -10197,7 +10207,7 @@ function ProgramCard({
           const directorName = program.coverDirectorDisplayName?.trim() || program.teacher?.full_name;
           return (
             <div className="flex items-start gap-3">
-              {showPhoto ? <Avatar src={program.teacher?.avatar_url ?? null} name={directorName ?? "Teacher"} /> : null}
+              {showPhoto ? <Avatar src={program.teacher?.avatar_url ?? null} name={directorName ?? "Teacher"} allowPhoto /> : null}
               <div className="min-w-0">
                 <h3 className="line-clamp-2 text-lg font-medium leading-6 text-[#26323A]">{program.title}</h3>
                 {program.summary ? (
@@ -10992,7 +11002,7 @@ function TeacherClassCard({
   basePath?: string;
   controlLabel?: string;
   permissions?: InstructorPermissions;
-  counts?: { students?: number; applications?: number; instructors?: number };
+  counts?: { students?: number; applications?: number; instructors?: number; pendingApplications?: number; pendingWithdrawals?: number };
   onResigned?: () => void;
   onResignError?: (message: string) => void;
   onDeleted?: () => void;
@@ -11055,7 +11065,7 @@ function TeacherClassCard({
         <AudienceDetails age={age} gender={gender} />
         {program.teacher && program.coverDirectorVisibility !== "hidden" ? (
           <div className="flex items-center gap-3 rounded-[14px] bg-[#F5F9F8] px-3 py-2.5">
-            {program.coverDirectorVisibility !== "name_only" ? <Avatar src={program.teacher.avatar_url ?? null} name={program.coverDirectorDisplayName ?? program.teacher.full_name ?? "Program Director"} /> : null}
+            {program.coverDirectorVisibility !== "name_only" ? <Avatar src={program.teacher.avatar_url ?? null} name={program.coverDirectorDisplayName ?? program.teacher.full_name ?? "Program Director"} allowPhoto /> : null}
             <div className="min-w-0">
               <p className="text-[10px] font-semibold uppercase tracking-wide text-[#6B747B]">Program Director</p>
               <p className="truncate text-sm font-semibold text-[#26323A]">{program.coverDirectorDisplayName ?? program.teacher.full_name ?? "To be announced"}</p>
@@ -11065,8 +11075,8 @@ function TeacherClassCard({
         <p className="pt-1 text-[10px] font-semibold uppercase tracking-[0.14em] text-[#6B747B]">Teacher Actions</p>
         <div className="divide-y divide-[#E3E8EC] border-t border-[#E3E8EC]">
           {!archived ? <TeacherActionLink href={publicHref} icon={<ExternalLinkIcon />} label="View Public Page" previewLabel="Class Details" /> : null}
-          <TeacherActionLink href={`${classBasePath}/${program.id}/students`} icon={<StudentsIcon />} label="Students" count={counts?.students} />
-          {isDirector || permissions?.can_view_applications || permissions?.can_decide_applications ? <TeacherActionLink href={`${classBasePath}/${program.id}/applications`} icon={<ClipboardIcon />} label="Applications" count={counts?.applications} urgent /> : null}
+          <TeacherActionLink href={`${classBasePath}/${program.id}/students`} icon={<StudentsIcon />} label="Students" count={counts?.students} actionCount={counts?.pendingWithdrawals} actionLabel="withdrawal" actionHref={`${classBasePath}/${program.id}/students?view=withdrawals`} />
+          {isDirector || permissions?.can_view_applications || permissions?.can_decide_applications ? <TeacherActionLink href={`${classBasePath}/${program.id}/applications`} icon={<ClipboardIcon />} label="Applications" count={counts?.applications} actionCount={counts?.pendingApplications} actionLabel="pending" /> : null}
           {isDirector || permissions?.can_manage_finances ? <TeacherActionLink href={`${classBasePath}/${program.id}/finances`} icon={<FinanceIcon />} label="Finances" /> : null}
           {isDirector && !archived ? <TeacherActionLink href={`${classBasePath}/${program.id}/instructors`} icon={<InstructorManageIcon />} label="Instructors" count={counts?.instructors} /> : null}
           {!closed && (isDirector || permissions?.can_announce) ? <TeacherActionLink href={`${classBasePath}/${program.id}/announcement`} icon={<MegaphoneIcon />} label="Make Announcement" /> : null}
@@ -11104,16 +11114,19 @@ function programLessonColor(programId: string) {
   return `hsl(${hue} ${saturation}% ${lightness}%)`;
 }
 
-function TeacherActionLink({ href, icon, label, previewLabel, count, urgent }: { href: string; icon: ReactNode; label: string; previewLabel?: string; count?: number; urgent?: boolean }) {
+function TeacherActionLink({ href, icon, label, previewLabel, count, actionCount, actionLabel, actionHref }: { href: string; icon: ReactNode; label: string; previewLabel?: string; count?: number; actionCount?: number; actionLabel?: string; actionHref?: string }) {
   return (
-    <TransitionLink href={href} label={previewLabel ?? label} className="group flex min-h-[58px] min-w-0 items-center gap-3 text-sm font-semibold text-[#26323A] transition hover:bg-[#F7FAFB]">
+    <div className="group flex min-h-[58px] min-w-0 items-center gap-2 text-sm font-semibold text-[#26323A] transition hover:bg-[#F7FAFB]">
+    <TransitionLink href={href} label={previewLabel ?? label} className="flex min-h-[58px] min-w-0 flex-1 items-center gap-3">
       <span className="flex h-10 w-10 shrink-0 items-center justify-center text-[#26323A] transition group-hover:text-[#17624F]" aria-hidden>
         {icon}
       </span>
       <span className="min-w-0 flex-1 text-left leading-5">{label}</span>
-      {count ? <ActionRowCount count={count} urgent={urgent} /> : null}
-      <ChevronRightIcon className="text-[#9AA4AA]" />
+      {count != null ? <span aria-label={`${count} total ${label.toLowerCase()}`}><ActionRowCount count={count} /></span> : null}
     </TransitionLink>
+    {(actionCount ?? 0) > 0 ? <TransitionLink href={actionHref ?? href} label={label} aria-label={`${actionCount} ${actionLabel === "withdrawal" ? actionCount === 1 ? "withdrawal" : "withdrawals" : "pending applications"} to review`} className="inline-flex min-h-11 shrink-0 items-center"><span className="rounded-full bg-[#C0392B] px-2 py-1 text-[11px] font-semibold text-white">{actionCount} {actionLabel === "withdrawal" && actionCount !== 1 ? "withdrawals" : actionLabel}</span></TransitionLink> : null}
+    <ChevronRightIcon className="text-[#9AA4AA]" />
+    </div>
   );
 }
 
@@ -12448,10 +12461,12 @@ function AccountPanelFrame({ children }: { children: ReactNode }) {
   return <div className="w-full shrink-0 px-1 pb-24">{children}</div>;
 }
 
-function AccountAvatar({ src, name, size = "lg" }: { src: string | null; name: string; size?: "sm" | "lg" }) {
+function AccountAvatar({ src, name, size = "lg", allowPhoto = false }: { src: string | null; name: string; size?: "sm" | "lg"; allowPhoto?: boolean }) {
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  const imageSrc = allowPhoto ? supportedProfileImage(src) : null;
   const sizeClass = size === "sm" ? "h-16 w-16 text-xl shadow-[0_10px_26px_rgba(38,50,58,0.1)]" : "h-32 w-32 text-4xl shadow-[0_18px_42px_rgba(38,50,58,0.12)]";
-  if (src) {
-    return <Image src={src} alt="" width={128} height={128} className={cn(sizeClass, "rounded-full object-cover")} />;
+  if (imageSrc && failedSrc !== imageSrc) {
+    return <Image src={imageSrc} alt="" width={128} height={128} onError={() => setFailedSrc(imageSrc)} className={cn(sizeClass, "rounded-full object-cover")} />;
   }
 
   return (
@@ -13346,9 +13361,11 @@ function Logo({ src, name }: { src: string | null; name: string }) {
   );
 }
 
-export function Avatar({ src, name }: { src: string | null; name: string }) {
-  if (src) {
-    return <Image src={src} alt="" width={42} height={42} className="h-11 w-11 shrink-0 rounded-full object-cover" />;
+export function Avatar({ src, name, allowPhoto = false }: { src: string | null; name: string; allowPhoto?: boolean }) {
+  const [failedSrc, setFailedSrc] = useState<string | null>(null);
+  const imageSrc = allowPhoto ? supportedProfileImage(src) : null;
+  if (imageSrc && failedSrc !== imageSrc) {
+    return <Image src={imageSrc} alt="" width={42} height={42} onError={() => setFailedSrc(imageSrc)} className="h-11 w-11 shrink-0 rounded-full object-cover" />;
   }
 
   return (

@@ -4,12 +4,12 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { QuietPageLoadingState } from "@/components/data/data-loading";
 import { loadCachedSession } from "@/lib/client-cache";
-
-type GuardState = "checking" | "allowed" | "denied";
+import { useSessionIdentity } from "@/hooks/use-session-identity";
 
 export function PortalRouteGuard({ children, slug }: { children: React.ReactNode; slug: string }) {
   const router = useRouter();
-  const [state, setState] = useState<GuardState>("checking");
+  const sessionIdentity = useSessionIdentity();
+  const [allowedUserId, setAllowedUserId] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -21,20 +21,20 @@ export function PortalRouteGuard({ children, slug }: { children: React.ReactNode
       }
 
       if (session?.user.id) {
-        setState("allowed");
+        setAllowedUserId(session.user.id);
         return;
       }
 
-      setState("denied");
+      setAllowedUserId(null);
       router.replace(`/m/${slug}/login`);
     })();
 
     return () => {
       cancelled = true;
     };
-  }, [router, slug]);
+  }, [router, slug, sessionIdentity]);
 
-  if (state === "allowed") {
+  if (sessionIdentity && allowedUserId === sessionIdentity) {
     return <>{children}</>;
   }
 

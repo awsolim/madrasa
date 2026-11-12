@@ -3,8 +3,6 @@
 import { useEffect } from "react";
 import {
   fetchAdminProgramsWithTracks,
-  fetchAdminMasjidSnapshot,
-  fetchApplicantApplications,
   fetchMosqueProgramsSnapshot,
   fetchStudentEnrollments,
   fetchTeacherPrograms,
@@ -48,7 +46,8 @@ export function PrimaryNavPrefetch({ slug, section }: { slug: string; section: "
       }
 
       if (section === "admin" && userId) {
-        prefetchQuery(`admin-masjid:${slug}`, () => fetchAdminMasjidSnapshot(slug));
+        // Membership/usage administration is loaded on its own tab, rather than
+        // alongside every admin launch's class and notification queries.
         prefetchQuery(`teacher-programs:${slug}:${userId}`, () => fetchTeacherPrograms(slug));
         prefetchQuery(`admin-programs:${slug}:${userId}`, () => fetchAdminProgramsWithTracks(slug));
         prefetchQuery(`notification-counts:teacher:${slug}:${userId}`, () => fetchTeacherNotificationCounts(slug, userId));
@@ -58,7 +57,8 @@ export function PrimaryNavPrefetch({ slug, section }: { slug: string; section: "
         prefetchQuery(`mosque-programs:${slug}`, () => fetchMosqueProgramsSnapshot(slug));
         if (userId) {
           prefetchQuery(`student-enrollments:${slug}:${userId}`, () => fetchStudentEnrollments(slug, userId));
-          prefetchQuery(`student-applications:${slug}:${userId}`, () => fetchApplicantApplications(slug, userId));
+          // The inbox snapshot already includes application notifications. The
+          // separate application-list dataset can load when that list is opened.
           void loadStudentInboxSnapshot(slug, userId).catch(() => undefined);
           prefetchQuery(`notification-counts:student:${slug}:${userId}`, () => fetchStudentNotificationCounts(slug, userId));
         }

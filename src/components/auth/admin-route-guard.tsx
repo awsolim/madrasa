@@ -6,11 +6,14 @@ import { useRouter } from "next/navigation";
 import { QuietPageLoadingState } from "@/components/data/data-loading";
 import { loadCachedSession, loadCachedUserAccess } from "@/lib/client-cache";
 import { emptyUserAccess } from "@/lib/authz";
+import { useSessionIdentity } from "@/hooks/use-session-identity";
 
 type GuardState = "checking" | "allowed" | "denied";
 
 export function AdminRouteGuard({ children, slug }: { children: React.ReactNode; slug: string }) {
   const router = useRouter();
+  const sessionIdentity = useSessionIdentity();
+  const [checkedUserId, setCheckedUserId] = useState<string | null>(null);
   const [state, setState] = useState<GuardState>("checking");
   const [accessError, setAccessError] = useState<string | null>(null);
   const [attempt, setAttempt] = useState(0);
@@ -25,6 +28,8 @@ export function AdminRouteGuard({ children, slug }: { children: React.ReactNode;
         return;
       }
       if (access.resolutionError) { setAccessError(access.resolutionError); return; }
+      setAccessError(null);
+      setCheckedUserId(session?.user.id ?? null);
 
       if (access.isMosqueAdmin) {
         setState("allowed");
@@ -39,15 +44,15 @@ export function AdminRouteGuard({ children, slug }: { children: React.ReactNode;
     return () => {
       cancelled = true;
     };
-  }, [router, slug, attempt]);
+  }, [router, slug, attempt, sessionIdentity]);
 
   if (accessError) return <main className="p-6 text-center"><p role="alert">{accessError}</p><button className="mt-4 rounded-lg border px-5 py-3" onClick={() => { setAccessError(null); setAttempt(value => value + 1); }}>Try again</button></main>;
 
-  if (state === "allowed") {
+  if (state === "allowed" && sessionIdentity && checkedUserId === sessionIdentity) {
     return <>{children}</>;
   }
 
-  if (state === "denied") {
+  if (state === "denied" && checkedUserId === sessionIdentity) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[var(--workspace)] px-6 text-center">
         <div className="max-w-sm space-y-3">
