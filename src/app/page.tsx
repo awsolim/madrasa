@@ -1,4 +1,8 @@
 import type { Metadata } from "next";
+import { Suspense } from "react";
+import { headers } from "next/headers";
+import { DirectoryUnavailable, MasjidDirectory } from "@/components/marketing/masjid-directory";
+import { loadPublicMasjids } from "@/lib/public-masjids";
 import Image from "next/image";
 import { Fraunces, Manrope } from "next/font/google";
 import { ContactModalButton } from "@/components/marketing/contact-modal-button";
@@ -59,6 +63,7 @@ export default function Page() {
       <div className="relative z-[1]">
         <SiteHeader />
         <Hero />
+        <MasjidDirectorySection />
         <ProblemSection />
         <WorkflowSection />
         <ProductTour />
@@ -87,7 +92,7 @@ function SiteHeader() {
           </span>
         </a>
 
-        <nav className="hidden items-center gap-7 text-[13px] font-semibold uppercase tracking-[0.08em] md:flex">
+        <nav className="hidden items-center gap-7 text-[13px] font-semibold uppercase tracking-[0.08em] lg:flex">
           {[
             ["How it works", "#workflow"],
             ["Features", "#features"],
@@ -101,19 +106,21 @@ function SiteHeader() {
         </nav>
 
         <div className="flex items-center gap-3">
+          <a href="#masjids" className="whitespace-nowrap rounded-full bg-[#17624F] px-4 py-2.5 text-[13px] font-semibold text-white transition-colors hover:bg-[#104C3E] focus-visible:outline-2 focus-visible:outline-offset-4 focus-visible:outline-[#17624F]">Find your masjid</a>
           <ContactModalButton
-            className="hidden rounded-full border px-5 py-2 text-[13px] font-semibold sm:inline-block"
+            className="hidden rounded-full border px-5 py-2 text-[13px] font-semibold xl:inline-block"
             style={{ borderColor: green, color: green }}
             headingClassName={display.className}
           >
             Contact
           </ContactModalButton>
-          <details className="relative md:hidden">
+          <details className="relative lg:hidden">
             <summary className="flex h-9 w-9 list-none items-center justify-center rounded-full border" style={{ borderColor: line }} aria-label="Menu">
               <MenuGlyph />
             </summary>
             <div className="absolute right-0 top-11 z-40 w-52 rounded-2xl border p-2 text-sm font-semibold shadow-[0_18px_40px_rgba(18,36,32,0.16)]" style={{ borderColor: line, backgroundColor: white }}>
               {[
+                ["Find your masjid", "#masjids"],
                 ["How it works", "#workflow"],
                 ["Features", "#features"],
                 ["For organizations", "#organizations"],
@@ -161,8 +168,8 @@ function Hero() {
             >
               Contact
             </ContactModalButton>
-            <a href="#workflow" className="group inline-flex items-center gap-2 text-[14px] font-bold" style={{ color: ink }}>
-              See how it works
+            <a href="#masjids" className="group inline-flex items-center gap-2 text-[14px] font-bold" style={{ color: ink }}>
+              Find your masjid
               <span className="transition-transform group-hover:translate-y-0.5">↓</span>
             </a>
           </div>
@@ -187,6 +194,31 @@ function Hero() {
       </div>
     </section>
   );
+}
+
+function MasjidDirectorySection() {
+  return (
+    <section id="masjids" aria-labelledby="masjid-directory-title" className="scroll-mt-8 border-t px-5 py-14 sm:px-8 sm:py-20" style={{ borderColor: line, backgroundColor: white }}>
+      <div className="mx-auto grid max-w-6xl gap-8 lg:grid-cols-[0.7fr_1.3fr] lg:gap-16">
+        <div>
+          <h2 id="masjid-directory-title" className={`${display.className} text-[30px] leading-[1.2] sm:text-[36px]`}>Find your masjid.</h2>
+          <p className="mt-4 max-w-sm text-[15px] leading-[1.7]" style={{ color: inkSoft }}>Open your community&rsquo;s portal to browse classes or sign in.</p>
+        </div>
+        <Suspense fallback={<p role="status" className="border-y py-7 text-sm" style={{ borderColor: line, color: inkSoft }}>Loading masjids…</p>}>
+          <RegisteredMasjids />
+        </Suspense>
+      </div>
+    </section>
+  );
+}
+
+async function RegisteredMasjids() {
+  const requestHeaders = await headers();
+  const hostname = (requestHeaders.get("x-forwarded-host") || requestHeaders.get("host") || "").split(",")[0].trim().split(":")[0].toLowerCase();
+  const rootDomain = (process.env.NEXT_PUBLIC_ROOT_DOMAIN || "madrasa.ca").toLowerCase();
+  const masjids = await loadPublicMasjids().catch(() => null);
+  if (!masjids) return <DirectoryUnavailable />;
+  return <MasjidDirectory masjids={masjids} hostname={hostname} rootDomain={rootDomain} />;
 }
 
 function ProblemSection() {

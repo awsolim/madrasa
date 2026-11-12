@@ -44,6 +44,7 @@ import { InstallDemoTabs } from "@/components/pwa/install-demo-tabs";
 import { ConfirmModal } from "@/components/ui/confirm-modal";
 import { FlatLink } from "@/components/ui/flat-button";
 import { useHideMobileChromeWhileMounted, useModalFocusTrap } from "@/hooks/use-modal-behavior";
+import { useDismissMenu } from "@/hooks/use-dismiss-menu";
 import { useStudentNotificationCounts, useTeacherNotificationCounts } from "@/hooks/use-notification-counts";
 import { ProgramWithdrawals, useProgramWithdrawals } from "@/components/data/program-withdrawals";
 import { getAccountLabel, getDefaultLandingHref, loadUserAccessByMosqueSlug } from "@/lib/authz";
@@ -5833,6 +5834,10 @@ export function TeacherStudentsData({ slug, programId }: { slug: string; program
   const [waitlist, setWaitlist] = useState<RequestWithContext[]>([]);
   const [canDecideApplications, setCanDecideApplications] = useState(false);
   const [studentAccess, setStudentAccess] = useState({ applications: false, finances: false, records: false, enrollments: false });
+  const inactiveView = searchParams.get("view") === "inactive";
+  const [capacityExpanded, setCapacityExpanded] = useState(false);
+  const activeStudents = students.filter((student) => isCurrentEnrollmentStatus(student.enrollment.status));
+  const inactiveStudents = students.filter((student) => !isCurrentEnrollmentStatus(student.enrollment.status));
   const withdrawalView = searchParams.get("view") === "withdrawals";
   const { data: withdrawalSummary } = useProgramWithdrawals(programId, studentAccess.enrollments);
   const studentBasePath = `/m/${slug}/${typeof window !== "undefined" && /\/admin\//.test(window.location.pathname) ? "admin/programs" : "teacher/classes"}/${programId}`;
@@ -5863,6 +5868,14 @@ export function TeacherStudentsData({ slug, programId }: { slug: string; program
       setStudentSearch(originStudentId);
     }
   }, [originStudentId, cameFrom]);
+
+  function showRosterView(view: "active" | "inactive" | "withdrawals") {
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("requestId");
+    if (view === "active") params.delete("view");
+    else params.set("view", view);
+    router.replace(studentBasePath + "/students" + (params.size ? "?" + params.toString() : ""), { scroll: false });
+  }
 
   function notesHref(studentId: string) {
     const isAdminRoute = typeof window !== "undefined" && (window.location.pathname.startsWith(`/m/${slug}/admin/`) || window.location.pathname.startsWith("/admin/"));
@@ -5973,7 +5986,6 @@ export function TeacherStudentsData({ slug, programId }: { slug: string; program
       availableRosterDays,
       currentUserId: userId,
       students: (enrollmentRows ?? [])
-        .filter((enrollment) => isCurrentEnrollmentStatus(enrollment.status))
         .map((enrollment) => ({
           enrollment,
           trackIds: [
@@ -6075,10 +6087,10 @@ export function TeacherStudentsData({ slug, programId }: { slug: string; program
     }
 
     window.dispatchEvent(new Event("tareeqah:notifications-changed"));
-    const refreshedRoster = await fetchTeacherRoster();
     invalidatePrivateSnapshots(`students:${slug}:${programId}:`);
+    const refreshedRoster = await fetchTeacherRoster();
     await refetchRoster();
-    const stillVisible = refreshedRoster.students.some((student) => student.enrollment.student_profile_id === studentId);
+    const stillVisible = refreshedRoster.students.some((student) => student.enrollment.student_profile_id === studentId && isCurrentEnrollmentStatus(student.enrollment.status));
     setBusyStudentId(null);
     if (stillVisible) {
       setError("The student was updated, but they are still appearing in the active roster. Try refreshing the page.");
@@ -6160,6 +6172,7 @@ export function TeacherStudentsData({ slug, programId }: { slug: string; program
   const filteredStudents = useMemo(() => {
     const query = studentSearch.trim().toLowerCase();
     const sorted = students
+      .filter((student) => inactiveView !== isCurrentEnrollmentStatus(student.enrollment.status))
       .filter((student) => {
         const gender = normalizeGender(student.profile?.gender ?? null);
         const genderMatches = genderFilter === "all" || gender === genderFilter;
@@ -6217,7 +6230,7 @@ export function TeacherStudentsData({ slug, programId }: { slug: string; program
         return sortDirection === "asc" ? comparison : -comparison;
       });
     return sorted;
-  }, [activeSessionKey, genderFilter, rosterDayOptions, selectedRosterDays, selectedRosterTrackIds, sortDirection, studentSearch, studentSort, students, trackDayMap, trackSessionKeysById, tracks]);
+  }, [inactiveView, activeSessionKey, genderFilter, rosterDayOptions, selectedRosterDays, selectedRosterTrackIds, sortDirection, studentSearch, studentSort, students, trackDayMap, trackSessionKeysById, tracks]);
   const resultCount = filteredStudents.length;
   const hasVisibleStudents = resultCount > 0;
 
@@ -6268,24 +6281,23 @@ export function TeacherStudentsData({ slug, programId }: { slug: string; program
       ) : null}
       <div className="space-y-5">
         {error ? <div className="border-l-4 border-[#E25241] bg-[#FDEDEA] p-3 text-sm text-[#A4352A]">{error}</div> : null}
-        {studentAccess.enrollments ? <div className="flex gap-1 border-b border-[#E3E8EC]" aria-label="Student management views">
-          <button type="button" aria-pressed={!withdrawalView} onClick={() => router.replace(studentBasePath + "/students", { scroll: false })} className={cn("min-h-12 border-b-2 px-3 text-sm font-semibold", !withdrawalView ? "border-[#17624F] text-[#17624F]" : "border-transparent text-[#657178]")}>Students <span className="ml-1 text-xs text-[#657178]">{students.length}</span></button>
-          <button type="button" aria-pressed={withdrawalView} onClick={() => router.replace(studentBasePath + "/students?view=withdrawals", { scroll: false })} className={cn("flex min-h-12 items-center gap-2 border-b-2 px-3 text-sm font-semibold", withdrawalView ? "border-[#17624F] text-[#17624F]" : "border-transparent text-[#657178]")}>Withdrawals{(withdrawalSummary?.pendingCount ?? 0) > 0 ? <ActionRowCount count={withdrawalSummary!.pendingCount} urgent /> : null}</button>
-        </div> : null}
+        <div className="flex justify-center gap-1 border-b border-[#E3E8EC]" aria-label="Student management views">
+          {([{ key: "active", label: "Active", count: activeStudents.length }, { key: "inactive", label: "Inactive", count: inactiveStudents.length }] as const).map((tab) => {
+            const selected = !withdrawalView && (tab.key === "inactive") === inactiveView;
+            return <button key={tab.key} type="button" aria-pressed={selected} onClick={() => showRosterView(tab.key)} className={cn("min-h-12 border-b-2 px-2 text-sm font-semibold", selected ? "border-[#17624F] text-[#17624F]" : "border-transparent text-[#657178]")}>{tab.label} <span className="ml-1 text-xs text-[#657178]">{tab.count}</span></button>;
+          })}
+          {studentAccess.enrollments ? <button type="button" aria-pressed={withdrawalView} onClick={() => showRosterView("withdrawals")} className={cn("flex min-h-12 items-center gap-1.5 border-b-2 px-2 text-sm font-semibold", withdrawalView ? "border-[#17624F] text-[#17624F]" : "border-transparent text-[#657178]")}>Withdrawals{(withdrawalSummary?.pendingCount ?? 0) > 0 ? <ActionRowCount count={withdrawalSummary!.pendingCount} urgent /> : null}</button> : null}
+        </div>
         {withdrawalView && studentAccess.enrollments ? <ProgramWithdrawals programId={programId} programTitle={program.title} readOnly={program.publication_status === "archived" || Boolean(program.lifecycle_operation_id)} /> : <>
         <section className="space-y-4">
           {tracks.length ? (
             <div className="rounded-[24px] bg-[#F6FAFA] p-3">
-              <div className="flex items-center justify-between gap-3 px-1 pb-2">
-                <div>
-                  <p className="text-[10px] font-semibold uppercase tracking-wide text-[#7B858C]">Track Snapshot</p>
-                  <h2 className="text-lg font-semibold text-[#26323A]">{program.title}</h2>
-                </div>
-                <span className="rounded-full bg-white px-3 py-1 text-xs font-semibold text-[#52616A] shadow-[0_4px_12px_rgba(38,50,58,0.06)]">
-                  {students.filter((student) => isCurrentEnrollmentStatus(student.enrollment.status)).length} active
-                </span>
-              </div>
-              <div className="grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+              <button type="button" aria-expanded={capacityExpanded} aria-controls="student-track-capacities" onClick={() => setCapacityExpanded((value) => !value)} className="flex min-h-11 w-full items-center gap-3 px-1 text-left text-[#26323A]">
+                <span className="min-w-0 flex-1 text-base font-semibold">{program.title}</span>
+                <span className="shrink-0 text-xs font-semibold text-[#52616A]">{activeStudents.length} active</span>
+                <ChevronIcon expanded={capacityExpanded} />
+              </button>
+              <div id="student-track-capacities" hidden={!capacityExpanded} className={cn(capacityExpanded && "mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3")}>
                 {tracks.map((track) => {
                   const activeCount = students.filter((student) => isCurrentEnrollmentStatus(student.enrollment.status) && student.trackIds.includes(track.id)).length;
                   const capacity = track.capacity ?? null;
@@ -6351,11 +6363,11 @@ export function TeacherStudentsData({ slug, programId }: { slug: string; program
               {filteredStudents.map((student) => <StudentIdentityCard key={student.enrollment.id} item={student} withdrawalPending={withdrawalSummary?.pendingStudentIds.includes(student.enrollment.student_profile_id)} onOpen={() => openStudentFile(student)} />)}
             </div>
           ) : (
-            <EmptyState title={students.length ? "No matching students" : "No enrolled students"} text={students.length ? "Adjust the search or filters." : "Accepted students will appear here."} />
+            <EmptyState title={(inactiveView ? inactiveStudents : activeStudents).length ? "No matching students" : inactiveView ? "No inactive students" : "No enrolled students"} text={(inactiveView ? inactiveStudents : activeStudents).length ? "Adjust the search or filters." : inactiveView ? "Students who have withdrawn or been removed will appear here." : "Accepted students will appear here."} />
           )}
         </section>
 
-        {!cameFrom && waitlist.length ? (
+        {!inactiveView && !cameFrom && waitlist.length ? (
           <section className="space-y-3">
             <HomeSectionTitle title="Waitlist" />
             {waitlist.map((request) => (
@@ -6368,7 +6380,7 @@ export function TeacherStudentsData({ slug, programId }: { slug: string; program
             ))}
           </section>
         ) : null}
-        {!cameFrom && program ? <ProgramStudentInviteTools program={program} /> : null}
+        {!inactiveView && !cameFrom && program ? <ProgramStudentInviteTools program={program} /> : null}
         </>}
       </div>
       {reviewTarget ? (
@@ -6383,7 +6395,7 @@ export function TeacherStudentsData({ slug, programId }: { slug: string; program
           onSubmit={(options) => reviewWaitlistedRequest(reviewTarget.request, reviewTarget.action, options)}
         />
       ) : null}
-      {studentFileRow && studentFileProgram ? <FinanceDetailsDrawer row={studentFileRow} program={studentFileProgram} canViewFinances={studentAccess.finances} canManageEnrollments={studentAccess.enrollments} childDialogOpen={Boolean(studentFileAction || kickTarget)} onClose={() => { setStudentFileRow(null); setStudentFileProgram(null); }} onAction={(action) => {
+      {studentFileRow && studentFileProgram ? <FinanceDetailsDrawer row={studentFileRow} program={studentFileProgram} canViewFinances={studentAccess.finances} canManageEnrollments={studentAccess.enrollments && isCurrentEnrollmentStatus(studentFileRow.enrollment.status)} childDialogOpen={Boolean(studentFileAction || kickTarget)} onClose={() => { setStudentFileRow(null); setStudentFileProgram(null); }} onAction={(action) => {
         if (action === "add_note") {
           setStudentFileRow(null);
           router.push(notesHref(studentFileRow.enrollment.student_profile_id));
@@ -6747,6 +6759,8 @@ function FinanceRowActionMenu({ row, onSelect }: { row: FinanceEnrollmentRow; on
   const [open, setOpen] = useState(false);
   const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null);
   const buttonRef = useRef<HTMLButtonElement | null>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
+  useDismissMenu(open, [buttonRef, panelRef], () => setOpen(false));
   const studentName = row.student?.full_name || "student";
   const menuItems: { action: FinanceRowMenuAction; label: string }[] = [
     { action: "view_details" as const, label: "View student file" },
@@ -6772,24 +6786,11 @@ function FinanceRowActionMenu({ row, onSelect }: { row: FinanceEnrollmentRow; on
       return;
     }
     updateMenuPosition();
-    function closeOnPointerDown(event: MouseEvent) {
-      const target = event.target as Node | null;
-      if (target && buttonRef.current?.contains(target)) {
-        return;
-      }
-      const menu = document.getElementById(`finance-action-menu-${row.enrollment.id}`);
-      if (target && menu?.contains(target)) {
-        return;
-      }
-      setOpen(false);
-    }
     window.addEventListener("resize", updateMenuPosition);
     window.addEventListener("scroll", updateMenuPosition, true);
-    document.addEventListener("mousedown", closeOnPointerDown);
     return () => {
       window.removeEventListener("resize", updateMenuPosition);
       window.removeEventListener("scroll", updateMenuPosition, true);
-      document.removeEventListener("mousedown", closeOnPointerDown);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, row.enrollment.id]);
@@ -6811,6 +6812,7 @@ function FinanceRowActionMenu({ row, onSelect }: { row: FinanceEnrollmentRow; on
       {open && menuPosition
         ? createPortal(
             <div
+              ref={panelRef}
               id={`finance-action-menu-${row.enrollment.id}`}
               className="fixed z-[80] w-[232px] rounded-[18px] border border-[#E1E8EC] bg-white p-1.5 text-sm shadow-[0_22px_60px_rgba(38,50,58,0.20)]"
               style={{ top: menuPosition.top, left: menuPosition.left }}
@@ -8183,6 +8185,12 @@ function TeacherStudentListControls({
   const [viewMenuOpen, setViewMenuOpen] = useState(false);
   const [trackMenuOpen, setTrackMenuOpen] = useState(false);
   const [dayMenuOpen, setDayMenuOpen] = useState(false);
+  const viewMenuRef = useRef<HTMLDivElement>(null);
+  const trackMenuRef = useRef<HTMLDivElement>(null);
+  const dayMenuRef = useRef<HTMLDivElement>(null);
+  useDismissMenu(viewMenuOpen, [viewMenuRef], () => setViewMenuOpen(false));
+  useDismissMenu(trackMenuOpen, [trackMenuRef], () => setTrackMenuOpen(false));
+  useDismissMenu(dayMenuOpen, [dayMenuRef], () => setDayMenuOpen(false));
   const allTracksSelected = tracks.length > 0 && selectedTrackIds.length === tracks.length;
   const trackLabel = tracks.length === 0 || allTracksSelected ? "All tracks" : selectedTrackIds.length === 0 ? "No tracks" : selectedTrackIds.length === 1 ? tracks.find((track) => track.id === selectedTrackIds[0])?.name ?? "1 track" : `${selectedTrackIds.length} tracks`;
   const availableDayOptions = dayOptions.length ? dayOptions : [...scheduleDayOptions];
@@ -8226,7 +8234,7 @@ function TeacherStudentListControls({
             );
           })}
         </div>
-        {canViewParents ? <div className="relative shrink-0">
+        {canViewParents ? <div ref={viewMenuRef} className="relative shrink-0">
           <button
             type="button"
             onClick={() => setViewMenuOpen((value) => !value)}
@@ -8260,7 +8268,7 @@ function TeacherStudentListControls({
       </div>
       <div className="grid gap-2">
         {tracks.length ? (
-          <div className="relative min-w-0">
+          <div ref={trackMenuRef} className="relative min-w-0">
             <button
               type="button"
               onClick={() => setTrackMenuOpen((value) => !value)}
@@ -8298,7 +8306,7 @@ function TeacherStudentListControls({
           </div>
         ) : null}
         <div className="grid grid-cols-[minmax(0,1fr)_minmax(0,130px)_38px] items-center gap-2">
-          <div className="relative min-w-0">
+          <div ref={dayMenuRef} className="relative min-w-0">
             <button
               type="button"
               onClick={() => setDayMenuOpen((value) => !value)}
@@ -8382,10 +8390,12 @@ function StudentIdentityCard({ item, onOpen, withdrawalPending }: { item: Teache
 
 function StudentActionMenu({ busy, onKick, basePath, access, studentId }: StudentLinks & { studentId: string; busy: boolean; onKick: () => void }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLSpanElement>(null);
+  useDismissMenu(menuOpen, [menuRef], () => setMenuOpen(false));
   if (!access.finances && !access.applications && !access.enrollments) return null;
 
   return (
-    <span className="relative shrink-0">
+    <span ref={menuRef} className="relative shrink-0">
       <button
         type="button"
         onClick={(event) => {
@@ -10720,6 +10730,8 @@ function UpcomingLessonActionMenu({
 }) {
   const [menuOpen, setMenuOpen] = useState(false);
   const buttonRef = useRef<HTMLButtonElement>(null);
+  const panelRef = useRef<HTMLSpanElement>(null);
+  useDismissMenu(menuOpen, [buttonRef, panelRef], () => setMenuOpen(false));
   const [menuPosition, setMenuPosition] = useState<{ top: number; left: number } | null>(null);
 
   useEffect(() => {
@@ -10773,7 +10785,7 @@ function UpcomingLessonActionMenu({
         <MoreVerticalIcon />
       </button>
       {menuOpen && menuPosition ? createPortal(
-        <span className="fixed z-[2147483646] w-44 rounded-[16px] border border-[#DDE5E9] bg-white p-1 text-sm shadow-[0_18px_44px_rgba(38,50,58,0.18)]" style={{ top: menuPosition.top, left: menuPosition.left }}>
+        <span ref={panelRef} className="fixed z-[2147483646] w-44 rounded-[16px] border border-[#DDE5E9] bg-white p-1 text-sm shadow-[0_18px_44px_rgba(38,50,58,0.18)]" style={{ top: menuPosition.top, left: menuPosition.left }}>
           {viewStudentsHref ? (
             <Link
               href={viewStudentsHref}

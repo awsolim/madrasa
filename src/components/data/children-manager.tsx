@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useMemo, useRef, useState } from "react";
 import { EmptyState } from "@/components/data/empty-state";
 import { DirectorySkeleton } from "@/components/data/data-loading";
 import { ConfirmModal } from "@/components/ui/confirm-modal";
@@ -8,6 +8,7 @@ import { friendlyErrorMessage } from "@/lib/errors";
 import { invalidateQuery } from "@/lib/query-cache";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { Database } from "@/lib/supabase/types";
+import { useDismissMenu } from "@/hooks/use-dismiss-menu";
 import { cn } from "@/lib/utils";
 
 type Profile = Database["public"]["Tables"]["profiles"]["Row"];
@@ -445,9 +446,11 @@ function FamilyChildRow({
 
 function FamilyActionMenu({ busy, onEdit, onRemove }: { busy: boolean; onEdit: () => void; onRemove: () => void }) {
   const [menuOpen, setMenuOpen] = useState(false);
+  const menuRef = useRef<HTMLSpanElement>(null);
+  useDismissMenu(menuOpen, [menuRef], () => setMenuOpen(false));
 
   return (
-    <span className="relative shrink-0">
+    <span ref={menuRef} className="relative shrink-0">
       <button
         type="button"
         onClick={(event) => {
