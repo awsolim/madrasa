@@ -50,6 +50,7 @@ import { ProgramWithdrawals, useProgramWithdrawals } from "@/components/data/pro
 import { getAccountLabel, getDefaultLandingHref, loadUserAccessByMosqueSlug } from "@/lib/authz";
 import { getCachedMosqueChrome, getCachedProfileSummary, getCachedSessionSnapshot, getCachedUserAccess, loadCachedSession, loadCachedUserAccess, loadMosqueChrome, performClientLogout, setCachedProfileName, setCachedProfileSummary, subscribeCachedSession } from "@/lib/client-cache";
 import { friendlyErrorMessage } from "@/lib/errors";
+import { studentClassesTab, type StudentClassesTab } from "@/lib/navigation-paths";
 import { canHaveProfilePhoto, supportedProfileImage } from "@/lib/profile-images";
 import { attachmentDisplayName, attachmentMetaLabel, formatAttachmentSize, normalizeMessageAttachments, type MessageAttachment } from "@/lib/messages/attachments";
 import { buildAnnouncementThreads, buildNoteThreads } from "@/lib/messages/threads";
@@ -484,7 +485,10 @@ export function StudentHomeData({ slug }: { slug: string }) {
       ) : null}
       <HomeSectionTitle title="Upcoming" />
       {enrolledPrograms.length === 0 ? (
-        <EmptyState title="You are not enrolled in any classes" text="Your next lesson will appear here after enrollment." />
+        <div className="rounded-2xl border border-[#E1E8EC] bg-white px-5 py-8 text-center">
+          <p className="text-sm leading-6 text-[#6B747B]">Your class schedule will appear here once you’re enrolled.</p>
+          <Link href={`/m/${slug}/portal/classes?tab=browse`} className="mt-4 inline-flex min-h-10 items-center justify-center rounded-full bg-[#17624F] px-5 text-sm font-semibold !text-white hover:bg-[#104C3E]">Browse classes</Link>
+        </div>
       ) : (
         <HomeUpcomingRows programs={enrolledPrograms} ownerLabelsByProgramId={programOwnerLabels} ownerLabelsByTrackId={programOwnerLabelsByTrackId} />
       )}
@@ -2043,31 +2047,19 @@ export function RegistrationConfirmationData({ slug, requestId }: { slug: string
   );
 }
 
-type StudentClassesTab = "classes" | "applications" | "browse";
-
-function parseStudentClassesTab(value: string | null): StudentClassesTab {
-  if (value === "browse") {
-    return "browse";
-  }
-  if (value === "applications") {
-    return "applications";
-  }
-  return "classes";
-}
-
 export function StudentClassesData({ slug }: { slug: string }) {
   const { mosque, programs, enrolledProgramIds, loading, enrollmentLoading, error } = useStudentPrograms(slug);
   const { rows: applicationRows, loading: applicationsLoading, reload: reloadApplications } = useApplicantApplications(slug);
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [tab, setTab] = useState<StudentClassesTab>(parseStudentClassesTab(searchParams.get("tab")));
+  const [tab, setTab] = useState<StudentClassesTab>(studentClassesTab(searchParams.get("tab")));
   const [detailsRow, setDetailsRow] = useState<ApplicantApplicationRow | null>(null);
   const [rescindTarget, setRescindTarget] = useState<ApplicantApplicationRow | null>(null);
   const [rescindBusy, setRescindBusy] = useState(false);
   const requestDeepLinkHandledRef = useRef<string | null>(null);
 
   useEffect(() => {
-    setTab(parseStudentClassesTab(searchParams.get("tab")));
+    setTab(studentClassesTab(searchParams.get("tab")));
   }, [searchParams]);
 
   useEffect(() => {
@@ -2184,8 +2176,8 @@ export function StudentClassesData({ slug }: { slug: string }) {
       <div className="flex justify-center gap-7 border-b border-[#D6DCE0] px-4 md:hidden">
         {(
           [
-            ["classes", "My Classes"],
             ["browse", "Browse"],
+            ["classes", "My Classes"],
             ["applications", "Applications"],
           ] as const
         ).map(([id, label]) => (
@@ -2206,8 +2198,8 @@ export function StudentClassesData({ slug }: { slug: string }) {
       <div className="hidden gap-2 border-b border-[#D6DCE0] px-4 py-3 md:flex">
         {(
           [
-            ["classes", "My Classes"],
             ["browse", "Browse Classes"],
+            ["classes", "My Classes"],
             ["applications", "My Applications"],
           ] as const
         ).map(([id, label]) => (
@@ -4362,7 +4354,7 @@ export function TeacherHomeData({ slug }: { slug: string }) {
   }
 
   if (error) {
-    return <EmptyState title="Could not load teacher home" text={error} onRetry={() => window.location.reload()} />;
+    return <EmptyState title="Could not load schedule" text={error} onRetry={() => window.location.reload()} />;
   }
 
   return (
@@ -4390,7 +4382,7 @@ export function AdminHomeData({ slug }: { slug: string }) {
   }
 
   if (error) {
-    return <EmptyState title="Could not load admin home" text={error} onRetry={() => window.location.reload()} />;
+    return <EmptyState title="Could not load schedule" text={error} onRetry={() => window.location.reload()} />;
   }
 
   return (

@@ -1,4 +1,4 @@
-import { PublicMasjidPage } from "@/components/pages/public-pages";
+import { PublicProgramsPage } from "@/components/pages/public-pages";
 
 export default async function Page({
   params,
@@ -6,5 +6,5 @@ export default async function Page({
   params: Promise<{ slug: string }>;
 }) {
   const { slug } = await params;
-  return <PublicMasjidPage slug={slug} />;
+  return <PublicProgramsPage slug={slug} />;
 }

@@ -9,6 +9,8 @@ import { NavigationDiagnostics } from "@/components/monitoring/navigation-diagno
 import { MasjidActivityTracker } from "@/components/monitoring/masjid-activity-tracker";
 import { PushNotificationManager } from "@/components/pwa/push-notification-manager";
 
+import { workspaceNavItems } from "@/lib/navigation-paths";
+
 const defaultAppName = "Madrasa";
 
 export function AppChrome({
@@ -24,59 +26,9 @@ export function AppChrome({
   mobileNavItems?: NavItem[];
   slug: string;
 }) {
-  const scopedPublicNav = [
-    { label: "Home", href: `/m/${slug}` },
-    { label: "Classes", href: `/m/${slug}/programs` },
-    { label: "Inbox", href: `/m/${slug}/portal/announcements` },
-    { label: "Me", href: `/m/${slug}/account` },
-  ];
-  const scopedPublicMobileNav = [
-    { label: "Home", href: `/m/${slug}` },
-    { label: "Classes", href: `/m/${slug}/programs` },
-    { label: "Inbox", href: `/m/${slug}/portal/announcements` },
-    { label: "Me", href: `/m/${slug}/account` },
-  ];
-  const scopedPortalNav = [
-    { label: "Home", href: `/m/${slug}/portal` },
-    { label: "Classes", href: `/m/${slug}/portal/classes` },
-    { label: "Inbox", href: `/m/${slug}/portal/announcements` },
-    { label: "Me", href: `/m/${slug}/portal/account` },
-  ];
-  const scopedPortalMobileNav = [
-    { label: "Home", href: `/m/${slug}/portal` },
-    { label: "Classes", href: `/m/${slug}/portal/classes` },
-    { label: "Inbox", href: `/m/${slug}/portal/announcements` },
-    { label: "Me", href: `/m/${slug}/portal/account` },
-  ];
-  const scopedTeacherNav = [
-    { label: "Home", href: `/m/${slug}/teacher` },
-    { label: "Classes", href: `/m/${slug}/teacher/classes` },
-    { label: "Inbox", href: `/m/${slug}/teacher/inbox` },
-    { label: "Me", href: `/m/${slug}/teacher/account` },
-  ];
-  const scopedTeacherMobileNav = [
-    { label: "Home", href: `/m/${slug}/teacher` },
-    { label: "Classes", href: `/m/${slug}/teacher/classes` },
-    { label: "Inbox", href: `/m/${slug}/teacher/inbox` },
-    { label: "Me", href: `/m/${slug}/teacher/account` },
-  ];
-  const scopedAdminNav = [
-    { label: "Home", href: `/m/${slug}/admin` },
-    { label: "Classes", href: `/m/${slug}/admin/programs` },
-    { label: "Masjid", href: `/m/${slug}/admin/masjid` },
-    { label: "Me", href: `/m/${slug}/admin/settings` },
-  ];
-  const scopedAdminMobileNav = [
-    { label: "Home", href: `/m/${slug}/admin` },
-    { label: "Classes", href: `/m/${slug}/admin/programs` },
-    { label: "Masjid", href: `/m/${slug}/admin/masjid` },
-    { label: "Me", href: `/m/${slug}/admin/settings` },
-  ];
-
-  const resolvedNav = navItems ?? (section === "portal" ? scopedPortalNav : section === "teacher" ? scopedTeacherNav : section === "admin" ? scopedAdminNav : scopedPublicNav);
-  const resolvedMobileNav =
-    mobileNavItems ??
-    (section === "portal" ? scopedPortalMobileNav : section === "teacher" ? scopedTeacherMobileNav : section === "admin" ? scopedAdminMobileNav : scopedPublicMobileNav);
+  const defaultNav = workspaceNavItems(slug, section);
+  const resolvedNav = navItems ?? defaultNav;
+  const resolvedMobileNav = mobileNavItems ?? resolvedNav;
   const notificationSettingsHref = section === "admin"
     ? `/m/${slug}/admin/settings`
     : section === "teacher"
@@ -88,9 +40,9 @@ export function AppChrome({
       <NavigationDiagnostics />
       <MasjidActivityTracker slug={slug} />
       {section !== "public" ? <PushNotificationManager settingsHref={notificationSettingsHref} /> : null}
-      <AppTopBar appName={defaultAppName} mosqueSlug={slug} homeHref={`/m/${slug}`} navItems={resolvedNav} mobileNavItems={resolvedMobileNav} />
+      <AppTopBar appName={defaultAppName} mosqueSlug={slug} homeHref={resolvedNav[0]?.href ?? `/m/${slug}/programs`} navItems={resolvedNav} mobileNavItems={resolvedMobileNav} />
       <MobileBottomNav mosqueSlug={slug} navItems={resolvedNav} mobileNavItems={resolvedMobileNav} />
-      <DesktopSidebar appName={defaultAppName} mosqueSlug={slug} homeHref={`/m/${slug}`} navItems={resolvedNav} mobileNavItems={resolvedMobileNav} section={section} />
+      <DesktopSidebar appName={defaultAppName} mosqueSlug={slug} homeHref={resolvedNav[0]?.href ?? `/m/${slug}/programs`} navItems={resolvedNav} mobileNavItems={resolvedMobileNav} section={section} />
       <div className="md:min-h-screen md:bg-[var(--workspace)] md:pl-72">
         <div className="md:min-h-screen md:overflow-hidden md:bg-transparent">
           <PageTransitionFrame><WorkspacePages slug={slug} section={section}>{children}</WorkspacePages></PageTransitionFrame>

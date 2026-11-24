@@ -77,18 +77,18 @@ export function getDefaultLandingHref(slug: string, access: UserAccess) {
   const accountType = access.accountType?.toLowerCase() ?? null;
 
   if (accountType === "student" || accountType === "parent") {
-    return `/m/${slug}/portal`;
+    return `/m/${slug}/portal/classes`;
   }
 
   if (access.isMosqueAdmin) {
-    return `/m/${slug}/admin`;
+    return `/m/${slug}/admin/programs`;
   }
 
   if (access.isTeacher) {
-    return `/m/${slug}/teacher`;
+    return `/m/${slug}/teacher/classes`;
   }
 
-  return `/m/${slug}/portal`;
+  return `/m/${slug}/portal/classes`;
 }
 
 export function getClassesLandingHref(slug: string, access: UserAccess) {

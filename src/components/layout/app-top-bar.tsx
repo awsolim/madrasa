@@ -20,6 +20,8 @@ import {
   loadMosqueChrome,
   subscribeCachedSession,
 } from "@/lib/client-cache";
+import { primaryNavLabels } from "@/lib/navigation-paths";
+import { ScheduleIcon } from "@/components/ui/schedule-icon";
 import { cn } from "@/lib/utils";
 import { useStandaloneMode } from "@/lib/pwa/install";
 
@@ -29,7 +31,7 @@ function BottomNav({ items, inboxBadgeCount = 0, inboxActionRequired = false }: 
   const router = useRouter();
   const overlayChromeHidden = useOverlayChromeHidden();
   const itemByLabel = new Map(items.map((item) => [item.label, item]));
-  const visibleItems = ["Home", "Classes", "Inbox", "Members", "Masjid", "Me"]
+  const visibleItems = primaryNavLabels
     .map((label) => itemByLabel.get(label))
     .filter((item): item is NavItem => Boolean(item));
   const shouldShow = !overlayChromeHidden && isMainTabRoute(pathname, visibleItems);
@@ -159,7 +161,7 @@ function useOverlayChromeHidden() {
 
 function isNavItemActive(pathname: string, item: NavItem) {
   const hrefs = navItemPathCandidates(item.href);
-  return hrefs.some((href) => pathname === href || (item.label !== "Home" && pathname.startsWith(`${href}/`)));
+  return hrefs.some((href) => pathname === href || (item.label !== "Schedule" && pathname.startsWith(`${href}/`)));
 }
 
 function NavBadge({ count, actionRequired = false }: { count?: number; actionRequired?: boolean }) {
@@ -180,13 +182,7 @@ function NavIcon({ label, active = false }: { label: string; active?: boolean })
   const className = "h-6 w-6";
   const strokeWidth = 1.8;
 
-  if (active && label === "Home") {
-    return (
-      <svg viewBox="0 0 24 24" className={className} fill="currentColor" aria-hidden>
-        <path d="M4.8 10.9 12 4.55l7.2 6.35a.95.95 0 0 1-1.26 1.42l-.44-.39v6.48A2.1 2.1 0 0 1 15.4 20.5H8.6a2.1 2.1 0 0 1-2.1-2.09v-6.48l-.44.39A.95.95 0 1 1 4.8 10.9Z" />
-      </svg>
-    );
-  }
+  if (label === "Schedule") return <ScheduleIcon className={className} active={active} />;
 
   if (active && label === "Classes") {
     return (
@@ -230,15 +226,6 @@ function NavIcon({ label, active = false }: { label: string; active?: boolean })
       <svg viewBox="0 0 24 24" className={className} fill="currentColor" aria-hidden>
         <path d="M12 11.35a3.95 3.95 0 1 0 0-7.9 3.95 3.95 0 0 0 0 7.9Z" />
         <path d="M5.15 19.48c.87-3.62 3.16-5.44 6.85-5.44s5.98 1.82 6.85 5.44a.86.86 0 0 1-.84 1.07H5.99a.86.86 0 0 1-.84-1.07Z" />
-      </svg>
-    );
-  }
-
-  if (label === "Home") {
-    return (
-      <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth={strokeWidth} strokeLinecap="round" strokeLinejoin="round">
-        <path d="M4.75 10.95 12 4.55l7.25 6.4" />
-        <path d="M6.65 11.1v7.25a2 2 0 0 0 2 2h6.7a2 2 0 0 0 2-2V11.1" />
       </svg>
     );
   }
@@ -458,7 +445,7 @@ export function AppTopBar({
   const accountResolved = session !== undefined && (session === null || (accessResolved && profileResolved));
   const topBarReady = chromeResolved && accountResolved && standalone !== null;
   const resolvedMobileItems = mobileNavItems ?? navItems;
-  const webMenuItems = ["Home", "Classes", "Inbox", "Members", "Masjid", "Me"]
+  const webMenuItems = primaryNavLabels
     .map((label) => resolvedMobileItems.find((item) => item.label === label))
     .filter((item): item is NavItem => Boolean(item));
 
@@ -541,7 +528,7 @@ export function AppTopBar({
 }
 
 function isMainTabRoute(pathname: string, items: NavItem[]) {
-  const mainLabels = new Set(["Home", "Classes", "Inbox", "Members", "Masjid", "Me"]);
+  const mainLabels = new Set<string>(primaryNavLabels);
   return items.some((item) => mainLabels.has(item.label) && navItemPathCandidates(item.href).includes(pathname));
 }
 

@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { browserHref, workspacePath, workspaceRoute } from '../src/lib/navigation-paths.ts';
+import { browserHref, workspacePath, workspaceRoute, workspaceNavItems, studentClassesTab } from '../src/lib/navigation-paths.ts';
 
 test('both tenant URL forms resolve the same workspace screen', () => {
   assert.equal(workspacePath('/admin/programs', 'assiddiq'), '/m/assiddiq/admin/programs');
@@ -29,4 +29,33 @@ test('canonical URLs preserve queries and do not strip a different tenant', () =
   assert.equal(browserHref('/m/assiddiq', 'assiddiq', 'assiddiq.localhost'), '/');
   assert.equal(browserHref('/m/other/admin', 'assiddiq', `assiddiq.${root}`), '/m/other/admin');
   assert.equal(browserHref('/m/assiddiq/admin', 'assiddiq', 'localhost'), '/m/assiddiq/admin');
+});
+
+test('all role menus start with Classes then Schedule and preserve distinct destinations', () => {
+  for (const section of ['public', 'portal', 'teacher', 'admin']) {
+    const items = workspaceNavItems('assiddiq', section);
+    assert.deepEqual(items.map(item => item.label), ['Classes', 'Schedule', section === 'admin' ? 'Masjid' : 'Inbox', 'Me']);
+    assert.equal(workspaceRoute(items[0].href, 'assiddiq', section), 'classes');
+    assert.equal(workspaceRoute(items[1].href, 'assiddiq', section), 'home');
+    assert.notEqual(items[0].href, items[1].href);
+    assert.equal(workspaceRoute(browserHref(items[1].href, 'assiddiq', 'assiddiq.localhost'), 'assiddiq', section), 'home');
+  }
+});
+
+test('existing staff and family schedule URLs stay usable while tenant root opens Classes', () => {
+  for (const role of ['admin', 'teacher', 'portal']) {
+    assert.equal(workspaceRoute(`/m/assiddiq/${role}`, 'assiddiq', role), 'home');
+    assert.equal(workspaceRoute(`/${role}`, 'assiddiq', role), 'home');
+  }
+  assert.equal(workspaceRoute('/', 'assiddiq', 'public'), 'classes');
+  assert.equal(workspaceRoute('/m/assiddiq', 'assiddiq', 'public'), 'classes');
+  assert.equal(workspaceRoute('/schedule', 'assiddiq', 'public'), 'home');
+});
+
+test('Classes defaults to offered programs without overriding explicit personal or application views', () => {
+  assert.equal(studentClassesTab(null), 'browse');
+  assert.equal(studentClassesTab('invalid'), 'browse');
+  assert.equal(studentClassesTab('browse'), 'browse');
+  assert.equal(studentClassesTab('classes'), 'classes');
+  assert.equal(studentClassesTab('applications'), 'applications');
 });

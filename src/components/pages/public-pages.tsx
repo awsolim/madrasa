@@ -33,7 +33,7 @@ function PublicWorkspace({
 export function PublicMasjidPage({ slug }: { slug: string }) {
   return (
     <>
-      <PageTitleBar title="Home" subtitle="Registration, schedules, and family class updates." />
+      <PageTitleBar title="Schedule" subtitle="Upcoming sessions for your enrolled classes." />
       <PublicWorkspace>
         <PublicMasjidData slug={slug} />
       </PublicWorkspace>

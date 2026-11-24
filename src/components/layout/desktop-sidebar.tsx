@@ -21,6 +21,8 @@ import {
   performClientLogout,
   subscribeCachedSession,
 } from "@/lib/client-cache";
+import { workspaceNavItems } from "@/lib/navigation-paths";
+import { ScheduleIcon } from "@/components/ui/schedule-icon";
 import { cn } from "@/lib/utils";
 import { canHaveProfilePhoto } from "@/lib/profile-images";
 
@@ -463,39 +465,7 @@ function DesktopAccountSubnav({ mosqueSlug, accountHref }: { mosqueSlug: string;
 }
 
 function buildDesktopItems(section: "public" | "portal" | "teacher" | "admin", mosqueSlug: string): NavItem[] {
-  if (section === "teacher") {
-    return [
-      { label: "Home", href: `/m/${mosqueSlug}/teacher` },
-      { label: "Classes", href: `/m/${mosqueSlug}/teacher/classes` },
-      { label: "Inbox", href: `/m/${mosqueSlug}/teacher/inbox` },
-      { label: "Me", href: `/m/${mosqueSlug}/teacher/account` },
-    ];
-  }
-
-  if (section === "admin") {
-    return [
-      { label: "Home", href: `/m/${mosqueSlug}/admin` },
-      { label: "Classes", href: `/m/${mosqueSlug}/admin/programs` },
-      { label: "Masjid", href: `/m/${mosqueSlug}/admin/masjid` },
-      { label: "Me", href: `/m/${mosqueSlug}/admin/settings` },
-    ];
-  }
-
-  if (section === "portal") {
-    return [
-      { label: "Home", href: `/m/${mosqueSlug}/portal` },
-      { label: "Classes", href: `/m/${mosqueSlug}/portal/classes` },
-      { label: "Inbox", href: `/m/${mosqueSlug}/portal/announcements` },
-      { label: "Me", href: `/m/${mosqueSlug}/portal/account` },
-    ];
-  }
-
-  return [
-    { label: "Home", href: `/m/${mosqueSlug}` },
-    { label: "Classes", href: `/m/${mosqueSlug}/programs` },
-    { label: "Inbox", href: `/m/${mosqueSlug}/portal/announcements` },
-    { label: "Me", href: `/m/${mosqueSlug}/account` },
-  ];
+  return workspaceNavItems(mosqueSlug, section);
 }
 
 function buildDesktopSubItems(label: string, section: "public" | "portal" | "teacher" | "admin", mosqueSlug: string, accountHref: string) {
@@ -510,8 +480,8 @@ function buildDesktopSubItems(label: string, section: "public" | "portal" | "tea
     }
     if (section === "portal") {
       return [
-        { label: "My Classes", href: `${base}/portal/classes?tab=classes` },
         { label: "Browse", href: `${base}/portal/classes?tab=browse` },
+        { label: "My Classes", href: `${base}/portal/classes?tab=classes` },
         { label: "Applications", href: `${base}/portal/classes?tab=applications` },
       ];
     }
@@ -562,7 +532,7 @@ function accountHrefForSection(section: "public" | "portal" | "teacher" | "admin
 
 function desktopLabel(label: string) {
   if (label === "Dashboard") {
-    return "Home";
+    return "Schedule";
   }
 
   if (label === "Announcements") {
@@ -583,7 +553,7 @@ function desktopLabel(label: string) {
 function isNavItemActive(pathname: string, item: NavItem) {
   const hrefPath = item.href.split("?")[0];
 
-  return pathname === hrefPath || (item.label !== "Home" && pathname.startsWith(`${hrefPath}/`));
+  return pathname === hrefPath || (item.label !== "Schedule" && pathname.startsWith(`${hrefPath}/`));
 }
 
 function isHrefActive(pathname: string, searchParams: SearchParamReader, href: string) {
@@ -596,7 +566,8 @@ function isHrefActive(pathname: string, searchParams: SearchParamReader, href: s
   }
   const hrefParams = new URLSearchParams(queryString);
   for (const [key, value] of hrefParams.entries()) {
-    if (searchParams.get(key) !== value) {
+    const defaultTab = key === "tab" && hrefPath.endsWith("/portal/classes") ? "browse" : null;
+    if ((searchParams.get(key) ?? defaultTab) !== value) {
       return false;
     }
   }
@@ -643,15 +614,7 @@ function SidebarIcon({ label }: { label: string }) {
   const className = "h-5 w-5";
   const normalized = desktopLabel(label);
 
-  if (normalized === "Home") {
-    return (
-      <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
-        <path d="M3.5 11.5 12 4l8.5 7.5" />
-        <path d="M6.5 10.5V20h11v-9.5" />
-        <path d="M10 20v-5h4v5" />
-      </svg>
-    );
-  }
+  if (normalized === "Schedule") return <ScheduleIcon className={className} />;
 
   if (normalized === "Classes" || normalized === "Programs") {
     return (

@@ -36,7 +36,7 @@ export function TeacherProgramAttendancePage({ slug, programId, returnTo, from }
 export function TeacherProgramMarkAttendancePage({ slug, programId }: { slug: string; programId: string }) {
   return (
     <>
-      <PageTitleBar title="Mark Attendance" backHref={`/m/${slug}/teacher`} backLabel="Home" tone="teal" />
+      <PageTitleBar title="Mark Attendance" backHref={`/m/${slug}/teacher`} backLabel="Schedule" tone="teal" />
       <AttendanceWorkspace>
         <ProgramAttendanceMarkData slug={slug} programId={programId} />
       </AttendanceWorkspace>
@@ -58,7 +58,7 @@ export function AdminProgramAttendancePage({ slug, programId }: { slug: string; 
 export function AdminProgramMarkAttendancePage({ slug, programId }: { slug: string; programId: string }) {
   return (
     <>
-      <PageTitleBar title="Mark Attendance" backHref={`/m/${slug}/admin`} backLabel="Home" tone="teal" />
+      <PageTitleBar title="Mark Attendance" backHref={`/m/${slug}/admin`} backLabel="Schedule" tone="teal" />
       <AttendanceWorkspace>
         <ProgramAttendanceMarkData slug={slug} programId={programId} mode="admin" />
       </AttendanceWorkspace>

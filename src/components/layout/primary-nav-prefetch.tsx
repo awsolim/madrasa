@@ -15,7 +15,7 @@ import { prefetchQuery } from "@/lib/query-cache";
 
 // Warms primary-tab content right after the app shell mounts, without gating rendering.
 // -- before you've tapped anything. Combined with the query cache now persisting to
-// localStorage, this means a fresh app open can have Home and Classes already resident by the
+// localStorage, this means a fresh app open can have Classes and Schedule already resident by the
 // time you look at them, not just fast once you've visited once this session. Mirrors the
 // same cache keys/fetchers each page's own useCachedQuery call already uses, so a warm entry
 // here is read directly -- no separate cache, no risk of double-fetching.

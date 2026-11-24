@@ -29,7 +29,7 @@ function TeacherWorkspace({
 export function TeacherDashboardPage({ slug }: { slug: string }) {
   return (
     <>
-      <PageTitleBar title="Home" tone="teal" />
+      <PageTitleBar title="Schedule" tone="teal" />
       <TeacherWorkspace>
         <TeacherHomeData slug={slug} />
       </TeacherWorkspace>
@@ -56,7 +56,7 @@ export function TeacherStudentsPage({ slug, programId, fromHome }: { slug: strin
   return (
     <>
       {fromHome ? (
-        <PageTitleBar title="Students" closeHref={`/m/${slug}/teacher`} closeLabel="Home" />
+        <PageTitleBar title="Students" closeHref={`/m/${slug}/teacher`} closeLabel="Schedule" />
       ) : (
         <PageTitleBar title="Students" backHref={`/m/${slug}/teacher/classes`} backLabel="Classes" />
       )}

@@ -70,7 +70,7 @@ export function PortalProgramDetailPage({ programId, slug }: { programId: string
 export function PortalDashboardPage({ slug }: { slug: string }) {
   return (
     <PortalRoleRedirect slug={slug} teacherHref={`/m/${slug}/teacher`} adminHref={`/m/${slug}/admin`}>
-      <PageTitleBar title="Home" />
+      <PageTitleBar title="Schedule" />
       <PortalWorkspace>
         <StudentHomeData slug={slug} />
       </PortalWorkspace>

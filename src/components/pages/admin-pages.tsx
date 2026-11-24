@@ -29,7 +29,7 @@ function AdminWorkspace({
 export function AdminDashboardPage({ slug }: { slug: string }) {
   return (
     <>
-      <PageTitleBar title="Home" tone="teal" />
+      <PageTitleBar title="Schedule" tone="teal" />
       <AdminWorkspace>
         <AdminHomeData slug={slug} />
       </AdminWorkspace>

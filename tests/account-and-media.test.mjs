@@ -35,7 +35,17 @@ test('database account type beats stale metadata and routes admin correctly', as
   const access = await mod.loadUserAccessByMosqueSlug('masjid');
   assert.equal(access.isMosqueAdmin, true);
   assert.equal(mod.getAccountLabel(access), 'Admin Account');
-  assert.equal(mod.getDefaultLandingHref('masjid', access), '/m/masjid/admin');
+  assert.equal(mod.getDefaultLandingHref('masjid', access), '/m/masjid/admin/programs');
+});
+test('sign-in and installed-app landing resolve to role-specific Classes without an enrollment-dependent order', () => {
+  const mod = authModule();
+  for (const accountType of ['parent', 'student', null]) {
+    assert.equal(mod.getDefaultLandingHref('masjid', { ...mod.emptyUserAccess, accountType }), '/m/masjid/portal/classes');
+  }
+  assert.equal(mod.getDefaultLandingHref('masjid', { ...mod.emptyUserAccess, accountType: 'teacher', isTeacher: true }), '/m/masjid/teacher/classes');
+  assert.equal(mod.getDefaultLandingHref('masjid', { ...mod.emptyUserAccess, accountType: 'admin', isMosqueAdmin: true }), '/m/masjid/admin/programs');
+  assert.equal(mod.safeReturnTo('/m/masjid/portal/classes?tab=applications&requestId=example', 'masjid'), '/m/masjid/portal/classes?tab=applications&requestId=example');
+  assert.equal(mod.safeReturnTo('/m/masjid/teacher/classes/example/students?view=withdrawals', 'masjid'), '/m/masjid/teacher/classes/example/students?view=withdrawals');
 });
 for (const table of ['profiles', 'mosque_memberships', 'mosques']) {
   test(`failed ${table} lookup never resolves as a parent or guest`, async () => {
