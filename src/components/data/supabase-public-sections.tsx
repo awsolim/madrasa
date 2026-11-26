@@ -10100,22 +10100,25 @@ function ProgramCard({
       <div className="flex flex-1 items-stretch">
         <div className="relative min-h-[176px] w-[38%] max-w-[148px] shrink-0 overflow-hidden bg-[#EAE3D4]">
           {program.thumbnail_url ? (
-            <Image src={program.thumbnail_url} alt="" fill sizes="(min-width: 380px) 148px, 132px" className="object-cover" />
+            <Image src={program.thumbnail_url} alt="" fill sizes="(max-width: 420px) 38vw, 148px" className="object-contain p-2" />
           ) : (
             <div className="absolute inset-0 flex items-center justify-center text-[#71857C]" aria-hidden><PhotoIcon className="h-7 w-7" /></div>
           )}
         </div>
-        <div className="flex min-w-0 flex-1 flex-col p-4">
+        <div className="flex min-w-0 flex-1 flex-col justify-between gap-3 p-4">
           <h3 className="break-words text-lg font-semibold leading-[1.35] text-[#26323A] group-hover:text-[#17624F]">{program.title}</h3>
           {showName ? (
-            <div className="mt-3 flex items-center gap-2 text-[13px] leading-[19px] text-[#52616A]">
+            <div className="flex items-center gap-2.5 text-[13px] leading-[19px] text-[#52616A]">
               {visibility === "name_and_photo" && directorPhoto ? (
                 <Image src={directorPhoto} alt="" width={48} height={48} className="h-12 w-12 shrink-0 rounded-full border border-[#D8CCB4] object-cover" />
               ) : null}
-              <p className="min-w-0 break-words"><span className="text-[#6B747B]">Director: </span>{directorName || "To be announced"}</p>
+              <p className="min-w-0 break-words">
+                <span className="block text-[11px] leading-4 text-[#6B747B]">Director</span>
+                <span className="font-medium text-[#384B43]">{directorName || "To be announced"}</span>
+              </p>
             </div>
           ) : null}
-          <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs font-medium leading-[18px] text-[#384B43]">
+          <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs font-medium leading-[18px] text-[#384B43]">
             <span>{formatAgeRange(program.age_range_text)}</span>
             <span className="h-3 w-px bg-[#BEAD86]" aria-hidden />
             <span>{formatGender(program.audience_gender)}</span>
