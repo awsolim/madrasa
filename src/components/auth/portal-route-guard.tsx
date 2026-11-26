@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { QuietPageLoadingState } from "@/components/data/data-loading";
 import { loadCachedSession } from "@/lib/client-cache";
 import { useSessionIdentity } from "@/hooks/use-session-identity";
+import { browserHref } from "@/lib/navigation-paths";
 
 export function PortalRouteGuard({ children, slug }: { children: React.ReactNode; slug: string }) {
   const router = useRouter();
@@ -31,7 +32,7 @@ export function PortalRouteGuard({ children, slug }: { children: React.ReactNode
       }
 
       setAllowedUserId(null);
-      router.replace(`/m/${slug}/login`);
+      router.replace(browserHref(`/m/${slug}/programs`, slug, window.location.hostname));
     })().catch(() => { if (!cancelled) setAccessError(accountConnectionMessage); }).finally(() => clearTimeout(startupTimeout));
 
     return () => {

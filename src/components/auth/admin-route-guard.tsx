@@ -8,6 +8,7 @@ import { QuietPageLoadingState } from "@/components/data/data-loading";
 import { loadCachedSession, loadCachedUserAccess } from "@/lib/client-cache";
 import { emptyUserAccess } from "@/lib/authz";
 import { useSessionIdentity } from "@/hooks/use-session-identity";
+import { browserHref } from "@/lib/navigation-paths";
 
 type GuardState = "checking" | "allowed" | "denied";
 
@@ -39,8 +40,8 @@ export function AdminRouteGuard({ children, slug }: { children: React.ReactNode;
       }
 
       setState("denied");
-      const fallbackHref = access.profileId ? `/m/${slug}` : `/m/${slug}/login`;
-      router.replace(fallbackHref);
+      const fallbackHref = access.profileId ? `/m/${slug}` : `/m/${slug}/programs`;
+      router.replace(browserHref(fallbackHref, slug, window.location.hostname));
     })().catch(() => { if (!cancelled) setAccessError(accountConnectionMessage); }).finally(() => clearTimeout(startupTimeout));
 
     return () => {
@@ -55,7 +56,7 @@ export function AdminRouteGuard({ children, slug }: { children: React.ReactNode;
     return <>{children}</>;
   }
 
-  if (state === "denied" && checkedUserId === sessionIdentity) {
+  if (state === "denied" && sessionIdentity && checkedUserId === sessionIdentity) {
     return (
       <main className="flex min-h-screen items-center justify-center bg-[var(--workspace)] px-6 text-center">
         <div className="max-w-sm space-y-3">

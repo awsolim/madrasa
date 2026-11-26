@@ -362,6 +362,7 @@ function DesktopAccountSubnav({ mosqueSlug, accountHref }: { mosqueSlug: string;
   const searchParams = useSearchParams();
   const router = useRouter();
   const hasMounted = useHasMounted();
+  const [logoutError, setLogoutError] = useState(false);
 
   const cachedSession = getCachedSessionSnapshot();
   const [session, setSession] = useState<Session | null>(cachedSession ?? null);
@@ -453,13 +454,14 @@ function DesktopAccountSubnav({ mosqueSlug, accountHref }: { mosqueSlug: string;
       <button
         type="button"
         onClick={() => {
-          router.replace(`/m/${mosqueSlug}/login`);
-          void performClientLogout();
+          setLogoutError(false);
+          void performClientLogout(mosqueSlug).catch(() => setLogoutError(true));
         }}
         className="flex min-h-9 w-full items-center rounded-xl px-3 text-left text-sm font-medium text-[var(--danger-darker)] transition-colors hover:bg-[#FDF1F0]"
       >
         Log out
       </button>
+      {logoutError ? <p role="alert" className="px-3 text-xs text-[var(--danger-darker)]">Could not log out. Please try again.</p> : null}
     </div>
   );
 }

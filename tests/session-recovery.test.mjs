@@ -29,24 +29,31 @@ test('development module reloads reuse one browser client and keep projects sepa
   assert.equal(creates, 2);
 });
 
-function cacheFixture(loadAccess = async () => { throw new Error("Access unavailable"); }) {
+function cacheFixture(loadAccess = async () => { throw new Error("Access unavailable"); }, environment = {}) {
   let finish;
   let authEvent;
   let logoutOptions;
+  const events = new Map();
+  const destinations = [];
   const auth = {
     getSession: () => new Promise(resolve => { finish = resolve; }),
     onAuthStateChange: callback => { authEvent = callback; return { data: { subscription: { unsubscribe() {} } } }; },
-    signOut: async options => { logoutOptions = options; },
+    signOut: async options => { logoutOptions = options; return environment.signOut?.(); },
   };
   const exports = {};
-  vm.runInNewContext(cacheCode, { exports, navigator: {}, window: {}, require: name => {
+  vm.runInNewContext(cacheCode, { exports, navigator: environment.navigator ?? {}, window: {
+    addEventListener: (name, callback) => events.set(name, callback),
+    location: { hostname: 'assiddiq.madrasa.ca', replace: href => destinations.push(href) },
+    ...environment.window,
+  }, require: name => {
     if (name.endsWith('/client')) return { createSupabaseBrowserClient: () => ({ auth }) };
     if (name.endsWith('/query-cache')) return { clearAllQueryCache() {} };
     if (name.endsWith('/authz')) return { emptyUserAccess: {}, loadUserAccessByMosqueSlug: loadAccess };
     if (name.endsWith('/profile-images')) return { canHaveProfilePhoto: () => false };
+    if (name.endsWith('/navigation-paths')) return { browserHref: (href, slug, hostname) => hostname === `${slug}.madrasa.ca` ? href.replace(`/m/${slug}`, '') : href };
     throw new Error(name);
   } });
-  return { exports, finish: value => finish({ data: { session: value } }), finishError: error => finish({ data: { session: null }, error }), authEvent: (event, value) => authEvent(event, value), get logoutOptions() { return logoutOptions; } };
+  return { exports, destinations, pageshow: persisted => events.get('pageshow')({ persisted }), finish: value => finish({ data: { session: value } }), finishError: error => finish({ data: { session: null }, error }), authEvent: (event, value) => authEvent(event, value), get logoutOptions() { return logoutOptions; } };
 }
 
 test('late session read cannot erase a newer successful sign-in', async () => {
@@ -84,6 +91,45 @@ test('logout affects only the current session, leaving other devices signed in',
   const f = cacheFixture();
   await f.exports.performClientLogout();
   assert.equal(f.logoutOptions.scope, 'local');
+  assert.equal(f.exports.getCachedSessionSnapshot(), null);
+});
+
+test('logout does not wait for worker readiness and replaces history only after local sign-out', async () => {
+  let finishLogout;
+  let registrationReads = 0;
+  const f = cacheFixture(undefined, {
+    navigator: { serviceWorker: { ready: new Promise(() => {}), getRegistration: async () => { registrationReads++; return undefined; } } },
+    window: { PushManager: {} },
+    signOut: () => new Promise(resolve => { finishLogout = resolve; }),
+  });
+  f.exports.setCachedSessionSnapshot({ user: { id: 'old-account' }, access_token: 'test' });
+  const logout = f.exports.performClientLogout('assiddiq');
+  assert.equal(registrationReads, 1);
+  assert.equal(f.logoutOptions.scope, 'local');
+  assert.deepEqual(f.destinations, []);
+  finishLogout({ error: null });
+  await logout;
+  assert.equal(f.exports.getCachedSessionSnapshot(), null);
+  assert.deepEqual(f.destinations, ['/programs']);
+});
+
+test('failed local sign-out does not falsely navigate to a successful guest session', async () => {
+  const f = cacheFixture(undefined, { signOut: async () => ({ error: new Error('Sign-out unavailable') }) });
+  f.exports.setCachedSessionSnapshot({ user: { id: 'current-account' } });
+  await assert.rejects(f.exports.performClientLogout('assiddiq'), /Sign-out unavailable/);
+  assert.deepEqual(f.destinations, []);
+});
+
+test('back-forward cache restoration hides stale identity and rereads the persisted session', async () => {
+  const f = cacheFixture();
+  f.exports.subscribeCachedSession(() => {});
+  f.exports.setCachedSessionSnapshot({ user: { id: 'previous-account' } });
+  f.pageshow(false);
+  assert.equal(f.exports.getCachedSessionSnapshot().user.id, 'previous-account');
+  f.pageshow(true);
+  assert.equal(f.exports.getCachedSessionSnapshot(), undefined);
+  f.finish(null);
+  await new Promise(resolve => setImmediate(resolve));
   assert.equal(f.exports.getCachedSessionSnapshot(), null);
 });
 

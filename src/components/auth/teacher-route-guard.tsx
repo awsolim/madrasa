@@ -6,6 +6,7 @@ import { AccountConnectionError, accountConnectionMessage } from "@/components/a
 import { QuietPageLoadingState } from "@/components/data/data-loading";
 import { loadCachedSession, loadCachedUserAccess } from "@/lib/client-cache";
 import { useSessionIdentity } from "@/hooks/use-session-identity";
+import { browserHref } from "@/lib/navigation-paths";
 
 export function TeacherRouteGuard({ children, slug }: { children: React.ReactNode; slug: string }) {
   const pathname = usePathname();
@@ -26,7 +27,7 @@ export function TeacherRouteGuard({ children, slug }: { children: React.ReactNod
       }
 
       if (!session?.user.id) {
-        router.replace(`/m/${slug}/login`);
+        router.replace(browserHref(`/m/${slug}/programs`, slug, window.location.hostname));
         return;
       }
 

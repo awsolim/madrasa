@@ -5,6 +5,7 @@ import { emptyUserAccess, loadUserAccessByMosqueSlug, type UserAccess } from "@/
 import { clearAllQueryCache } from "@/lib/query-cache";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { canHaveProfilePhoto } from "@/lib/profile-images";
+import { browserHref } from "@/lib/navigation-paths";
 
 type MosqueChrome = {
   name: string;
@@ -339,30 +340,39 @@ export async function refreshCachedProfileSummary(userId: string) {
   return loadCachedProfileSummary(userId);
 }
 
-export async function performClientLogout() {
+async function detachLogoutNotifications(accessToken?: string) {
   try {
     if ("serviceWorker" in navigator && "PushManager" in window) {
-      const [session, registration] = await Promise.all([
-        createSupabaseBrowserClient().auth.getSession(),
-        navigator.serviceWorker.ready,
-      ]);
-      const subscription = await registration.pushManager.getSubscription();
-      const accessToken = session.data.session?.access_token;
+      // `ready` never resolves if no worker is installed (normal in local dev).
+      const registration = await navigator.serviceWorker.getRegistration();
+      const subscription = await registration?.pushManager.getSubscription();
       if (subscription && accessToken) {
         await fetch("/api/push/unsubscribe", {
           method: "POST",
           headers: { "content-type": "application/json", authorization: `Bearer ${accessToken}` },
           body: JSON.stringify({ endpoint: subscription.endpoint }),
+            keepalive: true,
+            signal: AbortSignal.timeout(2000),
         });
       }
     }
   } catch {
     // Logout must continue even when notification cleanup is unavailable.
   }
+}
+
+export async function performClientLogout(slug?: string) {
+  // Optional notification cleanup must never gate local sign-out.
+  void detachLogoutNotifications(cachedSession?.access_token);
+  // Signing out on this device must not revoke sessions on other devices.
+  const result = await createSupabaseBrowserClient().auth.signOut({ scope: "local" });
+  if (result?.error) throw result.error;
   clearUserScopedCaches();
   setCachedSessionSnapshot(null);
-  // Signing out on this device must not revoke sessions on other devices.
-  await createSupabaseBrowserClient().auth.signOut({ scope: "local" });
+  if (slug) {
+    // A new document discards mounted private screens and Next's route cache.
+    window.location.replace(browserHref(`/m/${slug}/programs`, slug, window.location.hostname));
+  }
 }
 
 function startAuthListener() {
@@ -371,6 +381,18 @@ function startAuthListener() {
   }
 
   authListenerStarted = true;
+  if (typeof window !== "undefined") window.addEventListener("pageshow", (event) => {
+    if (!event.persisted) return;
+    // A restored document may have been frozen before another page signed out.
+    // Hide private content until the SDK rereads the persisted session.
+    sessionRevision += 1;
+    sessionLoaded = false;
+    cachedSession = null;
+    sessionPromise = null;
+    clearUserScopedCaches();
+    sessionSubscribers.forEach((listener) => listener(null));
+    void loadCachedSession().catch(() => { /* Guards offer connection recovery. */ });
+  });
   createSupabaseBrowserClient().auth.onAuthStateChange((_event, session) => {
     // Initialization can finish after a newer sign-in or sign-out. The initial
     // callback must not replace an identity we have already resolved explicitly.

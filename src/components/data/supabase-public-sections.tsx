@@ -2706,8 +2706,7 @@ export function PortalAccountData({ slug }: { slug: string }) {
 
 
   function handleLogout() {
-    router.replace(`/m/${slug}/login`);
-    void performClientLogout();
+    void performClientLogout(slug).catch((error) => setToast({ tone: "error", message: friendlyErrorMessage(error, "Could not log out. Please try again.") }));
   }
 
   async function handleDeleteAccount() {
@@ -2737,8 +2736,7 @@ export function PortalAccountData({ slug }: { slug: string }) {
 
     setDeleteModalOpen(false);
     setDeleteBusy(false);
-    router.replace(`/m/${slug}/login`);
-    void performClientLogout();
+    void performClientLogout(slug).catch((error) => setToast({ tone: "error", message: friendlyErrorMessage(error, "Could not finish signing out. Please try again.") }));
   }
 
   async function handleReportProblem() {
@@ -10098,9 +10096,9 @@ function ProgramCard({
     <TransitionLink href={detailHref} label="Class Details" onPointerEnter={onOpenIntent} onFocus={onOpenIntent} onTouchStart={onOpenIntent}
       className="group flex min-h-[clamp(240px,calc((100svh-240px)/2),340px)] flex-col overflow-hidden rounded-2xl border border-[#E3DAC8] bg-[#FAF7EF] text-left transition-colors hover:border-[#B8A57A] hover:bg-[#F8F3E7] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#17624F] active:bg-[#F0E8D7] motion-reduce:transition-none md:min-h-0">
       <div className="flex flex-1 items-stretch">
-        <div className="relative min-h-[176px] w-[38%] max-w-[148px] shrink-0 overflow-hidden bg-[#EAE3D4]">
+        <div className="relative min-h-[176px] w-[42%] max-w-[164px] shrink-0 overflow-hidden bg-[#EAE3D4]">
           {program.thumbnail_url ? (
-            <Image src={program.thumbnail_url} alt="" fill sizes="(max-width: 420px) 38vw, 148px" className="object-contain p-2" />
+            <Image src={program.thumbnail_url} alt="" fill sizes="(max-width: 420px) 42vw, 164px" className="object-cover object-center" />
           ) : (
             <div className="absolute inset-0 flex items-center justify-center text-[#71857C]" aria-hidden><PhotoIcon className="h-7 w-7" /></div>
           )}
