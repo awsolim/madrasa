@@ -1,6 +1,7 @@
 import "server-only";
 
-import { createSupabaseServiceClient } from "@/lib/supabase/service";
+import { cache } from "react";
+import { getSupabasePublicEnv } from "@/lib/supabase/env";
 
 const DEFAULT_ROOT_DOMAIN = "madrasa.ca";
 const DEFAULT_BRANDING = {
@@ -29,9 +30,12 @@ type MosqueBrandingRow = {
   app_icon_url: string | null;
 };
 
+// Public identity only. Never cache a session or an authorization decision here.
+const lastKnownBranding = new Map<string, TenantBranding>();
+
 export function tenantSlugFromHost(hostname: string) {
   const rootDomain = (process.env.NEXT_PUBLIC_ROOT_DOMAIN || DEFAULT_ROOT_DOMAIN).toLowerCase();
-  const host = hostname.split(":")[0]?.toLowerCase() ?? "";
+  const host = hostname.split(",")[0]?.trim().split(":")[0]?.toLowerCase() ?? "";
 
   if (!host || host === rootDomain || host === `www.${rootDomain}`) {
     return null;
@@ -55,23 +59,36 @@ export async function loadTenantBrandingFromHost(hostname: string): Promise<Tena
   return slug ? loadTenantBrandingBySlug(slug) : { slug: null, chromeName: DEFAULT_BRANDING.name, ...DEFAULT_BRANDING };
 }
 
-export async function loadTenantBrandingBySlug(slug: string): Promise<TenantBranding> {
+export const loadTenantBrandingBySlug = cache(async (slug: string): Promise<TenantBranding> => {
   try {
-    const supabase = createSupabaseServiceClient();
-    const { data } = await supabase
-      .from("mosques")
-      .select("name, slug, short_name, logo_url, picture_url, pwa_name, app_icon_url")
-      .eq("slug", slug)
-      .maybeSingle<MosqueBrandingRow>();
-
-    if (!data) {
-      return { slug, chromeName: titleFromSlug(slug) || DEFAULT_BRANDING.name, ...DEFAULT_BRANDING };
-    }
-
-    return tenantBrandingFromMosque(data, slug);
+    const { url, anonKey } = getSupabasePublicEnv();
+    const endpoint = new URL("/rest/v1/mosques", url);
+    endpoint.searchParams.set("select", "name,slug,short_name,logo_url,picture_url,pwa_name,app_icon_url");
+    endpoint.searchParams.set("slug", `eq.${slug}`);
+    endpoint.searchParams.set("limit", "1");
+    // Branding must not hold startup behind repeated 15-second database retries.
+    // Next's data cache serves recent identity across requests; React cache also
+    // shares the lookup between layouts and metadata in the same render.
+    const response = await fetch(endpoint, {
+      headers: { apikey: anonKey },
+      next: { revalidate: 300, tags: [`tenant-branding:${slug}`] },
+      signal: AbortSignal.timeout(3500),
+    });
+    if (!response.ok) throw new Error("Tenant branding unavailable.");
+    const rows = await response.json() as MosqueBrandingRow[];
+    if (!rows[0]) return fallbackTenantBranding(slug);
+    const branding = tenantBrandingFromMosque(rows[0], slug);
+    lastKnownBranding.set(slug, branding);
+    if (lastKnownBranding.size > 100) lastKnownBranding.delete(lastKnownBranding.keys().next().value as string);
+    return branding;
   } catch {
-    return { slug, chromeName: titleFromSlug(slug) || DEFAULT_BRANDING.name, ...DEFAULT_BRANDING };
+    return lastKnownBranding.get(slug) ?? fallbackTenantBranding(slug);
   }
+});
+
+function fallbackTenantBranding(slug: string): TenantBranding {
+  const name = titleFromSlug(slug) || "Your masjid";
+  return { slug, name, shortName: name.slice(0, 24), chromeName: name, iconUrl: "/tenant-icon.svg", appleIconUrl: "/tenant-icon.svg" };
 }
 
 function tenantBrandingFromMosque(data: MosqueBrandingRow, fallbackSlug: string): TenantBranding {
@@ -79,7 +96,7 @@ function tenantBrandingFromMosque(data: MosqueBrandingRow, fallbackSlug: string)
   const chromeName = data.short_name?.trim() || fallbackName;
   const name = data.pwa_name?.trim() || fallbackName;
   const shortName = chromeName.slice(0, 24);
-  const iconUrl = data.app_icon_url?.trim() || data.logo_url?.trim() || data.picture_url?.trim() || DEFAULT_BRANDING.iconUrl;
+  const iconUrl = data.app_icon_url?.trim() || data.logo_url?.trim() || data.picture_url?.trim() || "/tenant-icon.svg";
 
   return {
     slug: data.slug || fallbackSlug,

@@ -29,7 +29,7 @@ test('development module reloads reuse one browser client and keep projects sepa
   assert.equal(creates, 2);
 });
 
-function cacheFixture() {
+function cacheFixture(loadAccess = async () => { throw new Error("Access unavailable"); }) {
   let finish;
   let authEvent;
   let logoutOptions;
@@ -42,11 +42,11 @@ function cacheFixture() {
   vm.runInNewContext(cacheCode, { exports, navigator: {}, window: {}, require: name => {
     if (name.endsWith('/client')) return { createSupabaseBrowserClient: () => ({ auth }) };
     if (name.endsWith('/query-cache')) return { clearAllQueryCache() {} };
-    if (name.endsWith('/authz')) return { emptyUserAccess: {} };
+    if (name.endsWith('/authz')) return { emptyUserAccess: {}, loadUserAccessByMosqueSlug: loadAccess };
     if (name.endsWith('/profile-images')) return { canHaveProfilePhoto: () => false };
     throw new Error(name);
   } });
-  return { exports, finish: value => finish({ data: { session: value } }), authEvent: (event, value) => authEvent(event, value), get logoutOptions() { return logoutOptions; } };
+  return { exports, finish: value => finish({ data: { session: value } }), finishError: error => finish({ data: { session: null }, error }), authEvent: (event, value) => authEvent(event, value), get logoutOptions() { return logoutOptions; } };
 }
 
 test('late session read cannot erase a newer successful sign-in', async () => {
@@ -109,4 +109,48 @@ test('cached error envelopes are discarded and failed queries remain retryable',
   await new Promise(resolve => setImmediate(resolve));
   assert.equal(calls, 2);
   assert.equal(JSON.parse(disk.get(prefix + 'example')).data.ready, true);
+});
+
+
+test('a failed session read stays unresolved and can recover on retry', async () => {
+  const f = cacheFixture();
+  const read = f.exports.loadCachedSession();
+  f.finishError(new Error('Network unavailable'));
+  await assert.rejects(read, /Network unavailable/);
+  assert.equal(f.exports.getCachedSessionSnapshot(), undefined);
+  const retry = f.exports.loadCachedSession();
+  const session = { user: { id: 'recovered' } };
+  f.finish(session);
+  assert.equal(await retry, session);
+});
+
+test('SDK null initialization does not establish a guest before the session read succeeds', async () => {
+  const f = cacheFixture();
+  const read = f.exports.loadCachedSession();
+  f.authEvent('INITIAL_SESSION', null);
+  assert.equal(f.exports.getCachedSessionSnapshot(), undefined);
+  f.finish(null);
+  assert.equal(await read, null);
+  assert.equal(f.exports.getCachedSessionSnapshot(), null);
+});
+
+test('a stale session error cannot override a newer successful login', async () => {
+  const f = cacheFixture();
+  const read = f.exports.loadCachedSession();
+  const session = { user: { id: 'new-login' } };
+  f.authEvent('SIGNED_IN', session);
+  f.finishError(new Error('Old refresh failed'));
+  assert.equal(await read, session);
+});
+
+
+test('failed access lookup is not immediately repeated and stays retryable', async () => {
+  let calls = 0;
+  const f = cacheFixture(async () => { calls++; throw new Error('Network timed out'); });
+  const access = await f.exports.loadCachedUserAccess('assiddiq', 'admin');
+  assert.ok(access.resolutionError);
+  assert.equal(calls, 1);
+  assert.equal(f.exports.getCachedUserAccess('assiddiq', 'admin'), null);
+  await f.exports.loadCachedUserAccess('assiddiq', 'admin');
+  assert.equal(calls, 2);
 });

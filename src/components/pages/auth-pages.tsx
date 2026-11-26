@@ -20,7 +20,7 @@ function AuthWorkspace({ children }: { children: React.ReactNode }) {
 function AuthForm({ mode, slug, returnTo }: { mode: "login" | "signup"; slug: string; returnTo?: string }) {
   return (
     <main className="min-h-screen bg-white">
-      <PageTitleBar title="Welcome" subtitle={defaultMasjidName} tone="teal" />
+      <PageTitleBar title="Welcome" backHref={`/m/${slug}/programs`} backLabel="Classes" tone="teal" />
       <AuthWorkspace>
         <AuthPanel mode={mode} slug={slug} returnTo={returnTo} />
       </AuthWorkspace>

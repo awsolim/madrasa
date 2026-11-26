@@ -6,6 +6,7 @@ import { AdminProgramStudentsPage, AdminDashboardPage, AdminProgramsPage, AdminM
 import { TeacherStudentsPage, TeacherDashboardPage, TeacherClassesPage, TeacherInboxPage, TeacherAccountPage, TeacherProgramDetailPage, TeacherProgramCreatePage, TeacherProgramApplicationsPage, TeacherProgramFinancesPage } from "@/components/pages/teacher-pages";
 import { PortalDashboardPage, PortalClassesPage, PortalAnnouncementsPage, PortalAccountPage, PublicAccountPage } from "@/components/pages/portal-pages";
 import { PublicMasjidPage, PublicProgramsPage } from "@/components/pages/public-pages";
+import { GuestAccountPage } from "@/components/pages/guest-account-page";
 import { useWorkspacePathname } from "@/components/layout/workspace-navigation";
 import { workspaceRoute, type WorkspaceSection } from "@/lib/navigation-paths";
 
@@ -46,6 +47,7 @@ export function WorkspacePages({ slug, section, children }: { slug: string; sect
     if (screen === "home") page = <PublicMasjidPage slug={slug} />;
     if (screen === "classes") page = <PublicProgramsPage slug={slug} />;
     if (screen === "account") page = <PublicAccountPage slug={slug} />;
+    if (screen === "inbox") page = <GuestAccountPage slug={slug} tab="inbox" />;
   }
 
   // Keep only the small primary destinations mounted after their first visit. This

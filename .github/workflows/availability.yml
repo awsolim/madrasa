@@ -1,0 +1,26 @@
+name: Availability
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '7,22,37,52 * * * *'
+
+permissions: {}
+
+concurrency:
+  group: availability
+  cancel-in-progress: false
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    env:
+      HEALTHCHECK_URL: ${{ vars.MADRASA_HEALTHCHECK_URL || 'https://madrasa.ca/api/health' }}
+    steps:
+      - name: Check deployed app, Auth, and database
+        shell: bash
+        run: |
+          curl --fail-with-body --silent --show-error \
+            --connect-timeout 5 --max-time 15 --retry 0 \
+            "$HEALTHCHECK_URL"

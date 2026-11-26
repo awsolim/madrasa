@@ -107,7 +107,7 @@ export function safeReturnTo(value: string | string[] | undefined, slug: string)
     return undefined;
   }
 
-  const exactPaths = [`/m/${slug}`, `/m/${slug}/account`, `/m/${slug}/explore`];
+  const exactPaths = [`/m/${slug}`, `/m/${slug}/account`, `/m/${slug}/schedule`, `/m/${slug}/inbox`, `/m/${slug}/explore`];
   const allowedPrefixes = [`/m/${slug}/admin/`, `/m/${slug}/teacher/`, `/m/${slug}/portal/`, `/m/${slug}/programs`];
   if (exactPaths.includes(returnTo)) {
     return returnTo;

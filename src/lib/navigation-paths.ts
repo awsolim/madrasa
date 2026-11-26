@@ -4,6 +4,11 @@ export const primaryNavLabels = ["Classes", "Schedule", "Inbox", "Members", "Mas
 
 export type StudentClassesTab = "browse" | "classes" | "applications";
 
+export function isPublicClassesRoot(pathname: string, href: string) {
+  const root = href.match(/^(\/m\/[^/]+)\/programs$/)?.[1];
+  return Boolean(root && (pathname === root || pathname === `${root}/` || pathname === "/"));
+}
+
 export function studentClassesTab(value: string | null): StudentClassesTab {
   return value === "classes" || value === "applications" ? value : "browse";
 }
@@ -15,7 +20,7 @@ export function workspaceNavItems(slug: string, section: WorkspaceSection) {
     { label: "Schedule", href: section === "public" ? `${base}/schedule` : base },
     section === "admin"
       ? { label: "Masjid", href: `${base}/masjid` }
-      : { label: "Inbox", href: section === "teacher" ? `${base}/inbox` : `/m/${slug}/portal/announcements` },
+      : { label: "Inbox", href: section === "teacher" || section === "public" ? `${base}/inbox` : `/m/${slug}/portal/announcements` },
     { label: "Me", href: `${base}/${section === "admin" ? "settings" : "account"}` },
   ];
 }
@@ -42,6 +47,7 @@ export function workspaceRoute(pathname: string, slug: string, section: Workspac
   const suffix = path.startsWith(`${base}/`) ? path.slice(base.length + 1) : null;
   const classes = section === "admin" || section === "public" ? "programs" : "classes";
   if (section === "public" && suffix === "schedule") return "home";
+  if (section === "public" && suffix === "inbox") return "inbox";
   if (suffix === classes) return "classes";
   if (suffix === (section === "admin" ? "settings" : "account")) return "account";
   if (section === "admin" && suffix === "masjid") return "masjid";

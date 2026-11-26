@@ -1,6 +1,7 @@
 "use client";
 
 import { ChildrenManager } from "@/components/data/children-manager";
+import { GuestAccountPage } from "@/components/pages/guest-account-page";
 import { EmptyState } from "@/components/data/empty-state";
 import { PortalRoleRedirect } from "@/components/data/portal-role-redirect";
 import { PortalAccountData, ProgramDetailData, RegistrationConfirmationData, StudentClassesData, StudentHomeData, StudentScheduleOptionsData, StudentWithdrawalRequestData } from "@/components/data/supabase-public-sections";
@@ -42,7 +43,7 @@ function PortalSectionHeader({ title, action }: { title: string; action?: React.
 }
 
 export function PublicAccountPage({ slug }: { slug: string }) {
-  return <PortalAccountData slug={slug} />;
+  return <GuestAccountPage slug={slug} tab="account" />;
 }
 
 export function RegistrationConfirmationPage({ requestId, slug, returnTo }: { requestId: string; slug: string; returnTo?: string }) {

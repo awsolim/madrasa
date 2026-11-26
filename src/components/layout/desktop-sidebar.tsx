@@ -21,7 +21,7 @@ import {
   performClientLogout,
   subscribeCachedSession,
 } from "@/lib/client-cache";
-import { workspaceNavItems } from "@/lib/navigation-paths";
+import { isPublicClassesRoot, workspaceNavItems } from "@/lib/navigation-paths";
 import { ScheduleIcon } from "@/components/ui/schedule-icon";
 import { cn } from "@/lib/utils";
 import { canHaveProfilePhoto } from "@/lib/profile-images";
@@ -103,7 +103,7 @@ export function DesktopSidebar({
           const subItems = buildDesktopSubItems(label, section, mosqueSlug, accountHref);
           const subItemActive = subItems.some((subItem) => isHrefActive(pathname, searchParams, subItem.href));
 
-          if (label === "Me" || subItems.length) {
+          if (section !== "public" && (label === "Me" || subItems.length)) {
             const firstSubItemHref = label === "Me" ? `${accountHref}?panel=settings` : subItems[0]?.href;
             return (
               <DesktopNavGroup key={`${item.label}-${item.href}`} item={item} active={active || subItemActive} firstSubItemHref={firstSubItemHref} badgeCount={badgeCount} actionRequired={actionRequired}>
@@ -470,6 +470,7 @@ function buildDesktopItems(section: "public" | "portal" | "teacher" | "admin", m
 
 function buildDesktopSubItems(label: string, section: "public" | "portal" | "teacher" | "admin", mosqueSlug: string, accountHref: string) {
   const base = `/m/${mosqueSlug}`;
+  if (section === "public") return [];
 
   if (label === "Classes") {
     if (section === "teacher") {
@@ -551,6 +552,7 @@ function desktopLabel(label: string) {
 }
 
 function isNavItemActive(pathname: string, item: NavItem) {
+  if (item.label === "Classes" && isPublicClassesRoot(pathname, item.href)) return true;
   const hrefPath = item.href.split("?")[0];
 
   return pathname === hrefPath || (item.label !== "Schedule" && pathname.startsWith(`${hrefPath}/`));

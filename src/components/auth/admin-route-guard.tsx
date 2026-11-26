@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { AccountConnectionError, accountConnectionMessage } from "@/components/auth/account-connection-error";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { QuietPageLoadingState } from "@/components/data/data-loading";
@@ -20,6 +21,7 @@ export function AdminRouteGuard({ children, slug }: { children: React.ReactNode;
 
   useEffect(() => {
     let cancelled = false;
+    const startupTimeout = setTimeout(() => { if (!cancelled) setAccessError(accountConnectionMessage); }, 10_000);
 
     void (async () => {
       const session = await loadCachedSession();
@@ -39,14 +41,15 @@ export function AdminRouteGuard({ children, slug }: { children: React.ReactNode;
       setState("denied");
       const fallbackHref = access.profileId ? `/m/${slug}` : `/m/${slug}/login`;
       router.replace(fallbackHref);
-    })();
+    })().catch(() => { if (!cancelled) setAccessError(accountConnectionMessage); }).finally(() => clearTimeout(startupTimeout));
 
     return () => {
       cancelled = true;
+      clearTimeout(startupTimeout);
     };
   }, [router, slug, attempt, sessionIdentity]);
 
-  if (accessError) return <main className="p-6 text-center"><p role="alert">{accessError}</p><button className="mt-4 rounded-lg border px-5 py-3" onClick={() => { setAccessError(null); setAttempt(value => value + 1); }}>Try again</button></main>;
+  if (accessError) return <AccountConnectionError slug={slug} onRetry={() => { setAccessError(null); setAttempt(value => value + 1); }} />;
 
   if (state === "allowed" && sessionIdentity && checkedUserId === sessionIdentity) {
     return <>{children}</>;

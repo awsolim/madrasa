@@ -1,10 +1,9 @@
 "use client";
 
-import Image from "next/image";
-import Link from "next/link";
 import { useEffect, useState } from "react";
 import { PageTitleBar } from "@/components/layout/page-title-bar";
-import { ProgramApplyData, ProgramDetailData, PublicMasjidData, PublicProgramsData } from "@/components/data/supabase-public-sections";
+import { ProgramApplyData, ProgramDetailData, PublicProgramsData } from "@/components/data/supabase-public-sections";
+import { GuestAccountPage } from "@/components/pages/guest-account-page";
 import { cn } from "@/lib/utils";
 import { getClassesLandingHref, loadUserAccessByMosqueSlug } from "@/lib/authz";
 import { loadCachedSession } from "@/lib/client-cache";
@@ -31,14 +30,7 @@ function PublicWorkspace({
 }
 
 export function PublicMasjidPage({ slug }: { slug: string }) {
-  return (
-    <>
-      <PageTitleBar title="Schedule" subtitle="Upcoming sessions for your enrolled classes." />
-      <PublicWorkspace>
-        <PublicMasjidData slug={slug} />
-      </PublicWorkspace>
-    </>
-  );
+  return <GuestAccountPage slug={slug} tab="schedule" />;
 }
 
 export function PublicProgramsPage({ slug }: { slug: string }) {
@@ -49,40 +41,6 @@ export function PublicProgramsPage({ slug }: { slug: string }) {
         <PublicProgramsData slug={slug} />
       </PublicWorkspace>
     </>
-  );
-}
-
-export function GuestProgramsPage({ slug, mosqueName, mosqueLogoUrl }: { slug: string; mosqueName: string; mosqueLogoUrl: string }) {
-  return (
-    <main className="min-h-screen bg-[var(--workspace)]">
-      <header className="sticky top-0 z-30 border-b border-[#E4E9EC] bg-white/95 backdrop-blur">
-        <div className="app-container flex min-h-16 items-center justify-between gap-4">
-          <div className="flex min-w-0 items-center gap-3">
-            <span className="flex h-10 w-10 shrink-0 items-center justify-center overflow-hidden rounded-full border border-[#E1E7E4] bg-white p-1">
-              <Image src={mosqueLogoUrl} alt={`${mosqueName} logo`} width={40} height={40} className="h-full w-full object-contain" priority />
-            </span>
-            <span className="min-w-0">
-              <span className="block truncate text-sm font-semibold text-[#26323A]">{mosqueName}</span>
-              <span className="block text-[10px] font-medium uppercase tracking-[0.14em] text-[#7B858C]">Guest preview</span>
-            </span>
-          </div>
-          <div className="flex shrink-0 items-center gap-2">
-            <Link href={`/m/${slug}/login?returnTo=${encodeURIComponent(`/m/${slug}/explore`)}`} className="hidden min-h-10 items-center justify-center px-3 text-sm font-semibold text-[#35574D] sm:inline-flex">
-              Log in
-            </Link>
-            <Link href={`/m/${slug}/signup?returnTo=${encodeURIComponent(`/m/${slug}/explore`)}`} className="inline-flex min-h-10 items-center justify-center rounded-full bg-[#17624F] px-4 text-xs font-semibold !text-white sm:px-5 sm:text-sm">
-              Create account
-            </Link>
-          </div>
-        </div>
-      </header>
-      <PageTitleBar title="Explore Classes" tone="teal" />
-      <PublicWorkspace>
-        <div className="border-b border-[#E5EAEC] bg-white px-5 pb-1 pt-6 text-center">
-        </div>
-        <PublicProgramsData slug={slug} detailReturnTo={`/m/${slug}/explore`} />
-      </PublicWorkspace>
-    </main>
   );
 }
 

@@ -215,7 +215,7 @@ export function getProgramPrimaryCta(input: {
   // always requires signing in first, so this is a real working link back to login/signup
   // with a returnTo, not just a disabled label.
   if (!isSignedIn) {
-    return { kind: "link", label: "Log In / Sign Up to Apply", href: loginHref };
+    return { kind: "link", label: "Log in to apply", href: loginHref };
   }
 
   if (isEnrolled) {

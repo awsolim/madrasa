@@ -1,0 +1,23 @@
+{
+  "slug": "assiddiq",
+  "name": "Assiddiq",
+  "updatedAt": null,
+  "classes": [
+    {
+      "title": "Al Tarteel",
+      "description": "Contact the teacher for class information and registration inquiries.",
+      "contactName": "Sheikh Mohamed Moamen",
+      "phone": "+1 (587) 566-7545",
+      "email": "",
+      "schedule": []
+    },
+    {
+      "title": "Weekend School",
+      "description": "Contact Sheikh Abdulrahman for class information and registration inquiries.",
+      "contactName": "Sheikh Abdulrahman",
+      "phone": "+1 (780) 680-4962",
+      "email": "",
+      "schedule": []
+    }
+  ]
+}

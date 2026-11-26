@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { AccountConnectionError, accountConnectionMessage } from "@/components/auth/account-connection-error";
 import { loadCachedSession, loadCachedUserAccess } from "@/lib/client-cache";
 
 export function PortalRoleRedirect({
@@ -22,6 +23,7 @@ export function PortalRoleRedirect({
 
   useEffect(() => {
     let cancelled = false;
+    const startupTimeout = setTimeout(() => { if (!cancelled) setAccessError(accountConnectionMessage); }, 10_000);
 
     async function resolveRoute() {
       const session = await loadCachedSession();
@@ -44,18 +46,20 @@ export function PortalRoleRedirect({
       }
 
       if (!cancelled) {
+        setAccessError(null);
         setShouldRender(true);
       }
     }
 
-    resolveRoute();
+    void resolveRoute().catch(() => { if (!cancelled) setAccessError(accountConnectionMessage); }).finally(() => clearTimeout(startupTimeout));
 
     return () => {
       cancelled = true;
+      clearTimeout(startupTimeout);
     };
   }, [adminHref, router, slug, teacherHref, attempt]);
 
-  if (accessError) return <div className="p-6 text-center"><p role="alert">{accessError}</p><button className="mt-4 rounded-lg border px-5 py-3" onClick={() => { setAccessError(null); setAttempt(value => value + 1); }}>Try again</button></div>;
+  if (accessError) return <AccountConnectionError slug={slug} onRetry={() => { setAccessError(null); setAttempt(value => value + 1); }} />;
 
   if (!shouldRender) {
     return null;

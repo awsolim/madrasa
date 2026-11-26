@@ -12,6 +12,8 @@
     "test-db:configure": "node scripts/sync-local-test-env.mjs",
     "test-admin:promote": "node scripts/promote-local-test-admin.mjs",
     "build": "next build",
+    "directory:render": "node scripts/render-class-directories.mjs",
+    "directory:refresh": "node --env-file=.env.local scripts/refresh-class-directory.mjs",
     "start": "next start",
     "lint": "eslint",
     "cleanup:fake-users": "node --env-file=.env.local scripts/cleanup-fake-users.mjs",

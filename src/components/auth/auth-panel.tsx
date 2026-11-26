@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { ClassDirectoryLink } from "@/components/auth/class-directory-link";
 import { useRouter } from "next/navigation";
 import { type FormEvent, type ReactNode, useMemo, useState } from "react";
 import { FlatButton } from "@/components/ui/flat-button";
@@ -351,6 +352,7 @@ export function AuthPanel({ mode, slug, returnTo }: { mode: AuthMode; slug: stri
         ) : null}
 
         {error ? <p className="border-l-4 border-[#E25241] bg-[#FDEDEA] px-3 py-2 text-sm text-[#9D2E23]">{error}</p> : null}
+        {error && (isTransientAuthError(error) || /connection|sign-in service|account details could not load/i.test(error)) ? <ClassDirectoryLink slug={slug} /> : null}
         {message ? <p className="border-l-4 border-[#2F8FB3] bg-[#E7F3F8] px-3 py-2 text-sm text-[#257B9C]">{message}</p> : null}
 
         <FlatButton variant="primary" className="w-full" disabled={submitting}>
@@ -568,6 +570,9 @@ function validatePassword(value: string) {
 
 function getSignupErrorMessage(message: string) {
   const normalized = message.toLowerCase();
+  if (isTransientAuthError(message)) {
+    return "We couldn’t confirm account creation because the connection was interrupted. Check your email for a confirmation message. If your account already exists, log in or reset your password.";
+  }
   if (
     normalized.includes("already") ||
     normalized.includes("registered") ||
@@ -587,6 +592,7 @@ function isTransientAuthError(message: string) {
     normalized.includes("fetch") ||
     normalized.includes("network") ||
     normalized.includes("timeout") ||
+    normalized.includes("timed out") ||
     normalized.includes("failed to connect")
   );
 }

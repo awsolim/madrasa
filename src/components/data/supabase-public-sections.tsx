@@ -2,6 +2,8 @@
 
 "use client";
 
+import { AccountConnectionError } from "@/components/auth/account-connection-error";
+
 import { ChevronRightIcon, DefaultProfileIcon, SearchIcon, applicationListedPrice, applicationPaymentPlanLabel, formatFinanceDate } from "@/components/data/application-management-shared";
 import type { EnrollmentRequest, ParentDisplay, ProgramFinanceAuditEvent, ProgramSubscription, StudentDisplay } from "@/components/data/application-management-shared";
 export { applicationListedPrice, applicationPaymentPlanLabel, formatFinanceDate, resolveRequestTrack } from "@/components/data/application-management-shared";
@@ -47,7 +49,7 @@ import { useHideMobileChromeWhileMounted, useModalFocusTrap } from "@/hooks/use-
 import { useDismissMenu } from "@/hooks/use-dismiss-menu";
 import { useStudentNotificationCounts, useTeacherNotificationCounts } from "@/hooks/use-notification-counts";
 import { ProgramWithdrawals, useProgramWithdrawals } from "@/components/data/program-withdrawals";
-import { getAccountLabel, getDefaultLandingHref, loadUserAccessByMosqueSlug } from "@/lib/authz";
+import { getAccountLabel, loadUserAccessByMosqueSlug } from "@/lib/authz";
 import { getCachedMosqueChrome, getCachedProfileSummary, getCachedSessionSnapshot, getCachedUserAccess, loadCachedSession, loadCachedUserAccess, loadMosqueChrome, performClientLogout, setCachedProfileName, setCachedProfileSummary, subscribeCachedSession } from "@/lib/client-cache";
 import { friendlyErrorMessage } from "@/lib/errors";
 import { studentClassesTab, type StudentClassesTab } from "@/lib/navigation-paths";
@@ -497,10 +499,7 @@ export function StudentHomeData({ slug }: { slug: string }) {
 }
 
 export function PublicProgramsData({ slug, detailReturnTo }: { slug: string; detailReturnTo?: string }) {
-  const router = useRouter();
   const { mosque, programs, loading, error } = useMosquePrograms(slug);
-  const [redirectError, setRedirectError] = useState<string | null>(null);
-  const [checkingSignedInRedirect, setCheckingSignedInRedirect] = useState(true);
 
   useEffect(() => {
     if (loading || error || !programs.length) {
@@ -517,45 +516,18 @@ export function PublicProgramsData({ slug, detailReturnTo }: { slug: string; det
       for (const program of programs.slice(0, 6)) {
         prefetchQuery(`program-detail:${slug}:${program.id}:public:${userId ?? "guest"}`, () => fetchProgramDetailSnapshot(slug, program.id, "public", userId));
       }
-    });
+    }).catch(() => undefined);
     return () => {
       cancelled = true;
     };
   }, [loading, error, programs, slug]);
 
-  useEffect(() => {
-    let active = true;
-    async function redirectSignedInAccounts() {
-      const session = await loadCachedSession();
-      if (!active) {
-        return;
-      }
-      if (!session?.user.id) {
-        setCheckingSignedInRedirect(false);
-        return;
-      }
-      const access = await loadUserAccessByMosqueSlug(slug);
-      if (!active) {
-        return;
-      }
-      const landing = getDefaultLandingHref(slug, access);
-      router.replace(access.accountType?.toLowerCase() === "teacher" ? `${landing}/classes` : access.accountType?.toLowerCase() === "admin" ? `${landing}/programs` : `${landing}/classes`);
-    }
-
-    void redirectSignedInAccounts().catch(() => { if (active) { setRedirectError("We could not load your account. Please try again."); setCheckingSignedInRedirect(false); } });
-    return () => {
-      active = false;
-    };
-  }, [router, slug]);
-
-  if (redirectError) return <EmptyState title="Account unavailable" text={redirectError} onRetry={() => window.location.reload()} />;
-
-  if (checkingSignedInRedirect || loading) {
+  if (loading) {
     return <QuietPageLoadingState />;
   }
 
   if (error) {
-    return <EmptyState title="Could not load classes" text={error} onRetry={() => window.location.reload()} />;
+    return <AccountConnectionError slug={slug} onRetry={() => window.location.reload()} />;
   }
 
   if (!mosque) {
@@ -679,7 +651,6 @@ async function shareProgramLink(slug: string, programId: string, title: string, 
 
 export function ProgramDetailData({ slug, programId, section = "public" }: { slug: string; programId: string; section?: "public" | "portal" | "teacher" }) {
   const [applicationOpening, setApplicationOpening] = useState(false);
-  const pathname = usePathname();
   const searchParams = useSearchParams();
   const [mosque, setMosque] = useState<Mosque | null>(null);
   const [program, setProgram] = useState<ProgramWithTeacher | null>(null);
@@ -852,7 +823,7 @@ export function ProgramDetailData({ slug, programId, section = "public" }: { slu
   const viewEnrollmentHref = `/m/${slug}/portal/classes`;
   const completePaymentHref = `/m/${slug}/portal/announcements`;
   const detailQuery = searchParams.toString();
-  const detailReturnHref = `${pathname}${detailQuery ? `?${detailQuery}` : ""}`;
+  const detailReturnHref = `/m/${slug}/programs/${programId}${detailQuery ? `?${detailQuery}` : ""}`;
   const loginHref = `/m/${slug}/login?returnTo=${encodeURIComponent(detailReturnHref)}`;
   const primaryCta = getProgramPrimaryCta({
     fields: toProgramStatusFields(program),

@@ -2,6 +2,7 @@
 
 import { usePathname, useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { AccountConnectionError, accountConnectionMessage } from "@/components/auth/account-connection-error";
 import { QuietPageLoadingState } from "@/components/data/data-loading";
 import { loadCachedSession, loadCachedUserAccess } from "@/lib/client-cache";
 import { useSessionIdentity } from "@/hooks/use-session-identity";
@@ -16,6 +17,7 @@ export function TeacherRouteGuard({ children, slug }: { children: React.ReactNod
 
   useEffect(() => {
     let active = true;
+    const startupTimeout = setTimeout(() => { if (active) setAccessError(accountConnectionMessage); }, 10_000);
 
     async function guardRoute() {
       const session = await loadCachedSession();
@@ -44,14 +46,15 @@ export function TeacherRouteGuard({ children, slug }: { children: React.ReactNod
       router.replace(mapTeacherPathToPortal(pathname, slug));
     }
 
-    void guardRoute();
+    void guardRoute().catch(() => { if (active) setAccessError(accountConnectionMessage); }).finally(() => clearTimeout(startupTimeout));
 
     return () => {
       active = false;
+      clearTimeout(startupTimeout);
     };
   }, [pathname, router, slug, attempt, sessionIdentity]);
 
-  if (accessError) return <main className="p-6 text-center"><p role="alert">{accessError}</p><button className="mt-4 rounded-lg border px-5 py-3" onClick={() => { setAccessError(null); setAttempt(value => value + 1); }}>Try again</button></main>;
+  if (accessError) return <AccountConnectionError slug={slug} onRetry={() => { setAccessError(null); setAttempt(value => value + 1); }} />;
 
   if (!sessionIdentity || allowedUserId !== sessionIdentity) {
     return <QuietPageLoadingState />;

@@ -90,10 +90,14 @@ export async function loadCachedSession() {
     const revision = sessionRevision;
     sessionPromise = createSupabaseBrowserClient()
       .auth.getSession()
-      .then(({ data }) => {
+      .then(({ data, error }) => {
         // A read begun before sign-in/sign-out must not overwrite that newer
         // auth event when its promise eventually resolves.
         if (revision !== sessionRevision) return cachedSession;
+        // A failed refresh does not establish that the person signed out.
+        // Leave identity unresolved and let the caller offer recovery instead
+        // of caching a false null session for the rest of the app visit.
+        if (error) throw error;
         setCachedSessionSnapshot(data.session);
         return data.session;
       })
@@ -189,7 +193,6 @@ export async function loadCachedUserAccess(slug: string, userId: string) {
 
   const epoch = userCacheEpoch;
   const promise = loadUserAccessByMosqueSlug(slug)
-    .catch(() => loadUserAccessByMosqueSlug(slug))
     .then((access) => {
       if (epoch !== userCacheEpoch || access.profileId !== userId) throw new Error("Account changed during loading.");
       accessCache.set(key, access);
@@ -371,7 +374,9 @@ function startAuthListener() {
   createSupabaseBrowserClient().auth.onAuthStateChange((_event, session) => {
     // Initialization can finish after a newer sign-in or sign-out. The initial
     // callback must not replace an identity we have already resolved explicitly.
-    if (_event === "INITIAL_SESSION" && sessionLoaded) return;
+    // The SDK also emits INITIAL_SESSION(null) when its session read fails.
+    // Only a successful explicit getSession() may establish an initial guest.
+    if (_event === "INITIAL_SESSION" && (sessionLoaded || !session)) return;
     setCachedSessionSnapshot(session);
   });
 }

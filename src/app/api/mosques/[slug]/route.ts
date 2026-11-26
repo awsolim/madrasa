@@ -1,5 +1,6 @@
 import { createSupabaseServiceClient } from "@/lib/supabase/service";
 import { logServerError } from "@/lib/monitoring/log-error";
+import { revalidateTag } from "next/cache";
 
 export const runtime = "nodejs";
 
@@ -113,6 +114,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ sl
       return Response.json({ error: updateError?.message ?? "Could not update masjid." }, { status: 500 });
     }
 
+    revalidateTag(`tenant-branding:${slug}`, { expire: 0 });
+    if (nextSlug !== slug) revalidateTag(`tenant-branding:${nextSlug}`, { expire: 0 });
     return Response.json({ mosque: updatedMosque });
   } catch (error) {
     const message = error instanceof Error ? error.message : "Could not update masjid.";

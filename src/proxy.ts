@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { maintenanceDirectoryHref } from "@/lib/continuity";
 
 const DEFAULT_ROOT_DOMAIN = "madrasa.ca";
 const RESERVED_SUBDOMAINS = new Set(["www"]);
@@ -67,6 +68,18 @@ export function proxy(request: NextRequest) {
   }
 
   const slug = subdomainFromHost(hostname);
+
+  const internalSlug = request.nextUrl.pathname.match(/^\/m\/([a-z0-9-]+)(?:\/|$)/)?.[1];
+  const directory = maintenanceDirectoryHref(slug || internalSlug || "", process.env.MADRASA_MAINTENANCE_TENANTS);
+  if (directory) {
+    const target = request.nextUrl.clone();
+    target.pathname = directory;
+    target.search = "";
+    // Temporary redirect: never cache a maintenance decision in the browser.
+    const response = NextResponse.redirect(target, 307);
+    response.headers.set("Cache-Control", "no-store");
+    return response;
+  }
 
   if (!slug) {
     return NextResponse.next();

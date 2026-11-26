@@ -20,7 +20,7 @@ import {
   loadMosqueChrome,
   subscribeCachedSession,
 } from "@/lib/client-cache";
-import { primaryNavLabels } from "@/lib/navigation-paths";
+import { isPublicClassesRoot, primaryNavLabels } from "@/lib/navigation-paths";
 import { ScheduleIcon } from "@/components/ui/schedule-icon";
 import { cn } from "@/lib/utils";
 import { useStandaloneMode } from "@/lib/pwa/install";
@@ -160,6 +160,7 @@ function useOverlayChromeHidden() {
 }
 
 function isNavItemActive(pathname: string, item: NavItem) {
+  if (item.label === "Classes" && isPublicClassesRoot(pathname, item.href)) return true;
   const hrefs = navItemPathCandidates(item.href);
   return hrefs.some((href) => pathname === href || (item.label !== "Schedule" && pathname.startsWith(`${href}/`)));
 }
@@ -376,7 +377,7 @@ export function AppTopBar({
       if (!cancelled) {
         setSession(nextSession);
       }
-    });
+    }).catch(() => { /* The route guard handles connection recovery; do not invent a guest session. */ });
 
     return () => {
       cancelled = true;
@@ -529,7 +530,7 @@ export function AppTopBar({
 
 function isMainTabRoute(pathname: string, items: NavItem[]) {
   const mainLabels = new Set<string>(primaryNavLabels);
-  return items.some((item) => mainLabels.has(item.label) && navItemPathCandidates(item.href).includes(pathname));
+  return items.some((item) => mainLabels.has(item.label) && (navItemPathCandidates(item.href).includes(pathname) || (item.label === "Classes" && isPublicClassesRoot(pathname, item.href))));
 }
 
 function MenuIcon({ open }: { open: boolean }) {

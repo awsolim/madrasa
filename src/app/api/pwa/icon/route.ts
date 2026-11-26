@@ -25,8 +25,8 @@ function sameOriginUrl(request: NextRequest, path: string) {
   return url;
 }
 
-function fallbackResponse(request: NextRequest, size: string) {
-  return NextResponse.redirect(sameOriginUrl(request, DEFAULT_BY_SIZE[size] ?? "/icon-512x512.png"), 307);
+function fallbackResponse(request: NextRequest, size: string, tenant: string | null) {
+  return NextResponse.redirect(sameOriginUrl(request, tenant ? "/tenant-icon.svg" : DEFAULT_BY_SIZE[size] ?? "/icon-512x512.png"), 307);
 }
 
 export async function GET(request: NextRequest) {
@@ -39,9 +39,9 @@ export async function GET(request: NextRequest) {
 
   if (iconUrl.startsWith("http://") || iconUrl.startsWith("https://")) {
     try {
-      const iconResponse = await fetch(iconUrl, { cache: "no-store" });
+      const iconResponse = await fetch(iconUrl, { next: { revalidate: 3600 }, signal: AbortSignal.timeout(5000) });
       if (!iconResponse.ok || !iconResponse.body) {
-        return fallbackResponse(request, size);
+        return fallbackResponse(request, size, branding.slug);
       }
       return new NextResponse(iconResponse.body, {
         headers: {
@@ -50,7 +50,7 @@ export async function GET(request: NextRequest) {
         },
       });
     } catch {
-      return fallbackResponse(request, size);
+      return fallbackResponse(request, size, branding.slug);
     }
   }
 
