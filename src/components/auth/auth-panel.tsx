@@ -360,14 +360,14 @@ export function AuthPanel({ mode, slug, returnTo }: { mode: AuthMode; slug: stri
         </FlatButton>
 
         {!isSignup ? (
-          <Link href={`/m/${activeSlug}/forgot-password`} className="block text-center text-sm font-semibold text-[#2F6B53]">
+          <Link href={`/m/${activeSlug}/forgot-password`} className="text-link block text-center text-sm font-semibold">
             Forgot password?
           </Link>
         ) : null}
 
         {isSignup ? (
           <p className="text-center text-xs leading-5 text-[#8A9399]">
-            By creating an account, you agree to our <Link href="/legal/terms" className="font-semibold text-[#2F8FB3] hover:underline">Terms of Service</Link> and <Link href="/legal/privacy" className="font-semibold text-[#2F8FB3] hover:underline">Privacy Policy</Link>.
+            By creating an account, you agree to our <Link href="/legal/terms" className="text-link font-semibold">Terms of Service</Link> and <Link href="/legal/privacy" className="text-link font-semibold">Privacy Policy</Link>.
           </p>
         ) : null}
       </form>

@@ -7,6 +7,7 @@ import { getCachedSessionSnapshot, loadCachedSession } from "@/lib/client-cache"
 import { operationalSnapshotKey, prefetchPrivateSnapshot, prefetchQuery } from "@/lib/query-cache";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import { loadProgramEditor, loadProgramDirectorOptions } from "@/lib/program-editor-data";
+import { cn } from "@/lib/utils";
 
 type TransitionDirection = "from-right" | "from-left";
 type PreviewKind = "home" | "classes" | "inbox" | "me" | "subpage";
@@ -116,6 +117,7 @@ export function TransitionLink({
     <Link
       {...props}
       href={href}
+      className={cn("press-feedback", props.className)}
       onPointerEnter={(event) => { props.onPointerEnter?.(event); warmDestination(); }}
       onFocus={(event) => { props.onFocus?.(event); warmDestination(); }}
       onTouchStart={(event) => { props.onTouchStart?.(event); warmDestination(); }}
@@ -154,7 +156,7 @@ export function TransitionBackButton({
     <button
       type="button"
       aria-label={ariaLabel}
-      className={className}
+      className={cn("press-feedback", className)}
       onClick={() => {
         if (!window.dispatchEvent(new Event("tareeqah:before-back", { cancelable: true }))) return;
         dispatchPreview({ href: fallbackHref, label, direction: "from-left", fromPath: pathname, kind: label === "Classes" || label === "Programs" ? "classes" : "subpage" });
@@ -193,7 +195,7 @@ export function TransitionCloseButton({
     <button
       type="button"
       aria-label={ariaLabel}
-      className={className}
+      className={cn("press-feedback", className)}
       onClick={() => {
         if (!window.dispatchEvent(new Event("tareeqah:before-back", { cancelable: true }))) return;
         dispatchPreview({ href: closeHref, label, direction: "from-left", fromPath: pathname, kind: "subpage" });

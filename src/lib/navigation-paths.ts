@@ -1,6 +1,6 @@
 export type WorkspaceSection = "public" | "portal" | "teacher" | "admin";
 
-export const primaryNavLabels = ["Classes", "Schedule", "Inbox", "Members", "Masjid", "Me"] as const;
+export const primaryNavLabels = ["Classes", "Schedule", "Inbox", "Members", "Masjid", "Profile"] as const;
 
 export type StudentClassesTab = "browse" | "classes" | "applications";
 
@@ -21,7 +21,7 @@ export function workspaceNavItems(slug: string, section: WorkspaceSection) {
     section === "admin"
       ? { label: "Masjid", href: `${base}/masjid` }
       : { label: "Inbox", href: section === "teacher" || section === "public" ? `${base}/inbox` : `/m/${slug}/portal/announcements` },
-    { label: "Me", href: `${base}/${section === "admin" ? "settings" : "account"}` },
+    { label: "Profile", href: `${base}/${section === "admin" ? "settings" : "account"}` },
   ];
 }
 

@@ -28,7 +28,7 @@ export function FlatButton({
   return (
     <button
       className={cn(
-        "inline-flex min-h-10 items-center justify-center border px-4 text-sm font-medium transition-colors disabled:opacity-50",
+        "press-feedback inline-flex min-h-10 items-center justify-center border px-4 text-sm font-medium disabled:opacity-50",
         variantClasses[variant],
         className,
       )}
@@ -50,7 +50,7 @@ export function FlatLink({
     <Link
       href={href}
       className={cn(
-        "inline-flex min-h-10 items-center justify-center border px-4 text-sm font-medium transition-colors",
+        "press-feedback inline-flex min-h-10 items-center justify-center border px-4 text-sm font-medium",
         variantClasses[variant],
         className,
       )}

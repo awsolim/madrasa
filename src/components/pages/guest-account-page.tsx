@@ -5,7 +5,7 @@ import { guestLoginHref } from "@/lib/public-navigation";
 const content = {
   schedule: { title: "Schedule", heading: "Your class schedule", text: "Log in to see upcoming sessions for you and your family.", path: "schedule" },
   inbox: { title: "Inbox", heading: "Updates from your classes", text: "Log in to read announcements, student notes and application updates.", path: "inbox" },
-  account: { title: "Me", heading: "Your account", text: "Log in to manage your profile, family and registrations.", path: "account" },
+  account: { title: "Profile", heading: "Your account", text: "Log in to manage your profile, family and registrations.", path: "account" },
 };
 
 export function GuestAccountPage({ slug, tab }: { slug: string; tab: keyof typeof content }) {
@@ -23,7 +23,7 @@ export function GuestAccountPage({ slug, tab }: { slug: string; tab: keyof typeo
         <h1 className="mt-6 text-2xl font-semibold tracking-tight text-[#263A31]">{item.heading}</h1>
         <p className="mt-3 text-sm leading-6 text-[#647268]">{item.text}</p>
         <Link href={guestLoginHref(slug, returnTo)} className="mt-7 inline-flex min-h-11 items-center justify-center rounded-xl bg-[#17624F] px-8 text-sm font-semibold !text-white">Log in</Link>
-        <p className="mt-5 text-sm text-[#647268]">New here? <Link href={`/m/${slug}/signup?returnTo=${encodeURIComponent(returnTo)}`} className="font-semibold text-[#17624F] underline underline-offset-4">Create an account</Link></p>
+        <p className="mt-5 text-sm text-[#647268]">New here? <Link href={`/m/${slug}/signup?returnTo=${encodeURIComponent(returnTo)}`} className="text-link font-semibold">Create an account</Link></p>
       </div>
     </main>
   </>;

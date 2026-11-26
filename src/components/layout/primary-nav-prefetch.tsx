@@ -2,15 +2,12 @@
 
 import { useEffect } from "react";
 import {
-  fetchAdminProgramsWithTracks,
   fetchMosqueProgramsSnapshot,
   fetchStudentEnrollments,
   fetchTeacherPrograms,
 } from "@/components/data/supabase-public-sections";
 import { fetchStudentNotificationCounts, fetchTeacherNotificationCounts } from "@/hooks/use-notification-counts";
-import { fetchTeacherInboxSnapshot } from "@/components/data/teacher-inbox";
 import { loadCachedSession, loadCachedProfileSummary, loadCachedUserAccess } from "@/lib/client-cache";
-import { loadStudentInboxSnapshot } from "@/lib/student-inbox-data";
 import { prefetchQuery } from "@/lib/query-cache";
 
 // Warms primary-tab content right after the app shell mounts, without gating rendering.
@@ -32,7 +29,7 @@ export function PrimaryNavPrefetch({ slug, section }: { slug: string; section: "
       }
       const userId = session?.user.id ?? null;
       if (userId) {
-        // Me uses these same caches for its initial identity and account menu.
+        // Profile uses these same caches for its initial identity and account menu.
         void loadCachedProfileSummary(userId).catch(() => undefined);
         void loadCachedUserAccess(slug, userId).catch(() => undefined);
       }
@@ -40,16 +37,13 @@ export function PrimaryNavPrefetch({ slug, section }: { slug: string; section: "
       if (section === "teacher" && userId) {
         prefetchQuery(`teacher-programs:${slug}:${userId}`, () => fetchTeacherPrograms(slug));
         prefetchQuery(`notification-counts:teacher:${slug}:${userId}`, () => fetchTeacherNotificationCounts(slug, userId));
-        // Warm the same full snapshot the Inbox reads, not only its badge count.
-        // Keep private messages in memory and let an actual visit share this request.
-        prefetchQuery(`teacher-inbox:${slug}:${userId}`, () => fetchTeacherInboxSnapshot(slug), { persist: false });
+        // Full inbox content loads on an actual visit. Badges need only counts.
       }
 
       if (section === "admin" && userId) {
         // Membership/usage administration is loaded on its own tab, rather than
         // alongside every admin launch's class and notification queries.
         prefetchQuery(`teacher-programs:${slug}:${userId}`, () => fetchTeacherPrograms(slug));
-        prefetchQuery(`admin-programs:${slug}:${userId}`, () => fetchAdminProgramsWithTracks(slug));
         prefetchQuery(`notification-counts:teacher:${slug}:${userId}`, () => fetchTeacherNotificationCounts(slug, userId));
       }
 
@@ -57,9 +51,7 @@ export function PrimaryNavPrefetch({ slug, section }: { slug: string; section: "
         prefetchQuery(`mosque-programs:${slug}`, () => fetchMosqueProgramsSnapshot(slug));
         if (userId) {
           prefetchQuery(`student-enrollments:${slug}:${userId}`, () => fetchStudentEnrollments(slug, userId));
-          // The inbox snapshot already includes application notifications. The
-          // separate application-list dataset can load when that list is opened.
-          void loadStudentInboxSnapshot(slug, userId).catch(() => undefined);
+          // Keep private inbox/history reads off the app-launch request path.
           prefetchQuery(`notification-counts:student:${slug}:${userId}`, () => fetchStudentNotificationCounts(slug, userId));
         }
       }

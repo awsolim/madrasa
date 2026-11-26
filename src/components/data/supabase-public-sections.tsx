@@ -501,27 +501,6 @@ export function StudentHomeData({ slug }: { slug: string }) {
 export function PublicProgramsData({ slug, detailReturnTo }: { slug: string; detailReturnTo?: string }) {
   const { mosque, programs, loading, error } = useMosquePrograms(slug);
 
-  useEffect(() => {
-    if (loading || error || !programs.length) {
-      return;
-    }
-    let cancelled = false;
-    // Warm the detail-page cache for the first handful of visible cards, so tapping into one
-    // from this list renders instantly instead of paying the full fetch on the next page.
-    loadCachedSession().then((session) => {
-      if (cancelled) {
-        return;
-      }
-      const userId = session?.user.id ?? null;
-      for (const program of programs.slice(0, 6)) {
-        prefetchQuery(`program-detail:${slug}:${program.id}:public:${userId ?? "guest"}`, () => fetchProgramDetailSnapshot(slug, program.id, "public", userId));
-      }
-    }).catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [loading, error, programs, slug]);
-
   if (loading) {
     return <QuietPageLoadingState />;
   }
@@ -624,6 +603,17 @@ async function fetchProgramDetailSnapshot(
     enrolledCountByTrackId: snapshot.enrolledCountByTrackId ?? {},
     error: snapshot.error ?? null,
   };
+}
+
+// Detail reads contain enrollment/RLS work. Warm one selected class on intent,
+// rather than fetching up to six details whenever a class list mounts.
+function warmClassDetail(slug: string, programId: string, section: "public" | "portal") {
+  const connection = (navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string } }).connection;
+  if (connection?.saveData || connection?.effectiveType === "slow-2g" || connection?.effectiveType === "2g") return;
+  void loadCachedSession().then(session => {
+    const userId = session?.user.id ?? null;
+    prefetchQuery(`program-detail:${slug}:${programId}:${section}:${userId ?? "guest"}`, () => fetchProgramDetailSnapshot(slug, programId, section, userId));
+  }).catch(() => undefined);
 }
 
 // Prefers the OS share sheet (same one used for "Add to Home Screen") so a teacher on
@@ -2032,28 +2022,6 @@ export function StudentClassesData({ slug }: { slug: string }) {
   useEffect(() => {
     setTab(studentClassesTab(searchParams.get("tab")));
   }, [searchParams]);
-
-  useEffect(() => {
-    if (loading || error || !programs.length) {
-      return;
-    }
-    let cancelled = false;
-    // Warm the cache for each visible class so opening one from the portal is instant --
-    // keyed "portal" to match the section PortalProgramDetailPage actually renders with,
-    // not "public" (a mismatched key here would prefetch data nothing ever reads).
-    loadCachedSession().then((session) => {
-      if (cancelled) {
-        return;
-      }
-      const userId = session?.user.id ?? null;
-      for (const program of programs.slice(0, 6)) {
-        prefetchQuery(`program-detail:${slug}:${program.id}:portal:${userId ?? "guest"}`, () => fetchProgramDetailSnapshot(slug, program.id, "portal", userId));
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [loading, error, programs, slug]);
 
   useEffect(() => {
     if (applicationsLoading) {
@@ -4394,27 +4362,6 @@ export function TeacherClassesData({ slug }: { slug: string }) {
     }
   }, []);
 
-  useEffect(() => {
-    if (loading || error || !programs.length) {
-      return;
-    }
-    let cancelled = false;
-    // Warm the public-page cache for each assigned class -- the cover/title now always opens
-    // that page, so by the time a teacher taps in it should already be cached, not a cold fetch.
-    loadCachedSession().then((session) => {
-      if (cancelled) {
-        return;
-      }
-      const userId = session?.user.id ?? null;
-      for (const program of programs.slice(0, 6)) {
-        prefetchQuery(`program-detail:${slug}:${program.id}:public:${userId ?? "guest"}`, () => fetchProgramDetailSnapshot(slug, program.id, "public", userId));
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [loading, error, programs, slug]);
-
   if (loading) {
     return <QuietPageLoadingState />;
   }
@@ -4510,27 +4457,6 @@ export function AdminClassesData({ slug }: { slug: string }) {
       setToast(queuedToast);
     }
   }, []);
-
-  useEffect(() => {
-    if (loading || error || !programs.length) {
-      return;
-    }
-    let cancelled = false;
-    // Warm the public-page cache for each class -- the cover/title now always opens
-    // that page, so by the time an admin taps in it should already be cached, not a cold fetch.
-    loadCachedSession().then((session) => {
-      if (cancelled) {
-        return;
-      }
-      const userId = session?.user.id ?? null;
-      for (const program of programs.slice(0, 6)) {
-        prefetchQuery(`program-detail:${slug}:${program.id}:public:${userId ?? "guest"}`, () => fetchProgramDetailSnapshot(slug, program.id, "public", userId));
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [loading, error, programs, slug]);
 
   if (loading) {
     return <QuietPageLoadingState />;
@@ -9598,7 +9524,7 @@ function ProgramCardGrid({
   }
 
   return (
-    <div className="grid gap-4 bg-[var(--workspace)] p-4 md:grid-cols-2 lg:grid-cols-3">
+    <div className="grid items-start gap-3 bg-[var(--workspace)] p-4 md:grid-cols-2 xl:grid-cols-3">
       {programs.map((program) => {
         const applicationRow = applicationStatusByProgramId?.[program.id];
         const enrolled = enrolledProgramIds.includes(program.id);
@@ -9611,6 +9537,7 @@ function ProgramCardGrid({
           <ProgramCard
             key={program.id}
             program={program}
+            onOpenIntent={() => warmClassDetail(mosqueSlug, program.id, detailBaseHref?.includes("/portal/") ? "portal" : "public")}
             enrolled={enrolled}
             detailHref={`${detailBaseHref ?? `/m/${mosqueSlug}/programs`}/${program.id}${detailReturnTo ? `?returnTo=${encodeURIComponent(detailReturnTo)}` : ""}`}
             relationship={relationship}
@@ -10130,7 +10057,7 @@ function programCoverPriceLabel(program: Program) {
   if (program.cover_price_label?.trim()) {
     return program.cover_price_label.trim();
   }
-  return program.is_paid ? (programPaymentOptions(program)[0]?.price.replace("/month", "") ?? "Paid") : "Free";
+  return program.is_paid ? (programPaymentOptions(program)[0]?.price ?? "Paid") : "Free";
 }
 
 function programRegistrationLabel(program: Program) {
@@ -10152,93 +10079,64 @@ function programRegistrationLabel(program: Program) {
 function ProgramCard({
   program,
   detailHref,
+  onOpenIntent,
   enrolled = false,
   relationship,
 }: {
   program: ProgramWithTeacher;
   detailHref: string;
+  onOpenIntent?: () => void;
   enrolled?: boolean;
   relationship?: { label: string; tone: "open" | "waitlist" | "closed" } | null;
 }) {
   const registration = relationship ?? programRegistrationLabel(program);
+  const visibility = program.coverDirectorVisibility ?? "name_and_photo";
+  const showName = visibility === "name_and_photo" || visibility === "name_only";
+  const directorName = program.coverDirectorDisplayName?.trim() || program.teacher?.full_name;
+  const directorPhoto = supportedProfileImage(program.teacher?.avatar_url);
   return (
-    <TransitionLink href={detailHref} label="Class Details" className={cn("group relative overflow-hidden rounded-xl bg-white shadow-[0_5px_18px_rgba(38,50,58,0.14)] transition-transform hover:-translate-y-0.5 hover:shadow-[0_8px_24px_rgba(38,50,58,0.18)]", enrolled && "opacity-70")}>
-      <div className="relative">
-        <ProgramHero program={program} />
-        {enrolled ? (
-          <div className="absolute inset-0 flex items-center justify-center bg-white/58">
-            <span className="rounded-full bg-[#17624F] px-4 py-2 text-sm font-semibold text-white shadow-lg">Enrolled</span>
-          </div>
-        ) : null}
-      </div>
-      {program.cover_price_label_enabled !== false ? <PriceTag price={programCoverPriceLabel(program)} /> : null}
-      <div className="space-y-3 p-4 pt-5">
-        {(() => {
-          const visibility = program.coverDirectorVisibility ?? "name_and_photo";
-          const showPhoto = visibility === "name_and_photo";
-          const showName = visibility === "name_and_photo" || visibility === "name_only";
-          const directorName = program.coverDirectorDisplayName?.trim() || program.teacher?.full_name;
-          return (
-            <div className="flex items-start gap-3">
-              {showPhoto ? <Avatar src={program.teacher?.avatar_url ?? null} name={directorName ?? "Teacher"} allowPhoto /> : null}
-              <div className="min-w-0">
-                <h3 className="line-clamp-2 text-lg font-medium leading-6 text-[#26323A]">{program.title}</h3>
-                {program.summary ? (
-                  <p className="mt-1 line-clamp-2 text-sm leading-5 text-[#52616A]">{program.summary}</p>
-                ) : showName ? (
-                  <p className="mt-1 truncate text-sm text-[#6B747B]">{directorName ?? "Teacher to be announced"}</p>
-                ) : null}
-              </div>
-            </div>
-          );
-        })()}
-        <AudienceDetails age={formatAgeRange(program.age_range_text)} gender={formatGender(program.audience_gender)} />
-        {(program.location?.trim() || program.room?.trim()) ? (
-          <p className="flex items-start gap-1.5 text-xs leading-5 text-[#6B747B]">
-            <span aria-hidden>📍</span>
-            <span className="min-w-0 flex-1">{[program.location?.trim(), program.room?.trim()].filter(Boolean).join(" — ")}</span>
-          </p>
-        ) : null}
-        <div className="grid gap-2 text-xs font-semibold">
-          <div className="rounded-[10px] bg-[#F5F8F9] px-3 py-2">
-            <div className="flex items-center justify-between gap-3">
-              <span className="text-[#6B747B]">Registration</span>
-              <span className={cn(
-                "text-right",
-                registration.tone === "open" ? "text-[#17624F]" : registration.tone === "waitlist" ? "text-[#9B6B09]" : "text-[#6B747B]",
-              )}>
-                {registration.label}
-              </span>
-            </div>
-          </div>
-          {!relationship && registration.label === "Registration open" ? (
-            <div className="flex items-center justify-between gap-3 rounded-[10px] bg-[#F5F8F9] px-3 py-2">
-              <span className="text-[#6B747B]">Deadline</span>
-              <span className={cn("text-right", program.registration_deadline_at ? "text-[#C0392B]" : "text-[#8A949B]")}>
-                {program.registration_deadline_at ? formatFinanceShortDate(program.registration_deadline_at) : "No registration deadline"}
-              </span>
+    <TransitionLink href={detailHref} label="Class Details" onPointerEnter={onOpenIntent} onFocus={onOpenIntent} onTouchStart={onOpenIntent}
+      className="group flex min-h-[clamp(240px,calc((100svh-240px)/2),340px)] flex-col overflow-hidden rounded-2xl border border-[#E3DAC8] bg-[#FAF7EF] text-left transition-colors hover:border-[#B8A57A] hover:bg-[#F8F3E7] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#17624F] active:bg-[#F0E8D7] motion-reduce:transition-none md:min-h-0">
+      <div className="flex flex-1 items-stretch">
+        <div className="relative min-h-[176px] w-[38%] max-w-[148px] shrink-0 overflow-hidden bg-[#EAE3D4]">
+          {program.thumbnail_url ? (
+            <Image src={program.thumbnail_url} alt="" fill sizes="(min-width: 380px) 148px, 132px" className="object-cover" />
+          ) : (
+            <div className="absolute inset-0 flex items-center justify-center text-[#71857C]" aria-hidden><PhotoIcon className="h-7 w-7" /></div>
+          )}
+        </div>
+        <div className="flex min-w-0 flex-1 flex-col p-4">
+          <h3 className="break-words text-lg font-semibold leading-[1.35] text-[#26323A] group-hover:text-[#17624F]">{program.title}</h3>
+          {showName ? (
+            <div className="mt-3 flex items-center gap-2 text-[13px] leading-[19px] text-[#52616A]">
+              {visibility === "name_and_photo" && directorPhoto ? (
+                <Image src={directorPhoto} alt="" width={48} height={48} className="h-12 w-12 shrink-0 rounded-full border border-[#D8CCB4] object-cover" />
+              ) : null}
+              <p className="min-w-0 break-words"><span className="text-[#6B747B]">Director: </span>{directorName || "To be announced"}</p>
             </div>
           ) : null}
+          <div className="mt-3 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs font-medium leading-[18px] text-[#384B43]">
+            <span>{formatAgeRange(program.age_range_text)}</span>
+            <span className="h-3 w-px bg-[#BEAD86]" aria-hidden />
+            <span>{formatGender(program.audience_gender)}</span>
+          </div>
         </div>
       </div>
-    </TransitionLink>
-  );
-}
-
-function PriceTag({ price }: { price: string }) {
-  return (
-    <div className="absolute right-2 top-[126px] h-11 w-20 rotate-3" aria-label={`Price ${price}`}>
-      <div
-        className="relative flex h-9 w-20 items-center justify-center pl-3 text-base font-semibold text-[#2A2104] shadow-[0_7px_14px_rgba(91,68,6,0.24)]"
-        style={{
-          clipPath: "polygon(0 50%, 18% 0, 100% 0, 100% 100%, 18% 100%)",
-          background: "linear-gradient(135deg, #FFE37A 0%, #FFC400 38%, #D99A00 100%)",
-        }}
-      >
-        <span className="absolute left-2.5 top-1/2 h-2.5 w-2.5 -translate-y-1/2 rounded-full border border-[#B98200] bg-white shadow-inner" aria-hidden />
-        <span className="relative z-10">{price}</span>
+      <div className="flex items-center gap-2 border-t border-[#E3DAC8] px-5 pb-5 pt-4 text-[13px] leading-5">
+        <div className="min-w-0 flex-1">
+          <p className={cn("font-medium", enrolled || registration.tone === "open" ? "text-[#17624F]" : registration.tone === "waitlist" ? "text-[#8A610F]" : "text-[#6B747B]")}>
+            {enrolled ? "Enrolled" : registration.label}
+          </p>
+          {!enrolled && !relationship && registration.label === "Registration open" && program.registration_deadline_at ? (
+            <p className="text-[#6B747B]">Apply by {formatFinanceShortDate(program.registration_deadline_at)}</p>
+          ) : null}
+        </div>
+        {program.cover_price_label_enabled !== false ? (
+          <p className="max-w-[45%] text-right font-semibold text-[#26323A]">{programCoverPriceLabel(program)}</p>
+        ) : null}
+        <span className="shrink-0 text-[#71857C] group-hover:text-[#17624F]" aria-hidden><ChevronRightIcon className="h-4 w-4" /></span>
       </div>
-    </div>
+    </TransitionLink>
   );
 }
 
@@ -10998,6 +10896,7 @@ function TeacherClassCard({
   // "Edit Class" stays reachable as its own row below, not overloaded onto the cover tap.
   const primaryHref = archived ? `${classBasePath}/${program.id}/students` : publicHref;
   const primaryLabel = archived ? "Student records" : "Public Page";
+  const warmPublicPage = () => { if (!archived) warmClassDetail(mosqueSlug, program.id, "public"); };
 
   async function resignFromClass() {
     setResigning(true);
@@ -11016,7 +10915,7 @@ function TeacherClassCard({
   return (
     <article className="relative overflow-hidden rounded-[22px] border border-[#CBD8DE] bg-white shadow-[0_16px_40px_rgba(38,50,58,0.09)]">
       {isDirector && !archived ? <ClassCardActionMenu onDelete={() => setLifecycleOpen(true)} /> : null}
-      <TransitionLink href={primaryHref} label={primaryLabel} className="relative block transition-opacity hover:opacity-95">
+      <TransitionLink href={primaryHref} label={primaryLabel} onPointerEnter={warmPublicPage} onFocus={warmPublicPage} onTouchStart={warmPublicPage} className="relative block transition-opacity hover:opacity-95">
         <ProgramHero program={program} />
         <span className={cn("absolute left-3 top-3 z-10 inline-flex min-h-7 items-center rounded-full bg-white/92 px-3 text-xs font-bold uppercase tracking-wide shadow-[0_6px_16px_rgba(38,50,58,0.18)] backdrop-blur", controlLabel ? "text-[#2F6077]" : isDirector ? "text-[#17624F]" : "text-[#2F6077]")}>
           {controlLabel ?? (isDirector ? "Director" : "Instructor")}
@@ -11031,7 +10930,7 @@ function TeacherClassCard({
               </span>
             ))}
           </div>
-          <TransitionLink href={primaryHref} label={primaryLabel} className="line-clamp-2 text-lg font-semibold leading-6 text-[#26323A] hover:text-[#17624F]">
+          <TransitionLink href={primaryHref} label={primaryLabel} onPointerEnter={warmPublicPage} onFocus={warmPublicPage} onTouchStart={warmPublicPage} className="line-clamp-2 text-lg font-semibold leading-6 text-[#26323A] hover:text-[#17624F]">
             {program.title}
           </TransitionLink>
           {program.access_ends_at ? <p className="text-xs leading-5 text-[#845A1E]">Billing stopped · Access ends {new Date(program.access_ends_at).toLocaleDateString("en-CA", { timeZone: program.schedule_timezone || "America/Edmonton" })}</p> : null}
@@ -11115,7 +11014,7 @@ function ActionRowCount({ count, urgent }: { count: number; urgent?: boolean }) 
 
 function TeacherActionButton({ icon, label, onClick }: { icon: ReactNode; label: string; onClick: () => void }) {
   return (
-    <button type="button" onClick={onClick} className="group flex min-h-[58px] w-full items-center gap-3 text-sm font-semibold text-[#26323A] transition hover:bg-[#F7FAFB]">
+    <button type="button" onClick={onClick} className="press-feedback group flex min-h-[58px] w-full items-center gap-3 text-sm font-semibold text-[#26323A] transition hover:bg-[#F7FAFB]">
       <span className="flex h-10 w-10 shrink-0 items-center justify-center text-[#26323A] transition group-hover:text-[#17624F]" aria-hidden>
         {icon}
       </span>

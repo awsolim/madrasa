@@ -26,6 +26,14 @@ The app is mobile-first but desktop must also be polished. The UI should feel li
 - Do not use heavy gradients, generic SaaS card overload, or excessive shadows.
 - Keep the UI clean, structured, mobile-first, and operational.
 
+## Styling preferences
+
+- Give each screen a deliberate hierarchy suited to its task; avoid generic generated-dashboard styling.
+- Avoid decorative uppercase captions above titles, unnecessary nested cards, excessive shadows/gradients, and faint-background pills used for ordinary information.
+- Use plain text, spacing and typography before adding containers or badges. Reserve status color for meaningful states.
+- Keep controls concise and clear, with visible keyboard focus and immediate press feedback. Do not trade interaction quality for decoration.
+- Keep names readable and layouts compact without crowding. Make focused refinements rather than broad redesigns unless requested.
+
 ## Database rules
 
 - Do not disable RLS globally.

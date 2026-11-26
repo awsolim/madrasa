@@ -80,6 +80,49 @@ a {
   text-decoration: none;
 }
 
+a.text-link {
+  color: var(--brand-green);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1px;
+}
+
+a.text-link:hover {
+  color: #0f4537;
+  text-decoration-thickness: 2px;
+}
+
+a.text-link:focus-visible {
+  outline: 2px solid var(--brand-green);
+  outline-offset: 3px;
+  border-radius: 2px;
+}
+
+/* Immediate tactile feedback; release naturally instead of delaying actions. */
+.press-feedback {
+  -webkit-tap-highlight-color: transparent;
+  transition-property: background-color, border-color, color, box-shadow, filter, scale;
+  transition-duration: 120ms;
+  transition-timing-function: ease-out;
+}
+
+.press-feedback:active:not(:disabled):not([aria-disabled="true"]) {
+  scale: 0.97;
+  filter: brightness(0.87);
+  transition-duration: 40ms;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .press-feedback {
+    transition-duration: 0ms;
+  }
+
+  .press-feedback:active:not(:disabled):not([aria-disabled="true"]) {
+    scale: none;
+    transition-duration: 0ms;
+  }
+}
+
 @keyframes tenant-boot-progress {
   0% {
     width: 4%;

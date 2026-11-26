@@ -34,7 +34,7 @@ test('canonical URLs preserve queries and do not strip a different tenant', () =
 test('all role menus start with Classes then Schedule and preserve distinct destinations', () => {
   for (const section of ['public', 'portal', 'teacher', 'admin']) {
     const items = workspaceNavItems('assiddiq', section);
-    assert.deepEqual(items.map(item => item.label), ['Classes', 'Schedule', section === 'admin' ? 'Masjid' : 'Inbox', 'Me']);
+    assert.deepEqual(items.map(item => item.label), ['Classes', 'Schedule', section === 'admin' ? 'Masjid' : 'Inbox', 'Profile']);
     assert.equal(workspaceRoute(items[0].href, 'assiddiq', section), 'classes');
     assert.equal(workspaceRoute(items[1].href, 'assiddiq', section), 'home');
     assert.notEqual(items[0].href, items[1].href);

@@ -103,11 +103,11 @@ export function DesktopSidebar({
           const subItems = buildDesktopSubItems(label, section, mosqueSlug, accountHref);
           const subItemActive = subItems.some((subItem) => isHrefActive(pathname, searchParams, subItem.href));
 
-          if (section !== "public" && (label === "Me" || subItems.length)) {
-            const firstSubItemHref = label === "Me" ? `${accountHref}?panel=settings` : subItems[0]?.href;
+          if (section !== "public" && (label === "Profile" || subItems.length)) {
+            const firstSubItemHref = label === "Profile" ? `${accountHref}?panel=settings` : subItems[0]?.href;
             return (
               <DesktopNavGroup key={`${item.label}-${item.href}`} item={item} active={active || subItemActive} firstSubItemHref={firstSubItemHref} badgeCount={badgeCount} actionRequired={actionRequired}>
-                {label === "Me" ? (
+                {label === "Profile" ? (
                   <DesktopAccountSubnav mosqueSlug={mosqueSlug} accountHref={accountHref} />
                 ) : (
                   <DesktopSidebarSubnav items={subItems} pathname={pathname} searchParams={searchParams} />
@@ -506,7 +506,7 @@ function buildDesktopSubItems(label: string, section: "public" | "portal" | "tea
     ];
   }
 
-  if (label === "Me") {
+  if (label === "Profile") {
     return accountPanelItems.map((item) => ({ label: item.label, href: `${accountHref}?panel=${item.panel}` }));
   }
 
@@ -545,7 +545,7 @@ function desktopLabel(label: string) {
   }
 
   if (label === "Account") {
-    return "Me";
+    return "Profile";
   }
 
   return label;
@@ -641,7 +641,7 @@ function SidebarIcon({ label }: { label: string }) {
     return <MosqueIcon className={className} />;
   }
 
-  if (normalized === "Me" || normalized === "Settings") {
+  if (normalized === "Profile" || normalized === "Settings") {
     return (
       <svg viewBox="0 0 24 24" className={className} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden>
         <circle cx="12" cy="8" r="3.2" />
