@@ -524,8 +524,14 @@ export async function POST(request: Request) {
   const isReconciliation = request.headers.get("x-madrasa-reconciliation") === "true";
 
   try {
-    if (event.type === "checkout.session.completed") {
-      await upsertPaidEnrollmentFromSession(event.data.object as Stripe.Checkout.Session, stripeAccountId, isReconciliation);
+    if (event.type === "checkout.session.completed" || event.type === "checkout.session.async_payment_succeeded") {
+      const session = event.data.object as Stripe.Checkout.Session;
+      // Delayed methods complete Checkout before the money is confirmed. Wait
+      // for Stripe's signed success event instead of granting access or asking
+      // Stripe to endlessly retry the original unpaid completion event.
+      if (event.type !== "checkout.session.completed" || session.payment_status !== "unpaid") {
+        await upsertPaidEnrollmentFromSession(session, stripeAccountId, isReconciliation);
+      }
     }
 
     if (event.type === "customer.subscription.updated" || event.type === "customer.subscription.deleted") {

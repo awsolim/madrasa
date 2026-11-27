@@ -215,11 +215,16 @@ export async function POST(request: Request) {
 
     return Response.json({ url: session.url });
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Could not start checkout.";
+    // PostgREST errors are plain objects, not Error instances. Preserve their
+    // message/code in server logs instead of replacing the diagnostic evidence.
+    const databaseError = error && typeof error === "object" ? error as { message?: unknown; code?: unknown } : null;
+    const message = typeof databaseError?.message === "string" ? databaseError.message : "Could not start checkout.";
+    const code = typeof databaseError?.code === "string" ? databaseError.code : null;
     await logServerError(createSupabaseServiceClient(), {
       source: "stripe.checkout",
       message,
+      context: { code },
     });
-    return Response.json({ error: message }, { status: 500 });
+    return Response.json({ error: code === "23514" ? "Checkout could not be prepared. Please contact the class director so we can resolve this." : message }, { status: 500 });
   }
 }
