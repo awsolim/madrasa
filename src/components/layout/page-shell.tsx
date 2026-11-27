@@ -8,6 +8,7 @@ import { WorkspacePages } from "@/components/layout/workspace-pages";
 import { NavigationDiagnostics } from "@/components/monitoring/navigation-diagnostics";
 import { MasjidActivityTracker } from "@/components/monitoring/masjid-activity-tracker";
 import { PushNotificationManager } from "@/components/pwa/push-notification-manager";
+import { InstallReminder } from "@/components/pwa/install-reminder";
 
 import { workspaceNavItems } from "@/lib/navigation-paths";
 
@@ -39,6 +40,7 @@ export function AppChrome({
       <PrimaryNavPrefetch slug={slug} section={section} />
       <NavigationDiagnostics />
       <MasjidActivityTracker slug={slug} />
+      <InstallReminder slug={slug} settingsHref={notificationSettingsHref} />
       {section !== "public" ? <PushNotificationManager settingsHref={notificationSettingsHref} /> : null}
       <AppTopBar appName={defaultAppName} mosqueSlug={slug} homeHref={resolvedNav[0]?.href ?? `/m/${slug}/programs`} navItems={resolvedNav} mobileNavItems={resolvedMobileNav} />
       <MobileBottomNav mosqueSlug={slug} navItems={resolvedNav} mobileNavItems={resolvedMobileNav} />

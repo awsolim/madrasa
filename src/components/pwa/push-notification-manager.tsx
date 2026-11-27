@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { loadCachedSession } from "@/lib/client-cache";
+import { detectMobilePlatform } from "@/lib/pwa/install";
 
 const reminderDelayMs = 7 * 24 * 60 * 60 * 1000;
 
@@ -15,10 +16,6 @@ function urlBase64ToUint8Array(base64String: string) {
 
 function isStandalone() {
   return window.matchMedia("(display-mode: standalone)").matches || Boolean((navigator as Navigator & { standalone?: boolean }).standalone);
-}
-
-function isIos() {
-  return /iPad|iPhone|iPod/.test(navigator.userAgent) || (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
 }
 
 function reminderKey(userId: string) {
@@ -59,7 +56,7 @@ async function saveSubscription(subscription: PushSubscription, accessToken: str
 
 export function PushNotificationManager({ settingsHref }: { settingsHref: string }) {
   const [userId, setUserId] = useState<string | null>(null);
-  const [mode, setMode] = useState<"enable" | "install" | "blocked" | null>(null);
+  const [mode, setMode] = useState<"enable" | "blocked" | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [doNotAskAgain, setDoNotAskAgain] = useState(false);
@@ -71,12 +68,10 @@ export function PushNotificationManager({ settingsHref }: { settingsHref: string
       if (cancelled || !session) return;
       setUserId(session.user.id);
 
-      const iosNeedsInstall = isIos() && !isStandalone();
+      // The shared installation reminder owns mobile-browser onboarding.
+      // Ask for device notifications after opening the installed app instead.
+      if (detectMobilePlatform() !== "other" && !isStandalone()) return;
       const supported = "serviceWorker" in navigator && "PushManager" in window && "Notification" in window;
-      if (iosNeedsInstall) {
-        if (!reminderIsSnoozed(session.user.id)) setMode("install");
-        return;
-      }
       if (!supported) return;
 
       if (Notification.permission === "denied") {
@@ -166,7 +161,6 @@ export function PushNotificationManager({ settingsHref }: { settingsHref: string
 
   if (!mode) return null;
 
-  const installMode = mode === "install";
   const blockedMode = mode === "blocked";
   return createPortal(
     <div className="fixed inset-0 z-[2147483647] flex items-center justify-center bg-[#1C252B]/35 p-6 backdrop-blur-[2px]">
@@ -179,21 +173,19 @@ export function PushNotificationManager({ settingsHref }: { settingsHref: string
             </svg>
           </div>
           <h2 id="push-reminder-title" className="mt-4 text-[17px] font-semibold leading-6">
-            {installMode ? "Get important updates" : blockedMode ? "Notifications are blocked" : "Turn on notifications"}
+            {blockedMode ? "Notifications are blocked" : "Turn on notifications"}
           </h2>
           <p id="push-reminder-description" className="mt-1.5 text-[13px] leading-5 text-[#5F6B72]">
-          {installMode
-            ? "Install and open this app from your Home Screen to receive application, class, payment, note, and withdrawal updates."
-            : blockedMode
+          {blockedMode
               ? "Allow notifications for this app in your device settings so important class and account updates are not missed."
               : "Receive important application, class, payment, note, and withdrawal updates even when the app is closed."}
           </p>
           {error ? <p className="mt-3 rounded-xl bg-[#FCEDEC] px-3 py-2 text-xs font-medium leading-5 text-[#A5362B]">{error}</p> : null}
         </div>
         <div className="border-t border-[#DDE3E6]">
-          {installMode || blockedMode ? (
-            <Link href={`${settingsHref}?panel=${installMode ? "homescreen" : "notifications"}`} onClick={remindLater} className="flex min-h-12 w-full items-center justify-center px-4 text-[15px] font-semibold text-[#17624F] active:bg-[#F0F5F3]">
-              {installMode ? "How to install" : "View instructions"}
+          {blockedMode ? (
+            <Link href={`${settingsHref}?panel=notifications`} onClick={remindLater} className="flex min-h-12 w-full items-center justify-center px-4 text-[15px] font-semibold text-[#17624F] active:bg-[#F0F5F3]">
+              View instructions
             </Link>
           ) : (
             <button type="button" onClick={() => void enableNotifications()} disabled={busy} className="min-h-12 w-full px-4 text-[15px] font-semibold text-[#17624F] active:bg-[#F0F5F3] disabled:opacity-60">

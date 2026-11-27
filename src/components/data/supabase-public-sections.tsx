@@ -60,7 +60,7 @@ import { studentClassesTab, type StudentClassesTab } from "@/lib/navigation-path
 import { canHaveProfilePhoto, supportedProfileImage } from "@/lib/profile-images";
 import { attachmentDisplayName, attachmentMetaLabel, formatAttachmentSize, normalizeMessageAttachments, type MessageAttachment } from "@/lib/messages/attachments";
 import { buildAnnouncementThreads, buildNoteThreads } from "@/lib/messages/threads";
-import { detectMobilePlatform, isStandalone } from "@/lib/pwa/install";
+
 import { clearPrivatePage, invalidatePrivateSnapshots, invalidateQuery, invalidateQueryPrefix, loadPrivateSnapshot, operationalSnapshotKey, prefetchQuery, readPrivatePage, useCachedQuery, writePrivatePage } from "@/lib/query-cache";
 import { loadProgramEditor, loadProgramDirectorOptions } from "@/lib/program-editor-data";
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
@@ -473,7 +473,6 @@ export function StudentHomeData({ slug }: { slug: string }) {
 
   return (
     <section className="space-y-5 bg-[var(--workspace)] p-4">
-      <AddToHomeScreenNudge slug={slug} settingsHref={`/m/${slug}/portal/account`} />
       {hasActionRequired ? (
         <HomeNotification
           tone="active"
@@ -1185,8 +1184,6 @@ export function ProgramApplyData({ slug, programId }: { slug: string; programId:
   const [selectedChildIds, setSelectedChildIds] = useState<string[]>([]);
   const [submitBusy, setSubmitBusy] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
-  const [submitted, setSubmitted] = useState(false);
-  const [submittedCount, setSubmittedCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -1381,9 +1378,7 @@ export function ProgramApplyData({ slug, programId }: { slug: string; programId:
       if (applyKey) {
         invalidateQuery(applyKey);
       }
-      setSubmittedCount(requestableStudentIds.length);
-      setSubmitted(true);
-      setSubmitBusy(false);
+      router.replace(`/m/${slug}/portal/classes?tab=applications&submitted=${requestableStudentIds.length}`);
       return;
     }
 
@@ -1449,33 +1444,7 @@ export function ProgramApplyData({ slug, programId }: { slug: string; programId:
     if (applyKey) {
       invalidateQuery(applyKey);
     }
-    setSubmittedCount(1);
-    setSubmitted(true);
-    setSubmitBusy(false);
-  }
-
-  if (submitted) {
-    return (
-      <div className="bg-[var(--workspace)] p-4">
-        <div className="mx-auto max-w-xl space-y-4">
-          <section className="rounded-[28px] bg-white p-6 text-center shadow-[0_12px_30px_rgba(38,50,58,0.08)]">
-            <div className="mx-auto flex h-14 w-14 items-center justify-center rounded-full bg-[#E8F7F2] text-2xl text-[#17624F]">✓</div>
-            <h1 className="mt-4 text-xl font-semibold text-[#26323A]">Application submitted</h1>
-            <p className="mt-2 text-sm leading-6 text-[#52616A]">
-              {submittedCount > 1 ? `${submittedCount} applications have` : "Your application has"} been sent to {program.title}. Administration will review your application, and you can track its status from your inbox.
-            </p>
-            <div className="mt-5 flex flex-col gap-2 sm:flex-row sm:justify-center">
-              <Link href={programHref} className="flex min-h-11 items-center justify-center rounded-full border border-[#D6DCE0] px-5 text-sm font-semibold text-[#26323A]">
-                Back to Program
-              </Link>
-              <Link href={`/m/${slug}/portal/classes?tab=applications`} className="flex min-h-11 items-center justify-center rounded-full bg-[#17624F] px-5 text-sm font-semibold !text-white">
-                My Applications
-              </Link>
-            </div>
-          </section>
-        </div>
-      </div>
-    );
+    router.replace(`/m/${slug}/portal/classes?tab=applications&submitted=1`);
   }
 
   const blockedMessage = isEnrolled
@@ -2036,8 +2005,10 @@ export function StudentClassesData({ slug }: { slug: string }) {
   const { mosque, programs, enrolledProgramIds, loading, enrollmentLoading, error } = useStudentPrograms(slug);
   const { rows: applicationRows, loading: applicationsLoading, reload: reloadApplications } = useApplicantApplications(slug);
   const router = useRouter();
+  const pathname = usePathname();
   const searchParams = useSearchParams();
   const [tab, setTab] = useState<StudentClassesTab>(studentClassesTab(searchParams.get("tab")));
+  const [submittedCount, setSubmittedCount] = useState(0);
   const [detailsRow, setDetailsRow] = useState<ApplicantApplicationRow | null>(null);
   const [rescindTarget, setRescindTarget] = useState<ApplicantApplicationRow | null>(null);
   const [rescindBusy, setRescindBusy] = useState(false);
@@ -2046,6 +2017,20 @@ export function StudentClassesData({ slug }: { slug: string }) {
   useEffect(() => {
     setTab(studentClassesTab(searchParams.get("tab")));
   }, [searchParams]);
+
+  useEffect(() => {
+    const count = Number(searchParams.get("submitted"));
+    if (pathname !== `/m/${slug}/portal/classes` || searchParams.get("tab") !== "applications" || !Number.isSafeInteger(count) || count < 1) return;
+    setSubmittedCount(count);
+    // Consume the confirmation so reload/back cannot show an old submission.
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete("submitted");
+    router.replace(`/m/${slug}/portal/classes?${params}`, { scroll: false });
+  }, [searchParams, router, slug, pathname]);
+
+  useEffect(() => {
+    if (searchParams.get("tab") !== "applications" || pathname !== `/m/${slug}/portal/classes`) setSubmittedCount(0);
+  }, [searchParams, pathname, slug]);
 
   useEffect(() => {
     if (applicationsLoading) {
@@ -2180,6 +2165,11 @@ export function StudentClassesData({ slug }: { slug: string }) {
         ))}
       </div>
 
+      {tab === "applications" && submittedCount > 0 ? (
+        <p role="status" className="mx-4 mt-4 border-l-2 border-[#17624F] pl-3 text-sm leading-6 text-[#17624F]">
+          {submittedCount > 1 ? `${submittedCount} applications submitted successfully.` : "Application submitted successfully."} You can track {submittedCount > 1 ? "their" : "its"} status below.
+        </p>
+      ) : null}
       {content}
       {tab === "browse" && !loading && !enrollmentLoading && mosque ? (
         <div className="p-4">
@@ -4323,7 +4313,6 @@ export function TeacherHomeData({ slug }: { slug: string }) {
 
   return (
     <div className="space-y-4 bg-[var(--workspace)] p-4">
-      <AddToHomeScreenNudge slug={slug} settingsHref={`/m/${slug}/teacher/account`} />
       {inboxItemCount > 0 ? (
         <HomeNotification
           tone="active"
@@ -4351,7 +4340,6 @@ export function AdminHomeData({ slug }: { slug: string }) {
 
   return (
     <div className="space-y-4 bg-[var(--workspace)] p-4">
-      <AddToHomeScreenNudge slug={slug} settingsHref={`/m/${slug}/admin/settings`} />
       <HomeSectionTitle title="Upcoming" />
       {programs.length ? <HomeUpcomingRows programs={programs} canCancelSessions slug={slug} managementBasePath={`/m/${slug}/admin/programs`} /> : <EmptyState title="No classes yet" text="All masjid class sessions will appear here after classes are created." />}
     </div>
@@ -12790,105 +12778,6 @@ function NotificationDeliveryPreferences({ slug }: { slug: string }) {
       <p className="mt-3 px-1 text-xs leading-5 text-[#7B858C]">Important updates must keep at least one delivery method enabled.</p>
       {error ? <p className="mt-2 px-1 text-xs font-semibold text-[#C0392B]">{error}</p> : null}
     </section>
-  );
-}
-
-const a2hsNudgeShownStorageKey = "madrasa:a2hs-nudge-shown";
-
-function wasA2hsNudgeShownThisSession() {
-  if (typeof window === "undefined") {
-    return true;
-  }
-  try {
-    return window.sessionStorage.getItem(a2hsNudgeShownStorageKey) === "1";
-  } catch {
-    return true;
-  }
-}
-
-function markA2hsNudgeShown() {
-  try {
-    window.sessionStorage.setItem(a2hsNudgeShownStorageKey, "1");
-  } catch {
-    // Best-effort only; worst case the nudge just reappears next navigation.
-  }
-}
-
-/**
- * A once-per-session nudge shown on the home dashboard encouraging browser users to add the
- * app to their home screen. Hidden entirely once the app is already running standalone
- * (installed), or on desktop browsers. Android gets a direct "Install App" button when the
- * browser has fired beforeinstallprompt; both platforms always get "See How", which deep-links
- * into the existing homescreen-instructions panel in Account Settings.
- */
-function AddToHomeScreenNudge({ slug, settingsHref }: { slug: string; settingsHref: string }) {
-  const [visible, setVisible] = useState(false);
-  const [mosqueName, setMosqueName] = useState(() => getCachedMosqueChrome(slug)?.name ?? "");
-  const platform = useMemo(() => detectMobilePlatform(), []);
-
-  useEffect(() => {
-    if (platform === "other" || isStandalone() || wasA2hsNudgeShownThisSession()) {
-      return;
-    }
-
-    let cancelled = false;
-    void loadCachedSession().then((session) => {
-      if (cancelled || !session) {
-        return;
-      }
-      markA2hsNudgeShown();
-      setVisible(true);
-    });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [platform]);
-
-  useEffect(() => {
-    if (!visible || mosqueName) {
-      return;
-    }
-    void loadMosqueChrome(slug).then((chrome) => {
-      if (chrome?.name) {
-        setMosqueName(chrome.name);
-      }
-    });
-  }, [visible, mosqueName, slug]);
-
-  if (!visible) {
-    return null;
-  }
-
-  return createPortal(
-    <div className="fixed inset-0 z-[2147483647] flex items-center justify-center bg-[#26323A]/45 px-5 backdrop-blur-sm">
-      <div role="dialog" aria-modal="true" aria-labelledby="a2hs-nudge-title" className="w-full max-w-sm rounded-[28px] bg-[#E7F7F1] px-5 py-5 shadow-[0_24px_70px_rgba(38,50,58,0.24)]">
-        <div className="flex items-start gap-3">
-          <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl bg-white/80 text-xl font-medium text-[#17624F]" aria-hidden>
-            📲
-          </div>
-          <div className="min-w-0 flex-1">
-            <h2 id="a2hs-nudge-title" className="text-base font-semibold text-[#26323A]">
-              Add {mosqueName || "this app"} to your Home Screen
-            </h2>
-            <p className="mt-0.5 text-sm leading-5 text-[#52616A]">Get quick access and a full-screen experience, right from your home screen.</p>
-            <div className="mt-3 flex flex-wrap items-center gap-2">
-              <Link
-                href={`${settingsHref}?panel=homescreen`}
-                onClick={() => setVisible(false)}
-                className="inline-flex min-h-10 items-center rounded-full bg-white px-4 text-sm font-semibold text-[#26323A] shadow-[0_10px_22px_rgba(38,50,58,0.12)] ring-1 ring-white/70"
-              >
-                See How
-              </Link>
-              <button type="button" onClick={() => setVisible(false)} className="text-xs font-semibold text-[#26323A]/60 hover:text-[#26323A]">
-                Not now
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>,
-    document.body,
   );
 }
 
