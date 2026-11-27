@@ -122,10 +122,12 @@ the website host and the visitor's internet connection are working. Teachers can
 share this URL directly. It provides contact-based inquiries, not offline account,
 attendance, enrollment or financial operations. Existing subscriptions are unchanged.
 
-The starter Assiddiq directory contains the two classes confirmed by the owner:
-Al Tarteel (Sheikh Mohamed Moamen) and Weekend School (Sheikh Abdulrahman), with
-both phone numbers confirmed by the owner. No current
-schedule, fee, availability or update timestamp has been invented.
+The Assiddiq directory contains the two published classes: Al Tarteel and Weekend
+School 2026/27. Published descriptions, audience, location, track schedules,
+monthly/annual price options, director names and emails were checked against the
+database on November 26, 2026. A snapshot timestamp records that check; live seat
+counts and enrollment records are not exported. The page clearly explains that
+registration inquiries go directly to the teacher while online services fail.
 
 To maintain the preset directory without database access, edit the public-only
 `data/class-directory/assiddiq.json` and run `npm run directory:render`. Review and
@@ -139,6 +141,13 @@ Run `npm run directory:render` afterwards. Review contacts and listings before
 committing/deploying. Failed reads retain the existing files; this is deliberately
 not a live fetch, automatic deployment, or a database migration. A saved directory
 can become stale, so its notice asks visitors to confirm details with the teacher.
+
+Owner-confirmed contact corrections can be retained in
+`data/class-directory/overrides/<slug>.json`, keyed by program ID. Weekend School's
+confirmed phone is retained there because its database phone fields currently
+contain an invalid placeholder and a conflicting number. Overrides are applied
+before export and their notes are not included in the public HTML. Invalid phone
+placeholders are skipped rather than hiding the next valid contact number.
 
 Automatic account/class connection errors offer **Classes & contacts**, including
 a ten-second recovery option during account startup. This is a local failure
@@ -203,3 +212,63 @@ local switcher store while retaining the current normal sign-in. No migration,
 password changes, privileged session-minting API or teacher-device setup is needed.
 
 Verification: `node --test --test-isolation=none tests/device-account-switching.test.mjs tests/session-recovery.test.mjs tests/logout-navigation.test.mjs`.
+
+### Read-access performance cleanup
+
+Applied manually to production and verified on November 27, 2026. All three
+consolidated policies are installed with RLS enabled and SECURITY INVOKER
+helpers. A live authenticated own-profile check measured 9.898 ms including
+planning, compared with 148.678 ms before the change. Signed-in class browse,
+teacher class lists, notification counts and guest browse also completed
+successfully (approximately 143–178 ms execution in individual checks). These
+samples verify the change, not a sustained latency or availability guarantee.
+
+`supabase/migrations/20261127174834_consolidate_read_access_checks.sql` combines
+the existing permissive SELECT policies on profiles, mosque memberships and
+enrollments into one invoker helper per table. It captures the rules present
+when applied, including their role restrictions, and gives the existing own-row
+permission a short path. It does not invent new role permissions or remove old
+permission decisions. ALL, restrictive, INSERT, UPDATE and DELETE policies are
+left intact. RLS remains enabled. No managed Auth configuration, table data,
+subscription or payment is changed, and no unmeasured indexes are added.
+
+These helpers live in the non-exposed `madrasa_rls` schema and are explicitly
+SECURITY INVOKER. Queries inside them still obey the caller's table privileges
+and RLS. Applicable rules are evaluated in separate PL/pgSQL branches: placing
+authenticated-only functions behind a CASE in one SQL expression would still
+cause an anonymous caller's function-privilege check to fail during planning.
+The migration aborts if the expected own-row policy has changed, and rerunning
+it does not capture its own consolidated policy.
+
+The local fixture contains schema/policy/function definitions checked against
+production on November 27, 2026, with entirely synthetic identities and data.
+It compares before/after visible rows, granular finance/application/enrollment
+permissions, updates and six snapshot RPCs for guests, admins, directors,
+instructors with different grants, students, parents, children, other tenants,
+inactive/unverified instructors and a legacy-role account. No Docker, hosted
+test database, real emails or Stripe operations are involved.
+
+Run `node --test --test-isolation=none tests/read-access-cleanup-db.test.mjs`.
+Run `node scripts/benchmark-read-access.mjs` for five-sample local medians.
+An observed synthetic run (milliseconds, including planning) was:
+
+| Query | Before | After |
+| --- | ---: | ---: |
+| Own profile | 49.767 | 0.222 |
+| Profile list | 49.732 | 23.138 |
+| Signed-in class browse | 39.796 | 1.802 |
+| Director class list | 49.855 | 6.057 |
+| Director notification counts | 48.500 | 1.926 |
+| Guest class browse | 35.434 | 1.171 |
+
+These are local PostgreSQL/WASM measurements, not promised production timings
+or evidence that the memory-commitment warning has been resolved. Continue
+checking the same live pages and timestamped timeout logs under normal usage.
+Monitor memory commitment, swap, connection
+count and disk I/O separately; an instance upgrade remains a separate action.
+
+For rollback, use
+`supabase/rollback/20261127174834_restore_read_access_checks.sql`. It restores the
+exact policies saved in each helper's comment at application time. It aborts
+instead of overwriting any same-named policies added later. The rollback and
+reapplication are covered by the local tests; it removes no tables or records.

@@ -524,14 +524,14 @@ function ApplicationDetailsDrawer({
                   <span className="text-[#6B747B]">Listed price</span>
                   <span className="font-semibold">{applicationListedPrice(row, program)}</span>
                 </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-[#6B747B]">Submitted</span>
-                  <span className="font-semibold">{formatFinanceDate(row.request.requested_at)}</span>
+                <div className="flex items-start justify-between gap-4">
+                  <span className="shrink-0 text-[#6B747B]">Submitted</span>
+                  <span className="min-w-0 text-right font-semibold">{formatFinanceDate(row.request.requested_at)}</span>
                 </div>
                 {row.request.reviewed_at ? (
-                  <div className="flex items-center justify-between">
-                    <span className="text-[#6B747B]">Reviewed</span>
-                    <span className="font-semibold">
+                  <div className="flex items-start justify-between gap-4">
+                    <span className="shrink-0 text-[#6B747B]">Reviewed</span>
+                    <span className="min-w-0 text-right font-semibold">
                       {formatFinanceDate(row.request.reviewed_at)} by {row.approver?.full_name || row.approver?.email || "staff"}
                     </span>
                   </div>

@@ -32,6 +32,19 @@ export function formatFullDate(value: string | null | undefined) {
   return new Date(value).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 }
 
+// Recorded actions use the viewer's local time, like announcements and notes.
+// Date-only values have no recorded time; don't invent a midnight timestamp.
+export function formatEventTimestamp(value: string | null | undefined) {
+  if (!value) return "—";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return formatDateOnly(value);
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "—";
+  return date.toLocaleString("en-US", {
+    month: "short", day: "numeric", year: "numeric",
+    hour: "numeric", minute: "2-digit", hour12: true,
+  });
+}
+
 export function formatDateOnly(value: string | null | undefined) {
   if (!value) {
     return "—";

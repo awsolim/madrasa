@@ -1,0 +1,289 @@
+[
+  {
+    "rls": true,
+    "table": "profiles",
+    "forceRls": false,
+    "anonSelect": true,
+    "authSelect": true
+  },
+  {
+    "rls": true,
+    "table": "program_applications",
+    "forceRls": false,
+    "anonSelect": true,
+    "authSelect": true
+  },
+  {
+    "rls": true,
+    "table": "enrollments",
+    "forceRls": false,
+    "anonSelect": true,
+    "authSelect": true
+  },
+  {
+    "rls": true,
+    "table": "enrollment_requests",
+    "forceRls": false,
+    "anonSelect": true,
+    "authSelect": true
+  },
+  {
+    "rls": true,
+    "table": "parent_child_links",
+    "forceRls": false,
+    "anonSelect": true,
+    "authSelect": true
+  },
+  {
+    "rls": true,
+    "table": "program_faqs",
+    "forceRls": false,
+    "anonSelect": true,
+    "authSelect": true
+  },
+  {
+    "rls": true,
+    "table": "program_announcements",
+    "forceRls": false,
+    "anonSelect": true,
+    "authSelect": true
+  },
+  {
+    "rls": true,
+    "table": "program_details",
+    "forceRls": false,
+    "anonSelect": true,
+    "authSelect": true
+  },
+  {
+    "rls": true,
+    "table": "program_outcomes",
+    "forceRls": false,
+    "anonSelect": true,
+    "authSelect": true
+  },
+  {
+    "rls": true,
+    "table": "program_content_sections",
+    "forceRls": false,
+    "anonSelect": true,
+    "authSelect": true
+  },
+  {
+    "rls": true,
+    "table": "program_session_cancellations",
+    "forceRls": false,
+    "anonSelect": true,
+    "authSelect": true
+  },
+  {
+    "rls": true,
+    "table": "teacher_join_requests",
+    "forceRls": false,
+    "anonSelect": true,
+    "authSelect": true
+  },
+  {
+    "rls": true,
+    "table": "program_announcement_receipts",
+    "forceRls": false,
+    "anonSelect": true,
+    "authSelect": true
+  },
+  {
+    "rls": true,
+    "table": "program_media",
+    "forceRls": false,
+    "anonSelect": true,
+    "authSelect": true
+  },
+  {
+    "rls": true,
+    "table": "mosque_memberships",
+    "forceRls": false,
+    "anonSelect": true,
+    "authSelect": true
+  },
+  {
+    "rls": true,
+    "table": "enrollment_request_tracks",
+    "forceRls": false,
+    "anonSelect": true,
+    "authSelect": true
+  },
+  {
+    "rls": true,
+    "table": "enrollment_tracks",
+    "forceRls": false,
+    "anonSelect": true,
+    "authSelect": true
+  },
+  {
+    "rls": true,
+    "table": "program_subscription_tracks",
+    "forceRls": false,
+    "anonSelect": true,
+    "authSelect": true
+  },
+  {
+    "rls": true,
+    "table": "withdrawal_requests",
+    "forceRls": false,
+    "anonSelect": true,
+    "authSelect": true
+  },
+  {
+    "rls": true,
+    "table": "program_teachers",
+    "forceRls": false,
+    "anonSelect": true,
+    "authSelect": true
+  },
+  {
+    "rls": true,
+    "table": "program_finance_audit_events",
+    "forceRls": false,
+    "anonSelect": true,
+    "authSelect": true
+  },
+  {
+    "rls": true,
+    "table": "program_instructor_events",
+    "forceRls": false,
+    "anonSelect": true,
+    "authSelect": true
+  },
+  {
+    "rls": true,
+    "table": "program_subscriptions",
+    "forceRls": false,
+    "anonSelect": true,
+    "authSelect": true
+  },
+  {
+    "rls": true,
+    "table": "mosques",
+    "forceRls": false,
+    "anonSelect": true,
+    "authSelect": true
+  },
+  {
+    "rls": true,
+    "table": "program_tracks",
+    "forceRls": false,
+    "anonSelect": true,
+    "authSelect": true
+  },
+  {
+    "rls": true,
+    "table": "teacher_notification_state",
+    "forceRls": false,
+    "anonSelect": true,
+    "authSelect": true
+  },
+  {
+    "rls": true,
+    "table": "program_sessions",
+    "forceRls": false,
+    "anonSelect": true,
+    "authSelect": true
+  },
+  {
+    "rls": true,
+    "table": "program_track_sessions",
+    "forceRls": false,
+    "anonSelect": true,
+    "authSelect": true
+  },
+  {
+    "rls": true,
+    "table": "push_subscriptions",
+    "forceRls": false,
+    "anonSelect": true,
+    "authSelect": true
+  },
+  {
+    "rls": true,
+    "table": "program_payments",
+    "forceRls": false,
+    "anonSelect": true,
+    "authSelect": true
+  },
+  {
+    "rls": true,
+    "table": "system_error_logs",
+    "forceRls": false,
+    "anonSelect": true,
+    "authSelect": true
+  },
+  {
+    "rls": true,
+    "table": "program_student_notes",
+    "forceRls": false,
+    "anonSelect": true,
+    "authSelect": true
+  },
+  {
+    "rls": true,
+    "table": "program_track_switch_requests",
+    "forceRls": false,
+    "anonSelect": true,
+    "authSelect": true
+  },
+  {
+    "rls": true,
+    "table": "programs",
+    "forceRls": false,
+    "anonSelect": true,
+    "authSelect": true
+  },
+  {
+    "rls": true,
+    "table": "program_track_transfer_rules",
+    "forceRls": false,
+    "anonSelect": true,
+    "authSelect": true
+  },
+  {
+    "rls": true,
+    "table": "program_payment_terms",
+    "forceRls": false,
+    "anonSelect": true,
+    "authSelect": true
+  },
+  {
+    "rls": true,
+    "table": "program_attendance_records",
+    "forceRls": false,
+    "anonSelect": true,
+    "authSelect": true
+  },
+  {
+    "rls": true,
+    "table": "program_student_invites",
+    "forceRls": false,
+    "anonSelect": true,
+    "authSelect": true
+  },
+  {
+    "rls": true,
+    "table": "notification_delivery_preferences",
+    "forceRls": false,
+    "anonSelect": true,
+    "authSelect": true
+  },
+  {
+    "rls": true,
+    "table": "mosque_user_activity_daily",
+    "forceRls": false,
+    "anonSelect": true,
+    "authSelect": true
+  },
+  {
+    "rls": true,
+    "table": "program_lifecycle_operations",
+    "forceRls": false,
+    "anonSelect": false,
+    "authSelect": true
+  }
+]

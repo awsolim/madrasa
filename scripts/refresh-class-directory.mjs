@@ -1,4 +1,4 @@
-import { mkdir, writeFile, rename } from 'node:fs/promises';
+import { mkdir, readFile, writeFile, rename } from 'node:fs/promises';
 import { createDirectory, renderDirectory, validSlug } from './lib/class-directory.mjs';
 
 const slug = process.argv.find(value => value.startsWith('--mosque='))?.slice(9);
@@ -23,7 +23,10 @@ for (const p of snapshot.programs ?? []) {
     details.set(p.id, await rpc('get_program_detail_snapshot', { p_slug: slug, p_program_id: p.id, p_section: 'public' }));
   }
 }
-const directory = createDirectory(slug, snapshot, details);
+let contactOverrides = {};
+try { contactOverrides = JSON.parse(await readFile(`data/class-directory/overrides/${slug}.json`, 'utf8')); }
+catch (error) { if (error.code !== 'ENOENT') throw error; }
+const directory = createDirectory(slug, snapshot, details, new Date().toISOString(), contactOverrides);
 const html = renderDirectory(directory);
 await mkdir('public/continuity', { recursive: true });
 await mkdir('data/class-directory', { recursive: true });

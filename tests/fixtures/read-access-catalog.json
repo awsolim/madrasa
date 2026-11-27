@@ -1,0 +1,3951 @@
+{
+  "tables": [
+    {
+      "name": "profiles",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid"
+        },
+        {
+          "name": "full_name",
+          "type": "text"
+        },
+        {
+          "name": "email",
+          "type": "text"
+        },
+        {
+          "name": "phone_number",
+          "type": "text"
+        },
+        {
+          "name": "avatar_url",
+          "type": "text"
+        },
+        {
+          "name": "age",
+          "type": "text"
+        },
+        {
+          "name": "gender",
+          "type": "text"
+        },
+        {
+          "name": "global_role",
+          "type": "text"
+        },
+        {
+          "name": "date_of_birth",
+          "type": "date"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "account_type",
+          "type": "text"
+        },
+        {
+          "name": "teacher_credentials",
+          "type": "text"
+        },
+        {
+          "name": "teacher_whatsapp_number",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "name": "program_applications",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid"
+        },
+        {
+          "name": "program_id",
+          "type": "uuid"
+        },
+        {
+          "name": "student_profile_id",
+          "type": "uuid"
+        },
+        {
+          "name": "status",
+          "type": "text"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "reviewed_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "joined_at",
+          "type": "timestamp with time zone"
+        }
+      ]
+    },
+    {
+      "name": "enrollments",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid"
+        },
+        {
+          "name": "program_id",
+          "type": "uuid"
+        },
+        {
+          "name": "student_profile_id",
+          "type": "uuid"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "program_track_id",
+          "type": "uuid"
+        },
+        {
+          "name": "status",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "name": "enrollment_requests",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid"
+        },
+        {
+          "name": "mosque_id",
+          "type": "uuid"
+        },
+        {
+          "name": "program_id",
+          "type": "uuid"
+        },
+        {
+          "name": "student_profile_id",
+          "type": "uuid"
+        },
+        {
+          "name": "parent_profile_id",
+          "type": "uuid"
+        },
+        {
+          "name": "status",
+          "type": "text"
+        },
+        {
+          "name": "requested_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "reviewed_by",
+          "type": "uuid"
+        },
+        {
+          "name": "reviewed_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "review_note",
+          "type": "text"
+        },
+        {
+          "name": "student_dismissed_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "program_track_id",
+          "type": "uuid"
+        },
+        {
+          "name": "approved_price_monthly_cents",
+          "type": "integer"
+        },
+        {
+          "name": "payment_bypassed",
+          "type": "boolean"
+        },
+        {
+          "name": "decision_note",
+          "type": "text"
+        },
+        {
+          "name": "teacher_dismissed_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "admission_completed_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "payment_type",
+          "type": "text"
+        },
+        {
+          "name": "approved_price_annual_cents",
+          "type": "integer"
+        },
+        {
+          "name": "payment_bypass_external",
+          "type": "boolean"
+        },
+        {
+          "name": "payment_terms_id",
+          "type": "uuid"
+        },
+        {
+          "name": "admission_source",
+          "type": "text"
+        },
+        {
+          "name": "source_student_invite_id",
+          "type": "uuid"
+        }
+      ]
+    },
+    {
+      "name": "parent_child_links",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid"
+        },
+        {
+          "name": "parent_profile_id",
+          "type": "uuid"
+        },
+        {
+          "name": "child_profile_id",
+          "type": "uuid"
+        },
+        {
+          "name": "mosque_id",
+          "type": "uuid"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone"
+        }
+      ]
+    },
+    {
+      "name": "program_faqs",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid"
+        },
+        {
+          "name": "program_id",
+          "type": "uuid"
+        },
+        {
+          "name": "sort_order",
+          "type": "integer"
+        },
+        {
+          "name": "question",
+          "type": "text"
+        },
+        {
+          "name": "answer",
+          "type": "text"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone"
+        }
+      ]
+    },
+    {
+      "name": "program_announcements",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid"
+        },
+        {
+          "name": "program_id",
+          "type": "uuid"
+        },
+        {
+          "name": "author_profile_id",
+          "type": "uuid"
+        },
+        {
+          "name": "message",
+          "type": "text"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "target_program_track_ids",
+          "type": "uuid[]"
+        },
+        {
+          "name": "attachments",
+          "type": "jsonb"
+        },
+        {
+          "name": "deleted_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "deleted_by",
+          "type": "uuid"
+        }
+      ]
+    },
+    {
+      "name": "program_details",
+      "columns": [
+        {
+          "name": "program_id",
+          "type": "uuid"
+        },
+        {
+          "name": "learning_intro",
+          "type": "text"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "learning_title",
+          "type": "text"
+        },
+        {
+          "name": "instructor_display_name",
+          "type": "text"
+        },
+        {
+          "name": "instructor_credentials",
+          "type": "text"
+        },
+        {
+          "name": "instructor_contact_url",
+          "type": "text"
+        },
+        {
+          "name": "instructor_contact_phone",
+          "type": "text"
+        },
+        {
+          "name": "requirements_text",
+          "type": "text"
+        },
+        {
+          "name": "what_to_bring_text",
+          "type": "text"
+        },
+        {
+          "name": "policies_text",
+          "type": "text"
+        },
+        {
+          "name": "topics_intro",
+          "type": "text"
+        },
+        {
+          "name": "cover_director_visibility",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "name": "program_outcomes",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid"
+        },
+        {
+          "name": "program_id",
+          "type": "uuid"
+        },
+        {
+          "name": "sort_order",
+          "type": "integer"
+        },
+        {
+          "name": "text",
+          "type": "text"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone"
+        }
+      ]
+    },
+    {
+      "name": "program_content_sections",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid"
+        },
+        {
+          "name": "program_id",
+          "type": "uuid"
+        },
+        {
+          "name": "sort_order",
+          "type": "integer"
+        },
+        {
+          "name": "title",
+          "type": "text"
+        },
+        {
+          "name": "description",
+          "type": "text"
+        },
+        {
+          "name": "duration_text",
+          "type": "text"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone"
+        }
+      ]
+    },
+    {
+      "name": "program_session_cancellations",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid"
+        },
+        {
+          "name": "program_id",
+          "type": "uuid"
+        },
+        {
+          "name": "session_date",
+          "type": "date"
+        },
+        {
+          "name": "start_time",
+          "type": "text"
+        },
+        {
+          "name": "end_time",
+          "type": "text"
+        },
+        {
+          "name": "cancelled_by",
+          "type": "uuid"
+        },
+        {
+          "name": "announcement_id",
+          "type": "uuid"
+        },
+        {
+          "name": "note",
+          "type": "text"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone"
+        }
+      ]
+    },
+    {
+      "name": "teacher_join_requests",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid"
+        },
+        {
+          "name": "mosque_id",
+          "type": "uuid"
+        },
+        {
+          "name": "profile_id",
+          "type": "uuid"
+        },
+        {
+          "name": "status",
+          "type": "text"
+        },
+        {
+          "name": "reviewed_by",
+          "type": "uuid"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "reviewed_at",
+          "type": "timestamp with time zone"
+        }
+      ]
+    },
+    {
+      "name": "program_announcement_receipts",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid"
+        },
+        {
+          "name": "announcement_id",
+          "type": "uuid"
+        },
+        {
+          "name": "profile_id",
+          "type": "uuid"
+        },
+        {
+          "name": "read_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "dismissed_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone"
+        }
+      ]
+    },
+    {
+      "name": "program_media",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid"
+        },
+        {
+          "name": "program_id",
+          "type": "uuid"
+        },
+        {
+          "name": "sort_order",
+          "type": "integer"
+        },
+        {
+          "name": "media_type",
+          "type": "text"
+        },
+        {
+          "name": "url",
+          "type": "text"
+        },
+        {
+          "name": "thumbnail_url",
+          "type": "text"
+        },
+        {
+          "name": "title",
+          "type": "text"
+        },
+        {
+          "name": "short_label",
+          "type": "text"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "caption",
+          "type": "text"
+        },
+        {
+          "name": "alt_text",
+          "type": "text"
+        },
+        {
+          "name": "is_featured",
+          "type": "boolean"
+        }
+      ]
+    },
+    {
+      "name": "mosque_memberships",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid"
+        },
+        {
+          "name": "mosque_id",
+          "type": "uuid"
+        },
+        {
+          "name": "profile_id",
+          "type": "uuid"
+        },
+        {
+          "name": "role",
+          "type": "text"
+        },
+        {
+          "name": "can_manage_programs",
+          "type": "boolean"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "status",
+          "type": "text"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "teacher_approval_status",
+          "type": "text"
+        },
+        {
+          "name": "teacher_approval_reviewed_by",
+          "type": "uuid"
+        },
+        {
+          "name": "teacher_approval_reviewed_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "can_create_programs",
+          "type": "boolean"
+        }
+      ]
+    },
+    {
+      "name": "enrollment_request_tracks",
+      "columns": [
+        {
+          "name": "enrollment_request_id",
+          "type": "uuid"
+        },
+        {
+          "name": "program_track_id",
+          "type": "uuid"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone"
+        }
+      ]
+    },
+    {
+      "name": "enrollment_tracks",
+      "columns": [
+        {
+          "name": "enrollment_id",
+          "type": "uuid"
+        },
+        {
+          "name": "program_track_id",
+          "type": "uuid"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone"
+        }
+      ]
+    },
+    {
+      "name": "program_subscription_tracks",
+      "columns": [
+        {
+          "name": "program_subscription_id",
+          "type": "uuid"
+        },
+        {
+          "name": "program_track_id",
+          "type": "uuid"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone"
+        }
+      ]
+    },
+    {
+      "name": "withdrawal_requests",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid"
+        },
+        {
+          "name": "mosque_id",
+          "type": "uuid"
+        },
+        {
+          "name": "program_id",
+          "type": "uuid"
+        },
+        {
+          "name": "enrollment_id",
+          "type": "uuid"
+        },
+        {
+          "name": "student_profile_id",
+          "type": "uuid"
+        },
+        {
+          "name": "parent_profile_id",
+          "type": "uuid"
+        },
+        {
+          "name": "requested_by",
+          "type": "uuid"
+        },
+        {
+          "name": "status",
+          "type": "text"
+        },
+        {
+          "name": "requested_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "reviewed_by",
+          "type": "uuid"
+        },
+        {
+          "name": "reviewed_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "decision_note",
+          "type": "text"
+        },
+        {
+          "name": "teacher_dismissed_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "student_dismissed_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "reason",
+          "type": "text"
+        },
+        {
+          "name": "understands_no_refund",
+          "type": "boolean"
+        },
+        {
+          "name": "understands_immediate_exit",
+          "type": "boolean"
+        }
+      ]
+    },
+    {
+      "name": "program_teachers",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid"
+        },
+        {
+          "name": "program_id",
+          "type": "uuid"
+        },
+        {
+          "name": "teacher_profile_id",
+          "type": "uuid"
+        },
+        {
+          "name": "role",
+          "type": "text"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "invite_code",
+          "type": "text"
+        },
+        {
+          "name": "invite_code_created_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "can_manage_finances",
+          "type": "boolean"
+        },
+        {
+          "name": "can_view_applications",
+          "type": "boolean"
+        },
+        {
+          "name": "can_send_direct_invitations",
+          "type": "boolean"
+        },
+        {
+          "name": "can_decide_applications",
+          "type": "boolean"
+        },
+        {
+          "name": "can_edit_class",
+          "type": "boolean"
+        },
+        {
+          "name": "can_announce",
+          "type": "boolean"
+        },
+        {
+          "name": "can_view_student_records",
+          "type": "boolean"
+        },
+        {
+          "name": "can_manage_enrollments",
+          "type": "boolean"
+        }
+      ]
+    },
+    {
+      "name": "program_finance_audit_events",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid"
+        },
+        {
+          "name": "program_id",
+          "type": "uuid"
+        },
+        {
+          "name": "student_profile_id",
+          "type": "uuid"
+        },
+        {
+          "name": "actor_profile_id",
+          "type": "uuid"
+        },
+        {
+          "name": "event_type",
+          "type": "text"
+        },
+        {
+          "name": "summary",
+          "type": "text"
+        },
+        {
+          "name": "metadata",
+          "type": "jsonb"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone"
+        }
+      ]
+    },
+    {
+      "name": "program_instructor_events",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid"
+        },
+        {
+          "name": "program_id",
+          "type": "uuid"
+        },
+        {
+          "name": "assignment_id",
+          "type": "uuid"
+        },
+        {
+          "name": "teacher_profile_id",
+          "type": "uuid"
+        },
+        {
+          "name": "event_type",
+          "type": "text"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone"
+        }
+      ]
+    },
+    {
+      "name": "program_subscriptions",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid"
+        },
+        {
+          "name": "program_id",
+          "type": "uuid"
+        },
+        {
+          "name": "profile_id",
+          "type": "uuid"
+        },
+        {
+          "name": "stripe_subscription_id",
+          "type": "text"
+        },
+        {
+          "name": "status",
+          "type": "text"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "ended_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "mosque_id",
+          "type": "uuid"
+        },
+        {
+          "name": "student_profile_id",
+          "type": "uuid"
+        },
+        {
+          "name": "parent_profile_id",
+          "type": "uuid"
+        },
+        {
+          "name": "enrollment_request_id",
+          "type": "uuid"
+        },
+        {
+          "name": "stripe_account_id",
+          "type": "text"
+        },
+        {
+          "name": "stripe_customer_id",
+          "type": "text"
+        },
+        {
+          "name": "stripe_checkout_session_id",
+          "type": "text"
+        },
+        {
+          "name": "stripe_price_id",
+          "type": "text"
+        },
+        {
+          "name": "current_period_start",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "current_period_end",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "cancel_at_period_end",
+          "type": "boolean"
+        },
+        {
+          "name": "program_track_id",
+          "type": "uuid"
+        },
+        {
+          "name": "payment_type",
+          "type": "text"
+        },
+        {
+          "name": "payment_paused",
+          "type": "boolean"
+        },
+        {
+          "name": "payment_paused_until",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "payment_waived",
+          "type": "boolean"
+        },
+        {
+          "name": "payment_waived_reason",
+          "type": "text"
+        },
+        {
+          "name": "payment_waived_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "payment_terms_id",
+          "type": "uuid"
+        },
+        {
+          "name": "stripe_subscription_schedule_id",
+          "type": "text"
+        },
+        {
+          "name": "amount_cents",
+          "type": "integer"
+        },
+        {
+          "name": "billing_months",
+          "type": "integer"
+        },
+        {
+          "name": "currency",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "name": "mosques",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid"
+        },
+        {
+          "name": "name",
+          "type": "text"
+        },
+        {
+          "name": "slug",
+          "type": "text"
+        },
+        {
+          "name": "logo_url",
+          "type": "text"
+        },
+        {
+          "name": "primary_color",
+          "type": "text"
+        },
+        {
+          "name": "secondary_color",
+          "type": "text"
+        },
+        {
+          "name": "stripe_account_id",
+          "type": "text"
+        },
+        {
+          "name": "welcome_title",
+          "type": "text"
+        },
+        {
+          "name": "welcome_description",
+          "type": "text"
+        },
+        {
+          "name": "features",
+          "type": "text[]"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "picture_url",
+          "type": "text"
+        },
+        {
+          "name": "address",
+          "type": "text"
+        },
+        {
+          "name": "pwa_name",
+          "type": "text"
+        },
+        {
+          "name": "short_name",
+          "type": "text"
+        },
+        {
+          "name": "app_icon_url",
+          "type": "text"
+        },
+        {
+          "name": "annual_billing_anchor",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "name": "program_tracks",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid"
+        },
+        {
+          "name": "program_id",
+          "type": "uuid"
+        },
+        {
+          "name": "name",
+          "type": "text"
+        },
+        {
+          "name": "description",
+          "type": "text"
+        },
+        {
+          "name": "schedule",
+          "type": "jsonb"
+        },
+        {
+          "name": "sort_order",
+          "type": "integer"
+        },
+        {
+          "name": "is_active",
+          "type": "boolean"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "gender_override",
+          "type": "text"
+        },
+        {
+          "name": "age_min",
+          "type": "integer"
+        },
+        {
+          "name": "age_max",
+          "type": "integer"
+        },
+        {
+          "name": "location",
+          "type": "text"
+        },
+        {
+          "name": "room",
+          "type": "text"
+        },
+        {
+          "name": "capacity",
+          "type": "integer"
+        },
+        {
+          "name": "pricing_override_enabled",
+          "type": "boolean"
+        },
+        {
+          "name": "price_monthly_cents",
+          "type": "integer"
+        },
+        {
+          "name": "price_annual_cents",
+          "type": "integer"
+        },
+        {
+          "name": "eligibility_comment",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "name": "teacher_notification_state",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid"
+        },
+        {
+          "name": "user_id",
+          "type": "uuid"
+        },
+        {
+          "name": "notification_key",
+          "type": "text"
+        },
+        {
+          "name": "seen_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "dismissed_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone"
+        }
+      ]
+    },
+    {
+      "name": "program_sessions",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid"
+        },
+        {
+          "name": "program_id",
+          "type": "uuid"
+        },
+        {
+          "name": "program_track_id",
+          "type": "uuid"
+        },
+        {
+          "name": "session_date",
+          "type": "date"
+        },
+        {
+          "name": "start_time",
+          "type": "time without time zone"
+        },
+        {
+          "name": "end_time",
+          "type": "time without time zone"
+        },
+        {
+          "name": "title",
+          "type": "text"
+        },
+        {
+          "name": "location",
+          "type": "text"
+        },
+        {
+          "name": "room",
+          "type": "text"
+        },
+        {
+          "name": "notes",
+          "type": "text"
+        },
+        {
+          "name": "capacity",
+          "type": "integer"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "day_of_week",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "name": "program_track_sessions",
+      "columns": [
+        {
+          "name": "program_track_id",
+          "type": "uuid"
+        },
+        {
+          "name": "program_session_id",
+          "type": "uuid"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone"
+        }
+      ]
+    },
+    {
+      "name": "push_subscriptions",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid"
+        },
+        {
+          "name": "profile_id",
+          "type": "uuid"
+        },
+        {
+          "name": "endpoint",
+          "type": "text"
+        },
+        {
+          "name": "p256dh",
+          "type": "text"
+        },
+        {
+          "name": "auth",
+          "type": "text"
+        },
+        {
+          "name": "user_agent",
+          "type": "text"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone"
+        }
+      ]
+    },
+    {
+      "name": "program_payments",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "mosque_id",
+          "type": "uuid"
+        },
+        {
+          "name": "program_id",
+          "type": "uuid"
+        },
+        {
+          "name": "program_subscription_id",
+          "type": "uuid"
+        },
+        {
+          "name": "student_profile_id",
+          "type": "uuid"
+        },
+        {
+          "name": "parent_profile_id",
+          "type": "uuid"
+        },
+        {
+          "name": "stripe_charge_id",
+          "type": "text"
+        },
+        {
+          "name": "stripe_payment_intent_id",
+          "type": "text"
+        },
+        {
+          "name": "stripe_invoice_id",
+          "type": "text"
+        },
+        {
+          "name": "amount_cents",
+          "type": "integer"
+        },
+        {
+          "name": "currency",
+          "type": "text"
+        },
+        {
+          "name": "paid_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "receipt_url",
+          "type": "text"
+        },
+        {
+          "name": "tax_receipt_status",
+          "type": "text"
+        },
+        {
+          "name": "tax_receipt_eligible_amount_cents",
+          "type": "integer"
+        },
+        {
+          "name": "tax_receipt_number",
+          "type": "text"
+        },
+        {
+          "name": "tax_receipt_issued_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "tax_receipt_issued_by",
+          "type": "uuid"
+        },
+        {
+          "name": "tax_receipt_note",
+          "type": "text"
+        },
+        {
+          "name": "payment_terms_id",
+          "type": "uuid"
+        }
+      ]
+    },
+    {
+      "name": "system_error_logs",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid"
+        },
+        {
+          "name": "source",
+          "type": "text"
+        },
+        {
+          "name": "message",
+          "type": "text"
+        },
+        {
+          "name": "context",
+          "type": "jsonb"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone"
+        }
+      ]
+    },
+    {
+      "name": "program_student_notes",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid"
+        },
+        {
+          "name": "mosque_id",
+          "type": "uuid"
+        },
+        {
+          "name": "program_id",
+          "type": "uuid"
+        },
+        {
+          "name": "student_profile_id",
+          "type": "uuid"
+        },
+        {
+          "name": "recipient_profile_id",
+          "type": "uuid"
+        },
+        {
+          "name": "parent_profile_id",
+          "type": "uuid"
+        },
+        {
+          "name": "author_profile_id",
+          "type": "uuid"
+        },
+        {
+          "name": "message",
+          "type": "text"
+        },
+        {
+          "name": "category",
+          "type": "text"
+        },
+        {
+          "name": "seen_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "seen_by",
+          "type": "uuid"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "attachments",
+          "type": "jsonb"
+        }
+      ]
+    },
+    {
+      "name": "program_track_switch_requests",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid"
+        },
+        {
+          "name": "program_id",
+          "type": "uuid"
+        },
+        {
+          "name": "enrollment_id",
+          "type": "uuid"
+        },
+        {
+          "name": "student_profile_id",
+          "type": "uuid"
+        },
+        {
+          "name": "from_track_ids",
+          "type": "uuid[]"
+        },
+        {
+          "name": "to_track_ids",
+          "type": "uuid[]"
+        },
+        {
+          "name": "status",
+          "type": "text"
+        },
+        {
+          "name": "requested_by",
+          "type": "uuid"
+        },
+        {
+          "name": "requested_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "decided_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "decided_by",
+          "type": "uuid"
+        },
+        {
+          "name": "decision_note",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "name": "programs",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid"
+        },
+        {
+          "name": "mosque_id",
+          "type": "uuid"
+        },
+        {
+          "name": "teacher_profile_id",
+          "type": "uuid"
+        },
+        {
+          "name": "title",
+          "type": "text"
+        },
+        {
+          "name": "description",
+          "type": "text"
+        },
+        {
+          "name": "is_active",
+          "type": "boolean"
+        },
+        {
+          "name": "is_paid",
+          "type": "boolean"
+        },
+        {
+          "name": "thumbnail_url",
+          "type": "text"
+        },
+        {
+          "name": "price_monthly_cents",
+          "type": "integer"
+        },
+        {
+          "name": "stripe_product_id",
+          "type": "text"
+        },
+        {
+          "name": "stripe_price_id",
+          "type": "text"
+        },
+        {
+          "name": "audience_gender",
+          "type": "text"
+        },
+        {
+          "name": "age_range_text",
+          "type": "text"
+        },
+        {
+          "name": "schedule",
+          "type": "jsonb"
+        },
+        {
+          "name": "schedule_timezone",
+          "type": "text"
+        },
+        {
+          "name": "schedule_notes",
+          "type": "text"
+        },
+        {
+          "name": "tags",
+          "type": "text[]"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "director_profile_id",
+          "type": "uuid"
+        },
+        {
+          "name": "track_selection_mode",
+          "type": "text"
+        },
+        {
+          "name": "track_selection_count",
+          "type": "integer"
+        },
+        {
+          "name": "offers_monthly_payment",
+          "type": "boolean"
+        },
+        {
+          "name": "offers_annual_payment",
+          "type": "boolean"
+        },
+        {
+          "name": "price_annual_cents",
+          "type": "integer"
+        },
+        {
+          "name": "stripe_annual_price_id",
+          "type": "text"
+        },
+        {
+          "name": "internal_name",
+          "type": "text"
+        },
+        {
+          "name": "summary",
+          "type": "text"
+        },
+        {
+          "name": "category",
+          "type": "text"
+        },
+        {
+          "name": "program_type",
+          "type": "text"
+        },
+        {
+          "name": "publication_status",
+          "type": "text"
+        },
+        {
+          "name": "application_status",
+          "type": "text"
+        },
+        {
+          "name": "lifecycle_status",
+          "type": "text"
+        },
+        {
+          "name": "application_mode",
+          "type": "text"
+        },
+        {
+          "name": "accepting_applications",
+          "type": "boolean"
+        },
+        {
+          "name": "application_open_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "application_close_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "waitlist_enabled",
+          "type": "boolean"
+        },
+        {
+          "name": "capacity_behavior",
+          "type": "text"
+        },
+        {
+          "name": "default_capacity",
+          "type": "integer"
+        },
+        {
+          "name": "payment_kind",
+          "type": "text"
+        },
+        {
+          "name": "billing_end_behavior",
+          "type": "text"
+        },
+        {
+          "name": "billing_duration_months",
+          "type": "integer"
+        },
+        {
+          "name": "allow_custom_prices",
+          "type": "boolean"
+        },
+        {
+          "name": "allow_waived_payments",
+          "type": "boolean"
+        },
+        {
+          "name": "manual_payment_note",
+          "type": "text"
+        },
+        {
+          "name": "financial_assistance_note",
+          "type": "text"
+        },
+        {
+          "name": "receipt_note",
+          "type": "text"
+        },
+        {
+          "name": "contact_name",
+          "type": "text"
+        },
+        {
+          "name": "contact_email",
+          "type": "text"
+        },
+        {
+          "name": "contact_phone",
+          "type": "text"
+        },
+        {
+          "name": "duration_type",
+          "type": "text"
+        },
+        {
+          "name": "start_now",
+          "type": "boolean"
+        },
+        {
+          "name": "start_date",
+          "type": "date"
+        },
+        {
+          "name": "end_date",
+          "type": "date"
+        },
+        {
+          "name": "duration_months",
+          "type": "integer"
+        },
+        {
+          "name": "is_ongoing",
+          "type": "boolean"
+        },
+        {
+          "name": "schedule_pattern",
+          "type": "text"
+        },
+        {
+          "name": "registration_deadline_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "location",
+          "type": "text"
+        },
+        {
+          "name": "room",
+          "type": "text"
+        },
+        {
+          "name": "billing_start_behavior",
+          "type": "text"
+        },
+        {
+          "name": "cover_price_label_enabled",
+          "type": "boolean"
+        },
+        {
+          "name": "cover_price_label",
+          "type": "text"
+        },
+        {
+          "name": "room_area",
+          "type": "text"
+        },
+        {
+          "name": "tax_receipt_policy",
+          "type": "text"
+        },
+        {
+          "name": "track_switch_policy",
+          "type": "text"
+        },
+        {
+          "name": "track_switch_allow_all",
+          "type": "boolean"
+        },
+        {
+          "name": "monthly_billing_anchor",
+          "type": "text"
+        },
+        {
+          "name": "annual_billing_anchor",
+          "type": "text"
+        },
+        {
+          "name": "access_ends_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "lifecycle_operation_id",
+          "type": "uuid"
+        }
+      ]
+    },
+    {
+      "name": "program_track_transfer_rules",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid"
+        },
+        {
+          "name": "program_id",
+          "type": "uuid"
+        },
+        {
+          "name": "from_track_id",
+          "type": "uuid"
+        },
+        {
+          "name": "to_track_id",
+          "type": "uuid"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone"
+        }
+      ]
+    },
+    {
+      "name": "program_payment_terms",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid"
+        },
+        {
+          "name": "mosque_id",
+          "type": "uuid"
+        },
+        {
+          "name": "program_id",
+          "type": "uuid"
+        },
+        {
+          "name": "enrollment_request_id",
+          "type": "uuid"
+        },
+        {
+          "name": "enrollment_id",
+          "type": "uuid"
+        },
+        {
+          "name": "student_profile_id",
+          "type": "uuid"
+        },
+        {
+          "name": "parent_profile_id",
+          "type": "uuid"
+        },
+        {
+          "name": "payment_type",
+          "type": "text"
+        },
+        {
+          "name": "amount_cents",
+          "type": "integer"
+        },
+        {
+          "name": "currency",
+          "type": "text"
+        },
+        {
+          "name": "billing_months",
+          "type": "integer"
+        },
+        {
+          "name": "billing_start_behavior",
+          "type": "text"
+        },
+        {
+          "name": "billing_end_behavior",
+          "type": "text"
+        },
+        {
+          "name": "program_start_date_snapshot",
+          "type": "date"
+        },
+        {
+          "name": "program_end_date_snapshot",
+          "type": "date"
+        },
+        {
+          "name": "status",
+          "type": "text"
+        },
+        {
+          "name": "stripe_customer_id",
+          "type": "text"
+        },
+        {
+          "name": "stripe_checkout_session_id",
+          "type": "text"
+        },
+        {
+          "name": "stripe_subscription_id",
+          "type": "text"
+        },
+        {
+          "name": "stripe_subscription_schedule_id",
+          "type": "text"
+        },
+        {
+          "name": "stripe_invoice_id",
+          "type": "text"
+        },
+        {
+          "name": "stripe_payment_intent_id",
+          "type": "text"
+        },
+        {
+          "name": "current_period_start",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "current_period_end",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "approved_by",
+          "type": "uuid"
+        },
+        {
+          "name": "approved_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "superseded_by_payment_terms_id",
+          "type": "uuid"
+        },
+        {
+          "name": "internal_note",
+          "type": "text"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "monthly_billing_anchor",
+          "type": "text"
+        },
+        {
+          "name": "monthly_billing_timezone",
+          "type": "text"
+        }
+      ]
+    },
+    {
+      "name": "program_attendance_records",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid"
+        },
+        {
+          "name": "program_id",
+          "type": "uuid"
+        },
+        {
+          "name": "program_session_id",
+          "type": "uuid"
+        },
+        {
+          "name": "enrollment_id",
+          "type": "uuid"
+        },
+        {
+          "name": "student_profile_id",
+          "type": "uuid"
+        },
+        {
+          "name": "session_date",
+          "type": "date"
+        },
+        {
+          "name": "day_of_week",
+          "type": "text"
+        },
+        {
+          "name": "start_time",
+          "type": "time without time zone"
+        },
+        {
+          "name": "end_time",
+          "type": "time without time zone"
+        },
+        {
+          "name": "status",
+          "type": "text"
+        },
+        {
+          "name": "absence_reason",
+          "type": "text"
+        },
+        {
+          "name": "marked_by",
+          "type": "uuid"
+        },
+        {
+          "name": "marked_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone"
+        }
+      ]
+    },
+    {
+      "name": "program_student_invites",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid"
+        },
+        {
+          "name": "program_id",
+          "type": "uuid"
+        },
+        {
+          "name": "invite_code",
+          "type": "text"
+        },
+        {
+          "name": "invite_code_created_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "comment",
+          "type": "text"
+        },
+        {
+          "name": "payment_bypassed",
+          "type": "boolean"
+        },
+        {
+          "name": "payment_bypass_external",
+          "type": "boolean"
+        },
+        {
+          "name": "payment_type",
+          "type": "text"
+        },
+        {
+          "name": "custom_price_monthly_cents",
+          "type": "integer"
+        },
+        {
+          "name": "custom_price_annual_cents",
+          "type": "integer"
+        },
+        {
+          "name": "claimed_by_profile_id",
+          "type": "uuid"
+        },
+        {
+          "name": "claimed_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "created_by",
+          "type": "uuid"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "program_track_id",
+          "type": "uuid"
+        },
+        {
+          "name": "max_students",
+          "type": "integer"
+        },
+        {
+          "name": "expires_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "bypass_eligibility",
+          "type": "boolean"
+        },
+        {
+          "name": "revoked_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "selected_student_profile_ids",
+          "type": "uuid[]"
+        }
+      ]
+    },
+    {
+      "name": "notification_delivery_preferences",
+      "columns": [
+        {
+          "name": "profile_id",
+          "type": "uuid"
+        },
+        {
+          "name": "category",
+          "type": "text"
+        },
+        {
+          "name": "push_enabled",
+          "type": "boolean"
+        },
+        {
+          "name": "email_enabled",
+          "type": "boolean"
+        },
+        {
+          "name": "updated_at",
+          "type": "timestamp with time zone"
+        }
+      ]
+    },
+    {
+      "name": "mosque_user_activity_daily",
+      "columns": [
+        {
+          "name": "mosque_id",
+          "type": "uuid"
+        },
+        {
+          "name": "profile_id",
+          "type": "uuid"
+        },
+        {
+          "name": "activity_date",
+          "type": "date"
+        },
+        {
+          "name": "first_seen_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "last_seen_at",
+          "type": "timestamp with time zone"
+        }
+      ]
+    },
+    {
+      "name": "program_lifecycle_operations",
+      "columns": [
+        {
+          "name": "id",
+          "type": "uuid"
+        },
+        {
+          "name": "program_id",
+          "type": "uuid"
+        },
+        {
+          "name": "actor_profile_id",
+          "type": "uuid"
+        },
+        {
+          "name": "action",
+          "type": "text"
+        },
+        {
+          "name": "status",
+          "type": "text"
+        },
+        {
+          "name": "plan",
+          "type": "jsonb"
+        },
+        {
+          "name": "completed_steps",
+          "type": "text[]"
+        },
+        {
+          "name": "lease_until",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "last_error",
+          "type": "text"
+        },
+        {
+          "name": "notifications_sent_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "created_at",
+          "type": "timestamp with time zone"
+        },
+        {
+          "name": "completed_at",
+          "type": "timestamp with time zone"
+        }
+      ]
+    }
+  ],
+  "indexes": [
+    "CREATE UNIQUE INDEX profiles_pkey ON public.profiles USING btree (id)",
+    "CREATE UNIQUE INDEX program_applications_pkey ON public.program_applications USING btree (id)",
+    "CREATE UNIQUE INDEX program_applications_program_id_student_profile_id_key ON public.program_applications USING btree (program_id, student_profile_id)",
+    "CREATE UNIQUE INDEX enrollments_pkey ON public.enrollments USING btree (id)",
+    "CREATE UNIQUE INDEX enrollments_program_id_student_profile_id_key ON public.enrollments USING btree (program_id, student_profile_id)",
+    "CREATE UNIQUE INDEX enrollments_program_student_unique ON public.enrollments USING btree (program_id, student_profile_id)",
+    "CREATE INDEX enrollments_program_status_idx ON public.enrollments USING btree (program_id, status)",
+    "CREATE UNIQUE INDEX enrollment_requests_program_id_student_profile_id_key ON public.enrollment_requests USING btree (program_id, student_profile_id)",
+    "CREATE UNIQUE INDEX enrollment_requests_pkey ON public.enrollment_requests USING btree (id)",
+    "CREATE INDEX enrollment_requests_program_status_idx ON public.enrollment_requests USING btree (program_id, status)",
+    "CREATE INDEX enrollment_requests_student_idx ON public.enrollment_requests USING btree (student_profile_id)",
+    "CREATE INDEX enrollment_requests_admission_completed_idx ON public.enrollment_requests USING btree (program_id, admission_completed_at DESC) WHERE (admission_completed_at IS NOT NULL)",
+    "CREATE INDEX enrollment_requests_source_invite_idx ON public.enrollment_requests USING btree (source_student_invite_id)",
+    "CREATE UNIQUE INDEX parent_child_links_pkey ON public.parent_child_links USING btree (id)",
+    "CREATE UNIQUE INDEX parent_child_links_parent_profile_id_child_profile_id_mosqu_key ON public.parent_child_links USING btree (parent_profile_id, child_profile_id, mosque_id)",
+    "CREATE INDEX parent_child_links_parent_idx ON public.parent_child_links USING btree (parent_profile_id, mosque_id)",
+    "CREATE INDEX parent_child_links_child_idx ON public.parent_child_links USING btree (child_profile_id, mosque_id)",
+    "CREATE UNIQUE INDEX program_faqs_pkey ON public.program_faqs USING btree (id)",
+    "CREATE UNIQUE INDEX program_faqs_program_id_sort_order_key ON public.program_faqs USING btree (program_id, sort_order)",
+    "CREATE INDEX program_faqs_program_idx ON public.program_faqs USING btree (program_id, sort_order)",
+    "CREATE UNIQUE INDEX program_announcements_pkey ON public.program_announcements USING btree (id)",
+    "CREATE INDEX program_announcements_target_tracks_idx ON public.program_announcements USING gin (target_program_track_ids)",
+    "CREATE INDEX program_announcements_program_created_at_idx ON public.program_announcements USING btree (program_id, created_at DESC)",
+    "CREATE INDEX program_announcements_deleted_at_idx ON public.program_announcements USING btree (deleted_at) WHERE (deleted_at IS NOT NULL)",
+    "CREATE UNIQUE INDEX program_details_pkey ON public.program_details USING btree (program_id)",
+    "CREATE UNIQUE INDEX program_outcomes_pkey ON public.program_outcomes USING btree (id)",
+    "CREATE UNIQUE INDEX program_outcomes_program_id_sort_order_key ON public.program_outcomes USING btree (program_id, sort_order)",
+    "CREATE INDEX program_outcomes_program_idx ON public.program_outcomes USING btree (program_id, sort_order)",
+    "CREATE UNIQUE INDEX program_content_sections_pkey ON public.program_content_sections USING btree (id)",
+    "CREATE UNIQUE INDEX program_content_sections_program_id_sort_order_key ON public.program_content_sections USING btree (program_id, sort_order)",
+    "CREATE INDEX program_content_sections_program_idx ON public.program_content_sections USING btree (program_id, sort_order)",
+    "CREATE UNIQUE INDEX program_session_cancellations_pkey ON public.program_session_cancellations USING btree (id)",
+    "CREATE UNIQUE INDEX program_session_cancellations_program_id_session_date_start_key ON public.program_session_cancellations USING btree (program_id, session_date, start_time)",
+    "CREATE INDEX program_session_cancellations_lookup_idx ON public.program_session_cancellations USING btree (program_id, session_date)",
+    "CREATE UNIQUE INDEX teacher_join_requests_pkey ON public.teacher_join_requests USING btree (id)",
+    "CREATE UNIQUE INDEX teacher_join_requests_mosque_id_profile_id_key ON public.teacher_join_requests USING btree (mosque_id, profile_id)",
+    "CREATE UNIQUE INDEX program_announcement_receipts_pkey ON public.program_announcement_receipts USING btree (id)",
+    "CREATE UNIQUE INDEX program_announcement_receipts_announcement_id_profile_id_key ON public.program_announcement_receipts USING btree (announcement_id, profile_id)",
+    "CREATE INDEX program_announcement_receipts_profile_idx ON public.program_announcement_receipts USING btree (profile_id, dismissed_at, read_at)",
+    "CREATE UNIQUE INDEX program_media_pkey ON public.program_media USING btree (id)",
+    "CREATE UNIQUE INDEX program_media_program_id_sort_order_key ON public.program_media USING btree (program_id, sort_order)",
+    "CREATE INDEX program_media_program_idx ON public.program_media USING btree (program_id, sort_order)",
+    "CREATE UNIQUE INDEX mosque_memberships_pkey ON public.mosque_memberships USING btree (id)",
+    "CREATE UNIQUE INDEX mosque_memberships_mosque_id_profile_id_key ON public.mosque_memberships USING btree (mosque_id, profile_id)",
+    "CREATE INDEX mosque_memberships_mosque_profile_idx ON public.mosque_memberships USING btree (mosque_id, profile_id)",
+    "CREATE INDEX mosque_memberships_profile_idx ON public.mosque_memberships USING btree (profile_id)",
+    "CREATE UNIQUE INDEX enrollment_request_tracks_pkey ON public.enrollment_request_tracks USING btree (enrollment_request_id, program_track_id)",
+    "CREATE UNIQUE INDEX enrollment_tracks_pkey ON public.enrollment_tracks USING btree (enrollment_id, program_track_id)",
+    "CREATE UNIQUE INDEX program_subscription_tracks_pkey ON public.program_subscription_tracks USING btree (program_subscription_id, program_track_id)",
+    "CREATE UNIQUE INDEX withdrawal_requests_pkey ON public.withdrawal_requests USING btree (id)",
+    "CREATE UNIQUE INDEX withdrawal_requests_active_unique ON public.withdrawal_requests USING btree (enrollment_id) WHERE (status = 'pending'::text)",
+    "CREATE INDEX withdrawal_requests_program_status_idx ON public.withdrawal_requests USING btree (program_id, status, requested_at DESC)",
+    "CREATE UNIQUE INDEX program_teachers_pkey ON public.program_teachers USING btree (id)",
+    "CREATE UNIQUE INDEX program_teachers_program_id_teacher_profile_id_key ON public.program_teachers USING btree (program_id, teacher_profile_id)",
+    "CREATE INDEX program_teachers_program_idx ON public.program_teachers USING btree (program_id)",
+    "CREATE INDEX program_teachers_teacher_idx ON public.program_teachers USING btree (teacher_profile_id)",
+    "CREATE UNIQUE INDEX program_teachers_one_director_idx ON public.program_teachers USING btree (program_id) WHERE (role = 'director'::text)",
+    "CREATE UNIQUE INDEX program_teachers_invite_code_idx ON public.program_teachers USING btree (invite_code) WHERE (invite_code IS NOT NULL)",
+    "CREATE UNIQUE INDEX program_finance_audit_events_pkey ON public.program_finance_audit_events USING btree (id)",
+    "CREATE INDEX program_finance_audit_program_created_idx ON public.program_finance_audit_events USING btree (program_id, created_at DESC)",
+    "CREATE UNIQUE INDEX program_instructor_events_pkey ON public.program_instructor_events USING btree (id)",
+    "CREATE INDEX program_instructor_events_program_created_idx ON public.program_instructor_events USING btree (program_id, created_at DESC)",
+    "CREATE UNIQUE INDEX program_subscriptions_pkey ON public.program_subscriptions USING btree (id)",
+    "CREATE UNIQUE INDEX program_subscriptions_program_student_unique ON public.program_subscriptions USING btree (program_id, student_profile_id) WHERE ((program_id IS NOT NULL) AND (student_profile_id IS NOT NULL))",
+    "CREATE UNIQUE INDEX program_subscriptions_program_student_conflict_idx ON public.program_subscriptions USING btree (program_id, student_profile_id)",
+    "CREATE UNIQUE INDEX program_subscriptions_stripe_subscription_unique ON public.program_subscriptions USING btree (stripe_subscription_id) WHERE (stripe_subscription_id IS NOT NULL)",
+    "CREATE UNIQUE INDEX program_subscriptions_checkout_session_unique ON public.program_subscriptions USING btree (stripe_checkout_session_id) WHERE (stripe_checkout_session_id IS NOT NULL)",
+    "CREATE INDEX program_subscriptions_student_idx ON public.program_subscriptions USING btree (student_profile_id, status)",
+    "CREATE INDEX program_subscriptions_program_idx ON public.program_subscriptions USING btree (program_id, status)",
+    "CREATE UNIQUE INDEX mosques_pkey ON public.mosques USING btree (id)",
+    "CREATE UNIQUE INDEX mosques_slug_key ON public.mosques USING btree (slug)",
+    "CREATE UNIQUE INDEX program_tracks_pkey ON public.program_tracks USING btree (id)",
+    "CREATE UNIQUE INDEX program_tracks_program_id_sort_order_key ON public.program_tracks USING btree (program_id, sort_order)",
+    "CREATE INDEX program_tracks_program_idx ON public.program_tracks USING btree (program_id, sort_order)",
+    "CREATE UNIQUE INDEX teacher_notification_state_pkey ON public.teacher_notification_state USING btree (id)",
+    "CREATE UNIQUE INDEX teacher_notification_state_user_id_notification_key_key ON public.teacher_notification_state USING btree (user_id, notification_key)",
+    "CREATE INDEX teacher_notification_state_user_id_idx ON public.teacher_notification_state USING btree (user_id)",
+    "CREATE UNIQUE INDEX program_sessions_pkey ON public.program_sessions USING btree (id)",
+    "CREATE INDEX program_sessions_program_date_idx ON public.program_sessions USING btree (program_id, session_date, start_time)",
+    "CREATE INDEX program_sessions_track_date_idx ON public.program_sessions USING btree (program_track_id, session_date, start_time)",
+    "CREATE UNIQUE INDEX program_track_sessions_pkey ON public.program_track_sessions USING btree (program_track_id, program_session_id)",
+    "CREATE INDEX program_track_sessions_session_idx ON public.program_track_sessions USING btree (program_session_id)",
+    "CREATE UNIQUE INDEX push_subscriptions_pkey ON public.push_subscriptions USING btree (id)",
+    "CREATE UNIQUE INDEX push_subscriptions_endpoint_key ON public.push_subscriptions USING btree (endpoint)",
+    "CREATE INDEX push_subscriptions_profile_id_idx ON public.push_subscriptions USING btree (profile_id)",
+    "CREATE UNIQUE INDEX program_payments_pkey ON public.program_payments USING btree (id)",
+    "CREATE UNIQUE INDEX program_payments_stripe_charge_unique ON public.program_payments USING btree (stripe_charge_id)",
+    "CREATE UNIQUE INDEX program_payments_stripe_invoice_unique ON public.program_payments USING btree (stripe_invoice_id)",
+    "CREATE INDEX program_payments_student_idx ON public.program_payments USING btree (student_profile_id, paid_at DESC)",
+    "CREATE INDEX program_payments_parent_idx ON public.program_payments USING btree (parent_profile_id, paid_at DESC)",
+    "CREATE INDEX program_payments_program_idx ON public.program_payments USING btree (program_id, paid_at DESC)",
+    "CREATE UNIQUE INDEX system_error_logs_pkey ON public.system_error_logs USING btree (id)",
+    "CREATE INDEX system_error_logs_created_at_idx ON public.system_error_logs USING btree (created_at DESC)",
+    "CREATE UNIQUE INDEX program_student_notes_pkey ON public.program_student_notes USING btree (id)",
+    "CREATE INDEX program_student_notes_program_student_idx ON public.program_student_notes USING btree (program_id, student_profile_id, created_at DESC)",
+    "CREATE INDEX program_student_notes_recipient_seen_idx ON public.program_student_notes USING btree (recipient_profile_id, seen_at, created_at DESC)",
+    "CREATE UNIQUE INDEX program_track_switch_requests_pkey ON public.program_track_switch_requests USING btree (id)",
+    "CREATE INDEX program_track_switch_requests_program_idx ON public.program_track_switch_requests USING btree (program_id, status)",
+    "CREATE UNIQUE INDEX programs_pkey ON public.programs USING btree (id)",
+    "CREATE INDEX programs_public_listing_idx ON public.programs USING btree (mosque_id, publication_status, lifecycle_status, application_status)",
+    "CREATE UNIQUE INDEX program_track_transfer_rules_pkey ON public.program_track_transfer_rules USING btree (id)",
+    "CREATE UNIQUE INDEX program_track_transfer_rules_unique ON public.program_track_transfer_rules USING btree (program_id, from_track_id, to_track_id)",
+    "CREATE UNIQUE INDEX program_payment_terms_pkey ON public.program_payment_terms USING btree (id)",
+    "CREATE UNIQUE INDEX program_payment_terms_current_request_unique ON public.program_payment_terms USING btree (enrollment_request_id) WHERE ((enrollment_request_id IS NOT NULL) AND (status <> ALL (ARRAY['superseded'::text, 'cancelled'::text, 'ended'::text])))",
+    "CREATE INDEX program_payment_terms_program_student_idx ON public.program_payment_terms USING btree (program_id, student_profile_id, created_at DESC)",
+    "CREATE INDEX program_payment_terms_program_status_idx ON public.program_payment_terms USING btree (program_id, status)",
+    "CREATE UNIQUE INDEX program_payment_terms_checkout_session_unique ON public.program_payment_terms USING btree (stripe_checkout_session_id) WHERE (stripe_checkout_session_id IS NOT NULL)",
+    "CREATE UNIQUE INDEX program_payment_terms_subscription_unique ON public.program_payment_terms USING btree (stripe_subscription_id) WHERE (stripe_subscription_id IS NOT NULL)",
+    "CREATE UNIQUE INDEX program_attendance_records_pkey ON public.program_attendance_records USING btree (id)",
+    "CREATE UNIQUE INDEX program_attendance_records_session_student_unique ON public.program_attendance_records USING btree (program_id, session_date, start_time, student_profile_id)",
+    "CREATE INDEX program_attendance_records_program_session_idx ON public.program_attendance_records USING btree (program_id, session_date DESC, start_time)",
+    "CREATE INDEX program_attendance_records_student_idx ON public.program_attendance_records USING btree (student_profile_id, session_date DESC)",
+    "CREATE UNIQUE INDEX program_student_invites_pkey ON public.program_student_invites USING btree (id)",
+    "CREATE UNIQUE INDEX program_student_invites_code_unique ON public.program_student_invites USING btree (invite_code)",
+    "CREATE INDEX program_student_invites_program_idx ON public.program_student_invites USING btree (program_id)",
+    "CREATE INDEX program_student_invites_track_idx ON public.program_student_invites USING btree (program_track_id)",
+    "CREATE UNIQUE INDEX notification_delivery_preferences_pkey ON public.notification_delivery_preferences USING btree (profile_id, category)",
+    "CREATE UNIQUE INDEX mosque_user_activity_daily_pkey ON public.mosque_user_activity_daily USING btree (mosque_id, profile_id, activity_date)",
+    "CREATE INDEX mosque_user_activity_daily_profile_idx ON public.mosque_user_activity_daily USING btree (mosque_id, profile_id, activity_date DESC)",
+    "CREATE UNIQUE INDEX program_lifecycle_operations_pkey ON public.program_lifecycle_operations USING btree (id)",
+    "CREATE UNIQUE INDEX program_lifecycle_one_operation_idx ON public.program_lifecycle_operations USING btree (program_id) WHERE (status = 'processing'::text)"
+  ],
+  "policies": [
+    {
+      "cmd": "SELECT",
+      "qual": "(EXISTS ( SELECT 1\n   FROM (teacher_join_requests\n     JOIN mosque_memberships ON ((teacher_join_requests.mosque_id = mosque_memberships.mosque_id)))\n  WHERE ((teacher_join_requests.profile_id = profiles.id) AND (mosque_memberships.profile_id = auth.uid()) AND (mosque_memberships.role = 'mosque_admin'::text))))",
+      "roles": [
+        "public"
+      ],
+      "tablename": "profiles",
+      "permissive": "PERMISSIVE",
+      "policyname": "admins_select_teacher_requester_profiles",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "can_read_application_profile(id)",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "profiles",
+      "permissive": "PERMISSIVE",
+      "policyname": "application reviewers can read applicant profiles",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "((EXISTS ( SELECT 1\n   FROM mosque_memberships mm\n  WHERE ((mm.profile_id = profiles.id) AND has_mosque_role(mm.mosque_id, ARRAY['admin'::text])))) OR (EXISTS ( SELECT 1\n   FROM (program_teachers pt\n     JOIN programs p ON ((p.id = pt.program_id)))\n  WHERE ((pt.teacher_profile_id = profiles.id) AND has_mosque_role(p.mosque_id, ARRAY['admin'::text])))))",
+      "roles": [
+        "public"
+      ],
+      "tablename": "profiles",
+      "permissive": "PERMISSIVE",
+      "policyname": "mosque admins view mosque member profiles",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "(EXISTS ( SELECT 1\n   FROM (mosque_memberships my_membership\n     JOIN mosque_memberships their_membership ON ((my_membership.mosque_id = their_membership.mosque_id)))\n  WHERE ((my_membership.profile_id = auth.uid()) AND (my_membership.role = ANY (ARRAY['mosque_admin'::text, 'teacher'::text, 'lead_teacher'::text])) AND (their_membership.profile_id = profiles.id))))",
+      "roles": [
+        "public"
+      ],
+      "tablename": "profiles",
+      "permissive": "PERMISSIVE",
+      "policyname": "mosque_members_select_profiles",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "is_parent_of_child(id)",
+      "roles": [
+        "public"
+      ],
+      "tablename": "profiles",
+      "permissive": "PERMISSIVE",
+      "policyname": "parents can view child profiles",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "(EXISTS ( SELECT 1\n   FROM parent_child_links\n  WHERE ((parent_child_links.parent_profile_id = auth.uid()) AND (parent_child_links.child_profile_id = profiles.id))))",
+      "roles": [
+        "public"
+      ],
+      "tablename": "profiles",
+      "permissive": "PERMISSIVE",
+      "policyname": "parents_select_child_profiles",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "INSERT",
+      "qual": null,
+      "roles": [
+        "public"
+      ],
+      "tablename": "profiles",
+      "permissive": "PERMISSIVE",
+      "policyname": "profiles_insert_own",
+      "schemaname": "public",
+      "with_check": "(id = auth.uid())"
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "(id = auth.uid())",
+      "roles": [
+        "public"
+      ],
+      "tablename": "profiles",
+      "permissive": "PERMISSIVE",
+      "policyname": "profiles_select_own",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "UPDATE",
+      "qual": "(id = auth.uid())",
+      "roles": [
+        "public"
+      ],
+      "tablename": "profiles",
+      "permissive": "PERMISSIVE",
+      "policyname": "profiles_update_own",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "(EXISTS ( SELECT 1\n   FROM (program_teachers pt\n     JOIN programs p ON ((p.id = pt.program_id)))\n  WHERE ((pt.teacher_profile_id = profiles.id) AND (has_mosque_role(p.mosque_id, ARRAY['admin'::text]) OR is_program_teacher(pt.program_id)))))",
+      "roles": [
+        "public"
+      ],
+      "tablename": "profiles",
+      "permissive": "PERMISSIVE",
+      "policyname": "program staff profiles visible to assigned staff and mosque adm",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "((EXISTS ( SELECT 1\n   FROM enrollment_requests er\n  WHERE ((er.student_profile_id = profiles.id) AND is_program_director(er.program_id)))) OR (EXISTS ( SELECT 1\n   FROM enrollments e\n  WHERE ((e.student_profile_id = profiles.id) AND is_program_teacher(e.program_id)))))",
+      "roles": [
+        "public"
+      ],
+      "tablename": "profiles",
+      "permissive": "PERMISSIVE",
+      "policyname": "program teachers can view request and enrolled student profiles",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "(EXISTS ( SELECT 1\n   FROM programs p\n  WHERE ((p.director_profile_id = profiles.id) AND (p.is_active = true))))",
+      "roles": [
+        "public"
+      ],
+      "tablename": "profiles",
+      "permissive": "PERMISSIVE",
+      "policyname": "public can view active program director display profiles",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "((EXISTS ( SELECT 1\n   FROM enrollment_requests er\n  WHERE ((er.student_profile_id = profiles.id) AND can_manage_program(er.program_id)))) OR (EXISTS ( SELECT 1\n   FROM enrollment_requests er\n  WHERE ((er.parent_profile_id = profiles.id) AND can_manage_program(er.program_id)))) OR (EXISTS ( SELECT 1\n   FROM enrollments e\n  WHERE ((e.student_profile_id = profiles.id) AND can_manage_program(e.program_id)))) OR can_manage_parent_profile(id))",
+      "roles": [
+        "public"
+      ],
+      "tablename": "profiles",
+      "permissive": "PERMISSIVE",
+      "policyname": "teachers can view request enrolled student and parent profiles",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "(EXISTS ( SELECT 1\n   FROM ((program_applications\n     JOIN programs ON ((program_applications.program_id = programs.id)))\n     JOIN mosque_memberships ON ((programs.mosque_id = mosque_memberships.mosque_id)))\n  WHERE ((program_applications.student_profile_id = profiles.id) AND (mosque_memberships.profile_id = auth.uid()) AND (mosque_memberships.role = ANY (ARRAY['mosque_admin'::text, 'teacher'::text, 'lead_teacher'::text])))))",
+      "roles": [
+        "public"
+      ],
+      "tablename": "profiles",
+      "permissive": "PERMISSIVE",
+      "policyname": "teachers_select_applicant_profiles",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "UPDATE",
+      "qual": "(id = auth.uid())",
+      "roles": [
+        "public"
+      ],
+      "tablename": "profiles",
+      "permissive": "PERMISSIVE",
+      "policyname": "users update own profile",
+      "schemaname": "public",
+      "with_check": "(id = auth.uid())"
+    },
+    {
+      "cmd": "INSERT",
+      "qual": null,
+      "roles": [
+        "public"
+      ],
+      "tablename": "program_applications",
+      "permissive": "PERMISSIVE",
+      "policyname": "applications_insert_own",
+      "schemaname": "public",
+      "with_check": "(student_profile_id = auth.uid())"
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "(student_profile_id = auth.uid())",
+      "roles": [
+        "public"
+      ],
+      "tablename": "program_applications",
+      "permissive": "PERMISSIVE",
+      "policyname": "applications_select_own",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "(EXISTS ( SELECT 1\n   FROM programs p\n  WHERE ((p.id = program_applications.program_id) AND (p.teacher_profile_id = auth.uid()))))",
+      "roles": [
+        "public"
+      ],
+      "tablename": "program_applications",
+      "permissive": "PERMISSIVE",
+      "policyname": "applications_select_teacher",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "UPDATE",
+      "qual": "(EXISTS ( SELECT 1\n   FROM programs p\n  WHERE ((p.id = program_applications.program_id) AND (p.teacher_profile_id = auth.uid()))))",
+      "roles": [
+        "public"
+      ],
+      "tablename": "program_applications",
+      "permissive": "PERMISSIVE",
+      "policyname": "applications_update_teacher",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "INSERT",
+      "qual": null,
+      "roles": [
+        "public"
+      ],
+      "tablename": "program_applications",
+      "permissive": "PERMISSIVE",
+      "policyname": "parents_insert_child_applications",
+      "schemaname": "public",
+      "with_check": "(EXISTS ( SELECT 1\n   FROM parent_child_links\n  WHERE ((parent_child_links.parent_profile_id = auth.uid()) AND (parent_child_links.child_profile_id = program_applications.student_profile_id))))"
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "(EXISTS ( SELECT 1\n   FROM parent_child_links\n  WHERE ((parent_child_links.parent_profile_id = auth.uid()) AND (parent_child_links.child_profile_id = program_applications.student_profile_id))))",
+      "roles": [
+        "public"
+      ],
+      "tablename": "program_applications",
+      "permissive": "PERMISSIVE",
+      "policyname": "parents_select_child_applications",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "(EXISTS ( SELECT 1\n   FROM (programs\n     JOIN mosque_memberships ON ((programs.mosque_id = mosque_memberships.mosque_id)))\n  WHERE ((programs.id = program_applications.program_id) AND (mosque_memberships.profile_id = auth.uid()) AND (mosque_memberships.role = ANY (ARRAY['mosque_admin'::text, 'teacher'::text, 'lead_teacher'::text])))))",
+      "roles": [
+        "public"
+      ],
+      "tablename": "program_applications",
+      "permissive": "PERMISSIVE",
+      "policyname": "teachers_select_applications",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "UPDATE",
+      "qual": "(EXISTS ( SELECT 1\n   FROM (programs\n     JOIN mosque_memberships ON ((programs.mosque_id = mosque_memberships.mosque_id)))\n  WHERE ((programs.id = program_applications.program_id) AND (mosque_memberships.profile_id = auth.uid()) AND ((programs.teacher_profile_id = auth.uid()) OR (mosque_memberships.role = 'mosque_admin'::text)))))",
+      "roles": [
+        "public"
+      ],
+      "tablename": "program_applications",
+      "permissive": "PERMISSIVE",
+      "policyname": "teachers_update_applications",
+      "schemaname": "public",
+      "with_check": "(EXISTS ( SELECT 1\n   FROM (programs\n     JOIN mosque_memberships ON ((programs.mosque_id = mosque_memberships.mosque_id)))\n  WHERE ((programs.id = program_applications.program_id) AND (mosque_memberships.profile_id = auth.uid()) AND ((programs.teacher_profile_id = auth.uid()) OR (mosque_memberships.role = 'mosque_admin'::text)))))"
+    },
+    {
+      "cmd": "UPDATE",
+      "qual": "can_manage_program_enrollments(program_id)",
+      "roles": [
+        "public"
+      ],
+      "tablename": "enrollments",
+      "permissive": "PERMISSIVE",
+      "policyname": "authorized staff update enrollments",
+      "schemaname": "public",
+      "with_check": "can_manage_program_enrollments(program_id)"
+    },
+    {
+      "cmd": "DELETE",
+      "qual": "(student_profile_id = auth.uid())",
+      "roles": [
+        "public"
+      ],
+      "tablename": "enrollments",
+      "permissive": "PERMISSIVE",
+      "policyname": "enrollments_delete_own",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "INSERT",
+      "qual": null,
+      "roles": [
+        "public"
+      ],
+      "tablename": "enrollments",
+      "permissive": "PERMISSIVE",
+      "policyname": "enrollments_insert_own",
+      "schemaname": "public",
+      "with_check": "(student_profile_id = auth.uid())"
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "(EXISTS ( SELECT 1\n   FROM (programs p\n     JOIN mosque_memberships mm ON ((mm.mosque_id = p.mosque_id)))\n  WHERE ((p.id = enrollments.program_id) AND (mm.profile_id = auth.uid()) AND (mm.role = 'mosque_admin'::text))))",
+      "roles": [
+        "public"
+      ],
+      "tablename": "enrollments",
+      "permissive": "PERMISSIVE",
+      "policyname": "enrollments_select_admin",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "(student_profile_id = auth.uid())",
+      "roles": [
+        "public"
+      ],
+      "tablename": "enrollments",
+      "permissive": "PERMISSIVE",
+      "policyname": "enrollments_select_own",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "(EXISTS ( SELECT 1\n   FROM programs p\n  WHERE ((p.id = enrollments.program_id) AND (p.teacher_profile_id = auth.uid()))))",
+      "roles": [
+        "public"
+      ],
+      "tablename": "enrollments",
+      "permissive": "PERMISSIVE",
+      "policyname": "enrollments_select_teacher",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "INSERT",
+      "qual": null,
+      "roles": [
+        "public"
+      ],
+      "tablename": "enrollments",
+      "permissive": "PERMISSIVE",
+      "policyname": "parents_insert_child_enrollments",
+      "schemaname": "public",
+      "with_check": "(EXISTS ( SELECT 1\n   FROM parent_child_links\n  WHERE ((parent_child_links.parent_profile_id = auth.uid()) AND (parent_child_links.child_profile_id = enrollments.student_profile_id))))"
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "(EXISTS ( SELECT 1\n   FROM parent_child_links\n  WHERE ((parent_child_links.parent_profile_id = auth.uid()) AND (parent_child_links.child_profile_id = enrollments.student_profile_id))))",
+      "roles": [
+        "public"
+      ],
+      "tablename": "enrollments",
+      "permissive": "PERMISSIVE",
+      "policyname": "parents_select_child_enrollments",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "DELETE",
+      "qual": "is_program_teacher(program_id)",
+      "roles": [
+        "public"
+      ],
+      "tablename": "enrollments",
+      "permissive": "PERMISSIVE",
+      "policyname": "program teachers and admins delete enrollments",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "((student_profile_id = auth.uid()) OR (EXISTS ( SELECT 1\n   FROM (parent_child_links pcl\n     JOIN programs p ON ((p.id = enrollments.program_id)))\n  WHERE ((pcl.parent_profile_id = auth.uid()) AND (pcl.child_profile_id = enrollments.student_profile_id) AND (pcl.mosque_id = p.mosque_id)))) OR is_program_teacher(program_id))",
+      "roles": [
+        "public"
+      ],
+      "tablename": "enrollments",
+      "permissive": "PERMISSIVE",
+      "policyname": "students parents and teachers view relevant enrollments",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "INSERT",
+      "qual": null,
+      "roles": [
+        "public"
+      ],
+      "tablename": "enrollments",
+      "permissive": "PERMISSIVE",
+      "policyname": "teachers and admins create enrollments",
+      "schemaname": "public",
+      "with_check": "can_manage_program(program_id)"
+    },
+    {
+      "cmd": "UPDATE",
+      "qual": "can_decide_program_applications(program_id)",
+      "roles": [
+        "public"
+      ],
+      "tablename": "enrollment_requests",
+      "permissive": "PERMISSIVE",
+      "policyname": "authorized staff review enrollment requests",
+      "schemaname": "public",
+      "with_check": "can_decide_program_applications(program_id)"
+    },
+    {
+      "cmd": "INSERT",
+      "qual": null,
+      "roles": [
+        "public"
+      ],
+      "tablename": "enrollment_requests",
+      "permissive": "RESTRICTIVE",
+      "policyname": "enrollment requests require an accepting program",
+      "schemaname": "public",
+      "with_check": "(can_manage_program(program_id) OR (EXISTS ( SELECT 1\n   FROM programs p\n  WHERE ((p.id = enrollment_requests.program_id) AND (p.publication_status <> ALL (ARRAY['draft'::text, 'archived'::text])) AND (p.lifecycle_status <> ALL (ARRAY['completed'::text, 'cancelled'::text, 'archived'::text])) AND (p.application_status = ANY (ARRAY['accepting'::text, 'waitlist_only'::text])) AND ((p.application_open_at IS NULL) OR (p.application_open_at <= now())) AND ((p.application_close_at IS NULL) OR (p.application_close_at >= now()))))))"
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "((student_profile_id = auth.uid()) OR (parent_profile_id = auth.uid()) OR can_view_program_applications(program_id) OR can_decide_program_applications(program_id))",
+      "roles": [
+        "public"
+      ],
+      "tablename": "enrollment_requests",
+      "permissive": "PERMISSIVE",
+      "policyname": "enrollment requests visible to owner and authorized staff",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "UPDATE",
+      "qual": "((student_profile_id = auth.uid()) OR (parent_profile_id = auth.uid()))",
+      "roles": [
+        "public"
+      ],
+      "tablename": "enrollment_requests",
+      "permissive": "PERMISSIVE",
+      "policyname": "students and parents cancel and dismiss own enrollment requests",
+      "schemaname": "public",
+      "with_check": "((student_profile_id = auth.uid()) OR (parent_profile_id = auth.uid()))"
+    },
+    {
+      "cmd": "INSERT",
+      "qual": null,
+      "roles": [
+        "public"
+      ],
+      "tablename": "enrollment_requests",
+      "permissive": "PERMISSIVE",
+      "policyname": "students and parents create enrollment requests",
+      "schemaname": "public",
+      "with_check": "((NOT is_staff_account(auth.uid())) AND (NOT is_staff_account(student_profile_id)) AND (((student_profile_id = auth.uid()) AND (parent_profile_id IS NULL)) OR ((parent_profile_id = auth.uid()) AND is_parent_of_child(student_profile_id, auth.uid(), mosque_id))))"
+    },
+    {
+      "cmd": "INSERT",
+      "qual": null,
+      "roles": [
+        "public"
+      ],
+      "tablename": "enrollment_requests",
+      "permissive": "PERMISSIVE",
+      "policyname": "teachers and admins create returned enrollment notices",
+      "schemaname": "public",
+      "with_check": "((status = ANY (ARRAY['cancelled'::text, 'rejected'::text, 'waitlisted'::text])) AND can_manage_program(program_id))"
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "(EXISTS ( SELECT 1\n   FROM mosque_memberships\n  WHERE ((mosque_memberships.profile_id = auth.uid()) AND (mosque_memberships.mosque_id = parent_child_links.mosque_id) AND (mosque_memberships.role = 'mosque_admin'::text))))",
+      "roles": [
+        "public"
+      ],
+      "tablename": "parent_child_links",
+      "permissive": "PERMISSIVE",
+      "policyname": "admins_select_mosque_links",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "ALL",
+      "qual": "(parent_profile_id = auth.uid())",
+      "roles": [
+        "public"
+      ],
+      "tablename": "parent_child_links",
+      "permissive": "PERMISSIVE",
+      "policyname": "parents manage their child links",
+      "schemaname": "public",
+      "with_check": "((parent_profile_id = auth.uid()) AND has_mosque_role(mosque_id, ARRAY['parent'::text], auth.uid()))"
+    },
+    {
+      "cmd": "DELETE",
+      "qual": "(parent_profile_id = auth.uid())",
+      "roles": [
+        "public"
+      ],
+      "tablename": "parent_child_links",
+      "permissive": "PERMISSIVE",
+      "policyname": "parents_delete_own_links",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "INSERT",
+      "qual": null,
+      "roles": [
+        "public"
+      ],
+      "tablename": "parent_child_links",
+      "permissive": "PERMISSIVE",
+      "policyname": "parents_insert_own_links",
+      "schemaname": "public",
+      "with_check": "(parent_profile_id = auth.uid())"
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "(parent_profile_id = auth.uid())",
+      "roles": [
+        "public"
+      ],
+      "tablename": "parent_child_links",
+      "permissive": "PERMISSIVE",
+      "policyname": "parents_select_own_links",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "can_view_child_guardian_link(child_profile_id)",
+      "roles": [
+        "public"
+      ],
+      "tablename": "parent_child_links",
+      "permissive": "PERMISSIVE",
+      "policyname": "teachers view linked guardians for their students",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "(EXISTS ( SELECT 1\n   FROM programs p\n  WHERE ((p.id = program_faqs.program_id) AND (p.is_active = true))))",
+      "roles": [
+        "public"
+      ],
+      "tablename": "program_faqs",
+      "permissive": "PERMISSIVE",
+      "policyname": "public can view active program faqs",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "ALL",
+      "qual": "can_manage_program(program_id)",
+      "roles": [
+        "public"
+      ],
+      "tablename": "program_faqs",
+      "permissive": "PERMISSIVE",
+      "policyname": "teachers and admins manage program faqs",
+      "schemaname": "public",
+      "with_check": "can_manage_program(program_id)"
+    },
+    {
+      "cmd": "INSERT",
+      "qual": null,
+      "roles": [
+        "public"
+      ],
+      "tablename": "program_announcements",
+      "permissive": "PERMISSIVE",
+      "policyname": "announcements_insert_teacher",
+      "schemaname": "public",
+      "with_check": "(EXISTS ( SELECT 1\n   FROM programs p\n  WHERE ((p.id = program_announcements.program_id) AND (p.teacher_profile_id = auth.uid()))))"
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "((EXISTS ( SELECT 1\n   FROM enrollments e\n  WHERE ((e.program_id = program_announcements.program_id) AND (e.student_profile_id = auth.uid())))) OR (EXISTS ( SELECT 1\n   FROM programs p\n  WHERE ((p.id = program_announcements.program_id) AND (p.teacher_profile_id = auth.uid())))))",
+      "roles": [
+        "public"
+      ],
+      "tablename": "program_announcements",
+      "permissive": "PERMISSIVE",
+      "policyname": "announcements_select",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "INSERT",
+      "qual": null,
+      "roles": [
+        "public"
+      ],
+      "tablename": "program_announcements",
+      "permissive": "PERMISSIVE",
+      "policyname": "authorized staff create announcements",
+      "schemaname": "public",
+      "with_check": "((author_profile_id = auth.uid()) AND can_announce_program(program_id))"
+    },
+    {
+      "cmd": "UPDATE",
+      "qual": "can_announce_program(program_id)",
+      "roles": [
+        "public"
+      ],
+      "tablename": "program_announcements",
+      "permissive": "PERMISSIVE",
+      "policyname": "authorized staff delete announcements",
+      "schemaname": "public",
+      "with_check": "can_announce_program(program_id)"
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "((EXISTS ( SELECT 1\n   FROM enrollments e\n  WHERE ((e.program_id = program_announcements.program_id) AND ((e.student_profile_id = auth.uid()) OR (EXISTS ( SELECT 1\n           FROM (parent_child_links pcl\n             JOIN programs p ON ((p.id = e.program_id)))\n          WHERE ((pcl.parent_profile_id = auth.uid()) AND (pcl.child_profile_id = e.student_profile_id) AND (pcl.mosque_id = p.mosque_id)))))))) OR is_program_teacher(program_id))",
+      "roles": [
+        "public"
+      ],
+      "tablename": "program_announcements",
+      "permissive": "PERMISSIVE",
+      "policyname": "enrolled students parents and teachers view announcements",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "(EXISTS ( SELECT 1\n   FROM programs p\n  WHERE ((p.id = program_details.program_id) AND (p.is_active = true))))",
+      "roles": [
+        "public"
+      ],
+      "tablename": "program_details",
+      "permissive": "PERMISSIVE",
+      "policyname": "public can view active program details",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "ALL",
+      "qual": "can_manage_program(program_id)",
+      "roles": [
+        "public"
+      ],
+      "tablename": "program_details",
+      "permissive": "PERMISSIVE",
+      "policyname": "teachers and admins manage program details",
+      "schemaname": "public",
+      "with_check": "can_manage_program(program_id)"
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "(EXISTS ( SELECT 1\n   FROM programs p\n  WHERE ((p.id = program_outcomes.program_id) AND (p.is_active = true))))",
+      "roles": [
+        "public"
+      ],
+      "tablename": "program_outcomes",
+      "permissive": "PERMISSIVE",
+      "policyname": "public can view active program outcomes",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "ALL",
+      "qual": "can_manage_program(program_id)",
+      "roles": [
+        "public"
+      ],
+      "tablename": "program_outcomes",
+      "permissive": "PERMISSIVE",
+      "policyname": "teachers and admins manage program outcomes",
+      "schemaname": "public",
+      "with_check": "can_manage_program(program_id)"
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "(EXISTS ( SELECT 1\n   FROM programs p\n  WHERE ((p.id = program_content_sections.program_id) AND (p.is_active = true))))",
+      "roles": [
+        "public"
+      ],
+      "tablename": "program_content_sections",
+      "permissive": "PERMISSIVE",
+      "policyname": "public can view active program content sections",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "ALL",
+      "qual": "can_manage_program(program_id)",
+      "roles": [
+        "public"
+      ],
+      "tablename": "program_content_sections",
+      "permissive": "PERMISSIVE",
+      "policyname": "teachers and admins manage program content sections",
+      "schemaname": "public",
+      "with_check": "can_manage_program(program_id)"
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "((EXISTS ( SELECT 1\n   FROM enrollments e\n  WHERE ((e.program_id = program_session_cancellations.program_id) AND (e.student_profile_id = auth.uid())))) OR is_program_teacher(program_id))",
+      "roles": [
+        "public"
+      ],
+      "tablename": "program_session_cancellations",
+      "permissive": "PERMISSIVE",
+      "policyname": "enrolled students and teachers view cancelled sessions",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "INSERT",
+      "qual": null,
+      "roles": [
+        "public"
+      ],
+      "tablename": "program_session_cancellations",
+      "permissive": "PERMISSIVE",
+      "policyname": "teachers cancel assigned program sessions",
+      "schemaname": "public",
+      "with_check": "((cancelled_by = auth.uid()) AND is_program_teacher(program_id))"
+    },
+    {
+      "cmd": "UPDATE",
+      "qual": "is_program_teacher(program_id)",
+      "roles": [
+        "public"
+      ],
+      "tablename": "program_session_cancellations",
+      "permissive": "PERMISSIVE",
+      "policyname": "teachers update assigned program cancellations",
+      "schemaname": "public",
+      "with_check": "is_program_teacher(program_id)"
+    },
+    {
+      "cmd": "UPDATE",
+      "qual": "(EXISTS ( SELECT 1\n   FROM mosque_memberships\n  WHERE ((mosque_memberships.mosque_id = teacher_join_requests.mosque_id) AND (mosque_memberships.profile_id = auth.uid()) AND (mosque_memberships.role = 'mosque_admin'::text))))",
+      "roles": [
+        "public"
+      ],
+      "tablename": "teacher_join_requests",
+      "permissive": "PERMISSIVE",
+      "policyname": "Mosque admins can update teacher requests",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "(EXISTS ( SELECT 1\n   FROM mosque_memberships\n  WHERE ((mosque_memberships.mosque_id = teacher_join_requests.mosque_id) AND (mosque_memberships.profile_id = auth.uid()) AND (mosque_memberships.role = 'mosque_admin'::text))))",
+      "roles": [
+        "public"
+      ],
+      "tablename": "teacher_join_requests",
+      "permissive": "PERMISSIVE",
+      "policyname": "Mosque admins can view teacher requests",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "INSERT",
+      "qual": null,
+      "roles": [
+        "public"
+      ],
+      "tablename": "teacher_join_requests",
+      "permissive": "PERMISSIVE",
+      "policyname": "Users can create their own teacher requests",
+      "schemaname": "public",
+      "with_check": "(auth.uid() = profile_id)"
+    },
+    {
+      "cmd": "DELETE",
+      "qual": "((auth.uid() = profile_id) AND (status = 'rejected'::text))",
+      "roles": [
+        "public"
+      ],
+      "tablename": "teacher_join_requests",
+      "permissive": "PERMISSIVE",
+      "policyname": "Users can delete their own rejected requests",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "(auth.uid() = profile_id)",
+      "roles": [
+        "public"
+      ],
+      "tablename": "teacher_join_requests",
+      "permissive": "PERMISSIVE",
+      "policyname": "Users can view their own teacher requests",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "((profile_id = auth.uid()) OR (EXISTS ( SELECT 1\n   FROM program_announcements pa\n  WHERE ((pa.id = program_announcement_receipts.announcement_id) AND is_program_teacher(pa.program_id)))))",
+      "roles": [
+        "public"
+      ],
+      "tablename": "program_announcement_receipts",
+      "permissive": "PERMISSIVE",
+      "policyname": "announcement receipts visible to owner and program teachers",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "ALL",
+      "qual": "(profile_id = auth.uid())",
+      "roles": [
+        "public"
+      ],
+      "tablename": "program_announcement_receipts",
+      "permissive": "PERMISSIVE",
+      "policyname": "students manage own announcement receipts",
+      "schemaname": "public",
+      "with_check": "(profile_id = auth.uid())"
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "(EXISTS ( SELECT 1\n   FROM programs p\n  WHERE ((p.id = program_media.program_id) AND (p.is_active = true))))",
+      "roles": [
+        "public"
+      ],
+      "tablename": "program_media",
+      "permissive": "PERMISSIVE",
+      "policyname": "public can view active program media",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "ALL",
+      "qual": "can_manage_program(program_id)",
+      "roles": [
+        "public"
+      ],
+      "tablename": "program_media",
+      "permissive": "PERMISSIVE",
+      "policyname": "teachers and admins manage program media",
+      "schemaname": "public",
+      "with_check": "can_manage_program(program_id)"
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "((profile_id = auth.uid()) OR has_mosque_role(mosque_id, ARRAY['admin'::text]))",
+      "roles": [
+        "public"
+      ],
+      "tablename": "mosque_memberships",
+      "permissive": "PERMISSIVE",
+      "policyname": "memberships visible to member and mosque admins",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "INSERT",
+      "qual": null,
+      "roles": [
+        "public"
+      ],
+      "tablename": "mosque_memberships",
+      "permissive": "PERMISSIVE",
+      "policyname": "memberships_insert",
+      "schemaname": "public",
+      "with_check": "(profile_id = auth.uid())"
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "is_mosque_admin(mosque_id)",
+      "roles": [
+        "public"
+      ],
+      "tablename": "mosque_memberships",
+      "permissive": "PERMISSIVE",
+      "policyname": "memberships_select_admin",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "(profile_id = auth.uid())",
+      "roles": [
+        "public"
+      ],
+      "tablename": "mosque_memberships",
+      "permissive": "PERMISSIVE",
+      "policyname": "memberships_select_own",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "UPDATE",
+      "qual": "is_mosque_admin(mosque_id)",
+      "roles": [
+        "public"
+      ],
+      "tablename": "mosque_memberships",
+      "permissive": "PERMISSIVE",
+      "policyname": "memberships_update_admin",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "ALL",
+      "qual": "has_mosque_role(mosque_id, ARRAY['admin'::text])",
+      "roles": [
+        "public"
+      ],
+      "tablename": "mosque_memberships",
+      "permissive": "PERMISSIVE",
+      "policyname": "mosque admins manage memberships",
+      "schemaname": "public",
+      "with_check": "has_mosque_role(mosque_id, ARRAY['admin'::text])"
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "(EXISTS ( SELECT 1\n   FROM enrollment_requests er\n  WHERE ((er.id = enrollment_request_tracks.enrollment_request_id) AND ((er.student_profile_id = auth.uid()) OR (er.parent_profile_id = auth.uid()) OR can_view_program_applications(er.program_id)))))",
+      "roles": [
+        "public"
+      ],
+      "tablename": "enrollment_request_tracks",
+      "permissive": "PERMISSIVE",
+      "policyname": "enrollment request tracks visible with request",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "ALL",
+      "qual": "(EXISTS ( SELECT 1\n   FROM enrollment_requests er\n  WHERE ((er.id = enrollment_request_tracks.enrollment_request_id) AND ((er.student_profile_id = auth.uid()) OR (er.parent_profile_id = auth.uid()) OR can_manage_program(er.program_id)))))",
+      "roles": [
+        "public"
+      ],
+      "tablename": "enrollment_request_tracks",
+      "permissive": "PERMISSIVE",
+      "policyname": "students parents and staff manage enrollment request tracks",
+      "schemaname": "public",
+      "with_check": "(EXISTS ( SELECT 1\n   FROM (enrollment_requests er\n     JOIN program_tracks pt ON ((pt.id = enrollment_request_tracks.program_track_id)))\n  WHERE ((er.id = enrollment_request_tracks.enrollment_request_id) AND (pt.program_id = er.program_id) AND ((er.student_profile_id = auth.uid()) OR (er.parent_profile_id = auth.uid()) OR can_manage_program(er.program_id)))))"
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "(EXISTS ( SELECT 1\n   FROM enrollments e\n  WHERE ((e.id = enrollment_tracks.enrollment_id) AND ((e.student_profile_id = auth.uid()) OR can_manage_program(e.program_id)))))",
+      "roles": [
+        "public"
+      ],
+      "tablename": "enrollment_tracks",
+      "permissive": "PERMISSIVE",
+      "policyname": "enrollment tracks visible to enrolled users and staff",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "ALL",
+      "qual": "(EXISTS ( SELECT 1\n   FROM enrollments e\n  WHERE ((e.id = enrollment_tracks.enrollment_id) AND can_manage_program(e.program_id))))",
+      "roles": [
+        "public"
+      ],
+      "tablename": "enrollment_tracks",
+      "permissive": "PERMISSIVE",
+      "policyname": "staff manage enrollment tracks",
+      "schemaname": "public",
+      "with_check": "(EXISTS ( SELECT 1\n   FROM (enrollments e\n     JOIN program_tracks pt ON ((pt.id = enrollment_tracks.program_track_id)))\n  WHERE ((e.id = enrollment_tracks.enrollment_id) AND (pt.program_id = e.program_id) AND can_manage_program(e.program_id))))"
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "(EXISTS ( SELECT 1\n   FROM program_subscriptions ps\n  WHERE ((ps.id = program_subscription_tracks.program_subscription_id) AND ((ps.student_profile_id = auth.uid()) OR (ps.parent_profile_id = auth.uid()) OR can_manage_program(ps.program_id)))))",
+      "roles": [
+        "public"
+      ],
+      "tablename": "program_subscription_tracks",
+      "permissive": "PERMISSIVE",
+      "policyname": "subscription tracks visible to subscription users and staff",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "UPDATE",
+      "qual": "(can_manage_program(program_id) OR (student_profile_id = auth.uid()) OR (parent_profile_id = auth.uid()) OR (requested_by = auth.uid()))",
+      "roles": [
+        "public"
+      ],
+      "tablename": "withdrawal_requests",
+      "permissive": "PERMISSIVE",
+      "policyname": "program staff manage withdrawal requests",
+      "schemaname": "public",
+      "with_check": "(can_manage_program(program_id) OR (student_profile_id = auth.uid()) OR (parent_profile_id = auth.uid()) OR (requested_by = auth.uid()))"
+    },
+    {
+      "cmd": "INSERT",
+      "qual": null,
+      "roles": [
+        "public"
+      ],
+      "tablename": "withdrawal_requests",
+      "permissive": "PERMISSIVE",
+      "policyname": "students and parents create withdrawal requests",
+      "schemaname": "public",
+      "with_check": "((requested_by = auth.uid()) AND ((student_profile_id = auth.uid()) OR (EXISTS ( SELECT 1\n   FROM parent_child_links pcl\n  WHERE ((pcl.parent_profile_id = auth.uid()) AND (pcl.child_profile_id = withdrawal_requests.student_profile_id) AND (pcl.mosque_id = withdrawal_requests.mosque_id))))))"
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "((student_profile_id = auth.uid()) OR (parent_profile_id = auth.uid()) OR (requested_by = auth.uid()) OR can_manage_program(program_id))",
+      "roles": [
+        "public"
+      ],
+      "tablename": "withdrawal_requests",
+      "permissive": "PERMISSIVE",
+      "policyname": "withdrawal requests visible to owner parent and staff",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "ALL",
+      "qual": "is_program_director(program_id)",
+      "roles": [
+        "public"
+      ],
+      "tablename": "program_teachers",
+      "permissive": "PERMISSIVE",
+      "policyname": "program directors and admins manage program teachers",
+      "schemaname": "public",
+      "with_check": "is_program_director(program_id)"
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "((teacher_profile_id = auth.uid()) OR is_program_teacher(program_id) OR (EXISTS ( SELECT 1\n   FROM programs p\n  WHERE ((p.id = program_teachers.program_id) AND has_mosque_role(p.mosque_id, ARRAY['admin'::text])))))",
+      "roles": [
+        "public"
+      ],
+      "tablename": "program_teachers",
+      "permissive": "PERMISSIVE",
+      "policyname": "program teachers visible to program staff and mosque admins",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "INSERT",
+      "qual": null,
+      "roles": [
+        "public"
+      ],
+      "tablename": "program_finance_audit_events",
+      "permissive": "PERMISSIVE",
+      "policyname": "program finance audit insertable by admins and finance staff",
+      "schemaname": "public",
+      "with_check": "((EXISTS ( SELECT 1\n   FROM programs p\n  WHERE ((p.id = program_finance_audit_events.program_id) AND has_mosque_role(p.mosque_id, ARRAY['admin'::text])))) OR (EXISTS ( SELECT 1\n   FROM program_teachers pt\n  WHERE ((pt.program_id = program_finance_audit_events.program_id) AND (pt.teacher_profile_id = auth.uid()) AND (pt.can_manage_finances = true)))))"
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "((EXISTS ( SELECT 1\n   FROM programs p\n  WHERE ((p.id = program_finance_audit_events.program_id) AND has_mosque_role(p.mosque_id, ARRAY['admin'::text])))) OR (EXISTS ( SELECT 1\n   FROM program_teachers pt\n  WHERE ((pt.program_id = program_finance_audit_events.program_id) AND (pt.teacher_profile_id = auth.uid()) AND (pt.can_manage_finances = true)))))",
+      "roles": [
+        "public"
+      ],
+      "tablename": "program_finance_audit_events",
+      "permissive": "PERMISSIVE",
+      "policyname": "program finance audit visible to admins and finance staff",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "(is_program_director(program_id) OR (EXISTS ( SELECT 1\n   FROM programs p\n  WHERE ((p.id = program_instructor_events.program_id) AND has_mosque_role(p.mosque_id, ARRAY['admin'::text])))))",
+      "roles": [
+        "public"
+      ],
+      "tablename": "program_instructor_events",
+      "permissive": "PERMISSIVE",
+      "policyname": "program instructor events visible to directors and admins",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "((student_profile_id = auth.uid()) OR (parent_profile_id = auth.uid()) OR is_program_teacher(program_id))",
+      "roles": [
+        "public"
+      ],
+      "tablename": "program_subscriptions",
+      "permissive": "PERMISSIVE",
+      "policyname": "students parents and teachers view program subscriptions",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "(profile_id = auth.uid())",
+      "roles": [
+        "public"
+      ],
+      "tablename": "program_subscriptions",
+      "permissive": "PERMISSIVE",
+      "policyname": "subscriptions_select_own",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "INSERT",
+      "qual": null,
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "mosques",
+      "permissive": "PERMISSIVE",
+      "policyname": "authenticated_users_can_create_mosques",
+      "schemaname": "public",
+      "with_check": "true"
+    },
+    {
+      "cmd": "UPDATE",
+      "qual": "(EXISTS ( SELECT 1\n   FROM mosque_memberships\n  WHERE ((mosque_memberships.mosque_id = mosques.id) AND (mosque_memberships.profile_id = auth.uid()) AND (mosque_memberships.role = 'mosque_admin'::text))))",
+      "roles": [
+        "public"
+      ],
+      "tablename": "mosques",
+      "permissive": "PERMISSIVE",
+      "policyname": "mosque_admins_can_update_mosque",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "true",
+      "roles": [
+        "public"
+      ],
+      "tablename": "mosques",
+      "permissive": "PERMISSIVE",
+      "policyname": "mosques_select_all",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "((is_active = true) AND (EXISTS ( SELECT 1\n   FROM programs p\n  WHERE ((p.id = program_tracks.program_id) AND (p.is_active = true)))))",
+      "roles": [
+        "public"
+      ],
+      "tablename": "program_tracks",
+      "permissive": "PERMISSIVE",
+      "policyname": "public can view active program tracks",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "ALL",
+      "qual": "can_manage_program(program_id)",
+      "roles": [
+        "public"
+      ],
+      "tablename": "program_tracks",
+      "permissive": "PERMISSIVE",
+      "policyname": "teachers and admins manage program tracks",
+      "schemaname": "public",
+      "with_check": "can_manage_program(program_id)"
+    },
+    {
+      "cmd": "ALL",
+      "qual": "(user_id = auth.uid())",
+      "roles": [
+        "public"
+      ],
+      "tablename": "teacher_notification_state",
+      "permissive": "PERMISSIVE",
+      "policyname": "users manage their own notification state",
+      "schemaname": "public",
+      "with_check": "(user_id = auth.uid())"
+    },
+    {
+      "cmd": "ALL",
+      "qual": "can_manage_program(program_id)",
+      "roles": [
+        "public"
+      ],
+      "tablename": "program_sessions",
+      "permissive": "PERMISSIVE",
+      "policyname": "directors and admins manage program sessions",
+      "schemaname": "public",
+      "with_check": "can_manage_program(program_id)"
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "((EXISTS ( SELECT 1\n   FROM programs p\n  WHERE ((p.id = program_sessions.program_id) AND (p.publication_status = ANY (ARRAY['published'::text, 'hidden'::text])) AND (p.lifecycle_status <> ALL (ARRAY['cancelled'::text, 'archived'::text]))))) OR can_manage_program(program_id))",
+      "roles": [
+        "public"
+      ],
+      "tablename": "program_sessions",
+      "permissive": "PERMISSIVE",
+      "policyname": "public can view visible program sessions",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "ALL",
+      "qual": "(EXISTS ( SELECT 1\n   FROM program_sessions ps\n  WHERE ((ps.id = program_track_sessions.program_session_id) AND can_manage_program(ps.program_id))))",
+      "roles": [
+        "public"
+      ],
+      "tablename": "program_track_sessions",
+      "permissive": "PERMISSIVE",
+      "policyname": "directors and admins manage program track sessions",
+      "schemaname": "public",
+      "with_check": "(EXISTS ( SELECT 1\n   FROM program_sessions ps\n  WHERE ((ps.id = program_track_sessions.program_session_id) AND can_manage_program(ps.program_id))))"
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "((EXISTS ( SELECT 1\n   FROM (program_sessions ps\n     JOIN programs p ON ((p.id = ps.program_id)))\n  WHERE ((ps.id = program_track_sessions.program_session_id) AND (p.publication_status = ANY (ARRAY['published'::text, 'hidden'::text])) AND (p.lifecycle_status <> ALL (ARRAY['cancelled'::text, 'archived'::text]))))) OR (EXISTS ( SELECT 1\n   FROM program_sessions ps\n  WHERE ((ps.id = program_track_sessions.program_session_id) AND can_manage_program(ps.program_id)))))",
+      "roles": [
+        "public"
+      ],
+      "tablename": "program_track_sessions",
+      "permissive": "PERMISSIVE",
+      "policyname": "public can view visible program track sessions",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "ALL",
+      "qual": "(profile_id = auth.uid())",
+      "roles": [
+        "public"
+      ],
+      "tablename": "push_subscriptions",
+      "permissive": "PERMISSIVE",
+      "policyname": "users manage their own push subscriptions",
+      "schemaname": "public",
+      "with_check": "(profile_id = auth.uid())"
+    },
+    {
+      "cmd": "UPDATE",
+      "qual": "can_manage_program_finances(program_id)",
+      "roles": [
+        "public"
+      ],
+      "tablename": "program_payments",
+      "permissive": "PERMISSIVE",
+      "policyname": "finance managers update tax receipt fields",
+      "schemaname": "public",
+      "with_check": "can_manage_program_finances(program_id)"
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "can_manage_program_finances(program_id)",
+      "roles": [
+        "public"
+      ],
+      "tablename": "program_payments",
+      "permissive": "PERMISSIVE",
+      "policyname": "finance managers view program payments",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "((student_profile_id = auth.uid()) OR (parent_profile_id = auth.uid()))",
+      "roles": [
+        "public"
+      ],
+      "tablename": "program_payments",
+      "permissive": "PERMISSIVE",
+      "policyname": "students and parents view own payments",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "INSERT",
+      "qual": null,
+      "roles": [
+        "public"
+      ],
+      "tablename": "program_student_notes",
+      "permissive": "PERMISSIVE",
+      "policyname": "program teachers create student notes",
+      "schemaname": "public",
+      "with_check": "((author_profile_id = auth.uid()) AND is_program_teacher(program_id) AND ((recipient_profile_id = student_profile_id) OR ((parent_profile_id = recipient_profile_id) AND is_parent_of_child(student_profile_id, parent_profile_id, mosque_id))) AND (EXISTS ( SELECT 1\n   FROM enrollments e\n  WHERE ((e.program_id = program_student_notes.program_id) AND (e.student_profile_id = program_student_notes.student_profile_id)))))"
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "is_program_teacher(program_id)",
+      "roles": [
+        "public"
+      ],
+      "tablename": "program_student_notes",
+      "permissive": "PERMISSIVE",
+      "policyname": "program teachers view student notes",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "((recipient_profile_id = auth.uid()) OR (student_profile_id = auth.uid()) OR ((parent_profile_id = auth.uid()) AND is_parent_of_child(student_profile_id, auth.uid(), mosque_id)))",
+      "roles": [
+        "public"
+      ],
+      "tablename": "program_student_notes",
+      "permissive": "PERMISSIVE",
+      "policyname": "student and parent view own program notes",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "INSERT",
+      "qual": null,
+      "roles": [
+        "public"
+      ],
+      "tablename": "program_track_switch_requests",
+      "permissive": "PERMISSIVE",
+      "policyname": "students and parents create switch requests",
+      "schemaname": "public",
+      "with_check": "((student_profile_id = auth.uid()) OR (EXISTS ( SELECT 1\n   FROM parent_child_links pcl\n  WHERE ((pcl.child_profile_id = program_track_switch_requests.student_profile_id) AND (pcl.parent_profile_id = auth.uid())))))"
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "((student_profile_id = auth.uid()) OR (EXISTS ( SELECT 1\n   FROM parent_child_links pcl\n  WHERE ((pcl.child_profile_id = program_track_switch_requests.student_profile_id) AND (pcl.parent_profile_id = auth.uid())))) OR can_manage_program(program_id))",
+      "roles": [
+        "public"
+      ],
+      "tablename": "program_track_switch_requests",
+      "permissive": "PERMISSIVE",
+      "policyname": "students and parents view own switch requests",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "((is_active = true) OR can_manage_program(id))",
+      "roles": [
+        "public"
+      ],
+      "tablename": "programs",
+      "permissive": "RESTRICTIVE",
+      "policyname": "programs visibility restriction",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "DELETE",
+      "qual": "(EXISTS ( SELECT 1\n   FROM mosque_memberships mm\n  WHERE ((mm.profile_id = auth.uid()) AND (mm.mosque_id = programs.mosque_id) AND (mm.role = 'mosque_admin'::text))))",
+      "roles": [
+        "public"
+      ],
+      "tablename": "programs",
+      "permissive": "PERMISSIVE",
+      "policyname": "programs_delete_admin",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "INSERT",
+      "qual": null,
+      "roles": [
+        "public"
+      ],
+      "tablename": "programs",
+      "permissive": "PERMISSIVE",
+      "policyname": "programs_insert_admin",
+      "schemaname": "public",
+      "with_check": "(EXISTS ( SELECT 1\n   FROM mosque_memberships mm\n  WHERE ((mm.profile_id = auth.uid()) AND (mm.mosque_id = programs.mosque_id) AND ((mm.role = 'mosque_admin'::text) OR (mm.can_manage_programs = true)))))"
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "true",
+      "roles": [
+        "public"
+      ],
+      "tablename": "programs",
+      "permissive": "PERMISSIVE",
+      "policyname": "programs_select_all",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "UPDATE",
+      "qual": "(EXISTS ( SELECT 1\n   FROM mosque_memberships mm\n  WHERE ((mm.profile_id = auth.uid()) AND (mm.mosque_id = programs.mosque_id) AND ((mm.role = 'mosque_admin'::text) OR (mm.can_manage_programs = true)))))",
+      "roles": [
+        "public"
+      ],
+      "tablename": "programs",
+      "permissive": "PERMISSIVE",
+      "policyname": "programs_update_admin",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "true",
+      "roles": [
+        "public"
+      ],
+      "tablename": "program_track_transfer_rules",
+      "permissive": "PERMISSIVE",
+      "policyname": "anyone can view transfer rules",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "ALL",
+      "qual": "can_manage_program(program_id)",
+      "roles": [
+        "public"
+      ],
+      "tablename": "program_track_transfer_rules",
+      "permissive": "PERMISSIVE",
+      "policyname": "program managers manage transfer rules",
+      "schemaname": "public",
+      "with_check": "can_manage_program(program_id)"
+    },
+    {
+      "cmd": "ALL",
+      "qual": "can_manage_program_finances(program_id)",
+      "roles": [
+        "public"
+      ],
+      "tablename": "program_payment_terms",
+      "permissive": "PERMISSIVE",
+      "policyname": "finance managers manage payment terms",
+      "schemaname": "public",
+      "with_check": "can_manage_program_finances(program_id)"
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "((student_profile_id = auth.uid()) OR (parent_profile_id = auth.uid()) OR can_manage_program_finances(program_id))",
+      "roles": [
+        "public"
+      ],
+      "tablename": "program_payment_terms",
+      "permissive": "PERMISSIVE",
+      "policyname": "students parents and finance managers view payment terms",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "ALL",
+      "qual": "can_manage_program(program_id)",
+      "roles": [
+        "public"
+      ],
+      "tablename": "program_attendance_records",
+      "permissive": "PERMISSIVE",
+      "policyname": "program managers manage attendance records",
+      "schemaname": "public",
+      "with_check": "can_manage_program(program_id)"
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "can_manage_program(program_id)",
+      "roles": [
+        "public"
+      ],
+      "tablename": "program_attendance_records",
+      "permissive": "PERMISSIVE",
+      "policyname": "program managers view attendance records",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "ALL",
+      "qual": "can_send_program_direct_invitations(program_id)",
+      "roles": [
+        "public"
+      ],
+      "tablename": "program_student_invites",
+      "permissive": "PERMISSIVE",
+      "policyname": "authorized staff manage student invites",
+      "schemaname": "public",
+      "with_check": "can_send_program_direct_invitations(program_id)"
+    },
+    {
+      "cmd": "ALL",
+      "qual": "(profile_id = auth.uid())",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "notification_delivery_preferences",
+      "permissive": "PERMISSIVE",
+      "policyname": "users manage their own notification preferences",
+      "schemaname": "public",
+      "with_check": "(profile_id = auth.uid())"
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "(is_platform_admin(auth.uid()) OR has_mosque_role(mosque_id, ARRAY['admin'::text], auth.uid()))",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "mosque_user_activity_daily",
+      "permissive": "PERMISSIVE",
+      "policyname": "mosque admins view daily usage",
+      "schemaname": "public",
+      "with_check": null
+    },
+    {
+      "cmd": "SELECT",
+      "qual": "can_manage_program(program_id, auth.uid())",
+      "roles": [
+        "authenticated"
+      ],
+      "tablename": "program_lifecycle_operations",
+      "permissive": "PERMISSIVE",
+      "policyname": "class managers read lifecycle operations",
+      "schemaname": "public",
+      "with_check": null
+    }
+  ],
+  "functions": [
+    "CREATE OR REPLACE FUNCTION public.has_mosque_role(check_mosque_id uuid, allowed_roles text[], check_profile_id uuid DEFAULT auth.uid())\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\n  select exists (\r\n    select 1\r\n    from public.mosque_memberships mm\r\n    join public.profiles p on p.id = mm.profile_id\r\n    where mm.mosque_id = check_mosque_id\r\n      and mm.profile_id = check_profile_id\r\n      and mm.status = 'active'\r\n      and mm.role = any(allowed_roles)\r\n      and p.account_type = mm.role\r\n  );\r\n$function$\n",
+    "CREATE OR REPLACE FUNCTION public.can_manage_program(check_program_id uuid, check_profile_id uuid DEFAULT auth.uid())\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\n  select public.is_program_director(check_program_id, check_profile_id);\r\n$function$\n",
+    "CREATE OR REPLACE FUNCTION public.can_decide_program_applications(check_program_id uuid, check_profile_id uuid DEFAULT auth.uid())\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\n  select public.is_platform_admin(check_profile_id)\r\n  or exists (\r\n    select 1\r\n    from public.programs p\r\n    where p.id = check_program_id\r\n      and public.has_mosque_role(p.mosque_id, array['admin'], check_profile_id)\r\n  )\r\n  or exists (\r\n    select 1\r\n    from public.program_teachers pt\r\n    join public.programs p on p.id = pt.program_id\r\n    where pt.program_id = check_program_id\r\n      and pt.teacher_profile_id = check_profile_id\r\n      and public.has_verified_teacher_membership(p.mosque_id, check_profile_id)\r\n      and (\r\n        pt.role = 'director'\r\n        or (pt.role = 'instructor' and pt.can_decide_applications = true)\r\n      )\r\n  );\r\n$function$\n",
+    "CREATE OR REPLACE FUNCTION public.can_edit_program_details(check_program_id uuid, check_profile_id uuid DEFAULT auth.uid())\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\n  select public.is_platform_admin(check_profile_id)\r\n  or exists (\r\n    select 1\r\n    from public.programs p\r\n    where p.id = check_program_id\r\n      and public.has_mosque_role(p.mosque_id, array['admin'], check_profile_id)\r\n  )\r\n  or exists (\r\n    select 1\r\n    from public.program_teachers pt\r\n    join public.programs p on p.id = pt.program_id\r\n    where pt.program_id = check_program_id\r\n      and pt.teacher_profile_id = check_profile_id\r\n      and public.has_verified_teacher_membership(p.mosque_id, check_profile_id)\r\n      and (\r\n        pt.role = 'director'\r\n        or (pt.role = 'instructor' and pt.can_edit_class = true)\r\n      )\r\n  );\r\n$function$\n",
+    "CREATE OR REPLACE FUNCTION public.can_view_program_applications(check_program_id uuid, check_profile_id uuid DEFAULT auth.uid())\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\n  select public.is_platform_admin(check_profile_id)\r\n  or exists (\r\n    select 1 from public.programs p\r\n    where p.id = check_program_id\r\n      and public.has_mosque_role(p.mosque_id, array['admin'], check_profile_id)\r\n  )\r\n  or exists (\r\n    select 1 from public.program_teachers pt\r\n    join public.programs p on p.id = pt.program_id\r\n    where pt.program_id = check_program_id\r\n      and pt.teacher_profile_id = check_profile_id\r\n      and public.has_verified_teacher_membership(p.mosque_id, check_profile_id)\r\n      and (pt.role = 'director' or (pt.role = 'instructor' and (pt.can_view_applications or pt.can_decide_applications)))\r\n  );\r\n$function$\n",
+    "CREATE OR REPLACE FUNCTION public.can_view_program_student_records(check_program_id uuid, check_profile_id uuid DEFAULT auth.uid())\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\n  select public.is_platform_admin(check_profile_id)\r\n  or exists (\r\n    select 1 from public.programs p\r\n    where p.id = check_program_id\r\n      and public.has_mosque_role(p.mosque_id, array['admin'], check_profile_id)\r\n  )\r\n  or exists (\r\n    select 1\r\n    from public.program_teachers pt\r\n    join public.programs p on p.id = pt.program_id\r\n    where pt.program_id = check_program_id\r\n      and pt.teacher_profile_id = check_profile_id\r\n      and public.has_verified_teacher_membership(p.mosque_id, check_profile_id)\r\n      and (pt.role = 'director' or (pt.role = 'instructor' and pt.can_view_student_records))\r\n  );\r\n$function$\n",
+    "CREATE OR REPLACE FUNCTION public.can_manage_program_enrollments(check_program_id uuid, check_profile_id uuid DEFAULT auth.uid())\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\n  select public.is_platform_admin(check_profile_id)\r\n  or exists (\r\n    select 1 from public.programs p\r\n    where p.id = check_program_id\r\n      and public.has_mosque_role(p.mosque_id, array['admin'], check_profile_id)\r\n  )\r\n  or exists (\r\n    select 1\r\n    from public.program_teachers pt\r\n    join public.programs p on p.id = pt.program_id\r\n    where pt.program_id = check_program_id\r\n      and pt.teacher_profile_id = check_profile_id\r\n      and public.has_verified_teacher_membership(p.mosque_id, check_profile_id)\r\n      and (pt.role = 'director' or (pt.role = 'instructor' and pt.can_manage_enrollments))\r\n  );\r\n$function$\n",
+    "CREATE OR REPLACE FUNCTION public.is_staff_account(check_profile_id uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\n  select exists (\r\n    select 1\r\n    from public.profiles p\r\n    where p.id = check_profile_id\r\n      and p.account_type in ('teacher', 'admin')\r\n  );\r\n$function$\n",
+    "CREATE OR REPLACE FUNCTION public.is_teacher_account(check_profile_id uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\n  select exists (\r\n    select 1\r\n    from public.profiles p\r\n    where p.id = check_profile_id\r\n      and p.account_type = 'teacher'\r\n  );\r\n$function$\n",
+    "CREATE OR REPLACE FUNCTION public.is_mosque_admin(check_mosque_id uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\n  SELECT EXISTS (\n    SELECT 1 FROM mosque_memberships\n    WHERE profile_id = auth.uid()\n      AND mosque_id = check_mosque_id\n      AND role = 'mosque_admin'\n  );\n$function$\n",
+    "CREATE OR REPLACE FUNCTION public.is_platform_admin(check_profile_id uuid DEFAULT auth.uid())\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\n  select false;\r\n$function$\n",
+    "CREATE OR REPLACE FUNCTION public.has_verified_teacher_membership(check_mosque_id uuid, check_profile_id uuid DEFAULT auth.uid())\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\n  select exists (\r\n    select 1\r\n    from public.profiles p\r\n    join public.mosque_memberships mm on mm.profile_id = p.id\r\n    where mm.mosque_id = check_mosque_id\r\n      and mm.profile_id = check_profile_id\r\n      and mm.role = 'teacher'\r\n      and mm.status = 'active'\r\n      and p.account_type = 'teacher'\r\n  );\r\n$function$\n",
+    "CREATE OR REPLACE FUNCTION public.can_create_program_in_mosque(check_mosque_id uuid, check_profile_id uuid DEFAULT auth.uid())\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\n  select public.has_mosque_role(check_mosque_id, array['admin'], check_profile_id)\r\n  or exists (\r\n    select 1\r\n    from public.profiles p\r\n    join public.mosque_memberships mm on mm.profile_id = p.id\r\n    where mm.mosque_id = check_mosque_id\r\n      and mm.profile_id = check_profile_id\r\n      and mm.role = 'teacher'\r\n      and mm.status = 'active'\r\n      and mm.can_create_programs = true\r\n      and p.account_type = 'teacher'\r\n  );\r\n$function$\n",
+    "CREATE OR REPLACE FUNCTION public.is_program_billing_policy_locked(check_program_id uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\n  select exists (\r\n    select 1\r\n    from public.program_subscriptions ps\r\n    where ps.program_id = check_program_id\r\n      and ps.stripe_subscription_id is not null\r\n  );\r\n$function$\n",
+    "CREATE OR REPLACE FUNCTION public.can_send_program_direct_invitations(check_program_id uuid, check_profile_id uuid DEFAULT auth.uid())\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\n  select exists (\r\n    select 1\r\n    from public.programs p\r\n    join public.mosque_memberships mm\r\n      on mm.mosque_id = p.mosque_id\r\n     and mm.profile_id = check_profile_id\r\n     and mm.status = 'active'\r\n    where p.id = check_program_id\r\n      and mm.role = 'admin'\r\n  ) or exists (\r\n    select 1\r\n    from public.program_teachers pt\r\n    where pt.program_id = check_program_id\r\n      and pt.teacher_profile_id = check_profile_id\r\n      and (\r\n        pt.role = 'director'\r\n        or (pt.role = 'instructor' and pt.can_send_direct_invitations = true)\r\n      )\r\n  );\r\n$function$\n",
+    "CREATE OR REPLACE FUNCTION public.can_announce_program(check_program_id uuid, check_profile_id uuid DEFAULT auth.uid())\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\n  select public.is_platform_admin(check_profile_id)\r\n  or exists (\r\n    select 1 from public.programs p\r\n    where p.id = check_program_id\r\n      and public.has_mosque_role(p.mosque_id, array['admin'], check_profile_id)\r\n  )\r\n  or exists (\r\n    select 1 from public.program_teachers pt\r\n    join public.programs p on p.id = pt.program_id\r\n    where pt.program_id = check_program_id\r\n      and pt.teacher_profile_id = check_profile_id\r\n      and public.has_verified_teacher_membership(p.mosque_id, check_profile_id)\r\n      and (pt.role = 'director' or (pt.role = 'instructor' and pt.can_announce))\r\n  );\r\n$function$\n",
+    "CREATE OR REPLACE FUNCTION public.is_parent_of_child(check_child_profile_id uuid, check_parent_profile_id uuid DEFAULT auth.uid(), check_mosque_id uuid DEFAULT NULL::uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\n  select exists (\r\n    select 1\r\n    from public.parent_child_links pcl\r\n    where pcl.parent_profile_id = check_parent_profile_id\r\n      and pcl.child_profile_id = check_child_profile_id\r\n      and (check_mosque_id is null or pcl.mosque_id = check_mosque_id)\r\n  );\r\n$function$\n",
+    "CREATE OR REPLACE FUNCTION public.can_view_child_guardian_link(check_child_profile_id uuid, check_profile_id uuid DEFAULT auth.uid())\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\n  select exists (\r\n    select 1\r\n    from public.enrollment_requests er\r\n    where er.student_profile_id = check_child_profile_id\r\n      and public.can_manage_program(er.program_id, check_profile_id)\r\n  )\r\n  or exists (\r\n    select 1\r\n    from public.enrollments e\r\n    where e.student_profile_id = check_child_profile_id\r\n      and public.can_manage_program(e.program_id, check_profile_id)\r\n  );\r\n$function$\n",
+    "CREATE OR REPLACE FUNCTION public.can_manage_parent_profile(check_parent_profile_id uuid, check_profile_id uuid DEFAULT auth.uid())\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\n  select exists (\r\n    select 1\r\n    from public.parent_child_links pcl\r\n    join public.enrollments e on e.student_profile_id = pcl.child_profile_id\r\n    where pcl.parent_profile_id = check_parent_profile_id\r\n      and public.can_manage_program(e.program_id, check_profile_id)\r\n  )\r\n  or exists (\r\n    select 1\r\n    from public.parent_child_links pcl\r\n    join public.enrollment_requests er on er.student_profile_id = pcl.child_profile_id\r\n    where pcl.parent_profile_id = check_parent_profile_id\r\n      and public.can_manage_program(er.program_id, check_profile_id)\r\n  );\r\n$function$\n",
+    "CREATE OR REPLACE FUNCTION public.is_program_director(check_program_id uuid, check_profile_id uuid DEFAULT auth.uid())\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\n  select exists (\r\n    select 1\r\n    from public.programs p\r\n    where p.id = check_program_id\r\n      and public.has_mosque_role(p.mosque_id, array['admin'], check_profile_id)\r\n  )\r\n  or exists (\r\n    select 1\r\n    from public.program_teachers pt\r\n    join public.programs p on p.id = pt.program_id\r\n    where pt.program_id = check_program_id\r\n      and pt.teacher_profile_id = check_profile_id\r\n      and pt.role = 'director'\r\n      and public.has_verified_teacher_membership(p.mosque_id, check_profile_id)\r\n  )\r\n  or exists (\r\n    select 1\r\n    from public.programs p\r\n    where p.id = check_program_id\r\n      and p.director_profile_id = check_profile_id\r\n      and public.has_verified_teacher_membership(p.mosque_id, check_profile_id)\r\n  );\r\n$function$\n",
+    "CREATE OR REPLACE FUNCTION public.is_program_teacher(check_program_id uuid, check_profile_id uuid DEFAULT auth.uid())\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\n  select exists (\r\n    select 1\r\n    from public.programs p\r\n    where p.id = check_program_id\r\n      and public.has_mosque_role(p.mosque_id, array['admin'], check_profile_id)\r\n  )\r\n  or exists (\r\n    select 1\r\n    from public.program_teachers pt\r\n    join public.programs p on p.id = pt.program_id\r\n    where pt.program_id = check_program_id\r\n      and pt.teacher_profile_id = check_profile_id\r\n      and pt.role in ('director', 'instructor')\r\n      and public.has_verified_teacher_membership(p.mosque_id, check_profile_id)\r\n  )\r\n  or exists (\r\n    select 1\r\n    from public.programs p\r\n    where p.id = check_program_id\r\n      and p.director_profile_id = check_profile_id\r\n      and public.has_verified_teacher_membership(p.mosque_id, check_profile_id)\r\n  );\r\n$function$\n",
+    "CREATE OR REPLACE FUNCTION public.can_read_application_profile(check_profile_id uuid)\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\n  select auth.uid() is not null and exists (\r\n    select 1 from public.enrollment_requests er\r\n    where (er.student_profile_id = check_profile_id or er.parent_profile_id = check_profile_id)\r\n      and (public.can_view_program_applications(er.program_id, auth.uid())\r\n        or public.can_decide_program_applications(er.program_id, auth.uid()))\r\n  );\r\n$function$\n",
+    "CREATE OR REPLACE FUNCTION public.can_manage_program_finances(check_program_id uuid, check_profile_id uuid DEFAULT auth.uid())\n RETURNS boolean\n LANGUAGE sql\n STABLE SECURITY DEFINER\n SET search_path TO 'public'\nAS $function$\r\n  select public.is_platform_admin(check_profile_id)\r\n  or exists (\r\n    select 1\r\n    from public.programs p\r\n    where p.id = check_program_id\r\n      and public.has_mosque_role(p.mosque_id, array['admin'], check_profile_id)\r\n  )\r\n  or public.is_program_director(check_program_id, check_profile_id)\r\n  or exists (\r\n    select 1\r\n    from public.program_teachers pt\r\n    join public.programs p on p.id = pt.program_id\r\n    where pt.program_id = check_program_id\r\n      and pt.teacher_profile_id = check_profile_id\r\n      and pt.role = 'instructor'\r\n      and pt.can_manage_finances = true\r\n      and public.has_verified_teacher_membership(p.mosque_id, check_profile_id)\r\n  );\r\n$function$\n"
+  ]
+}

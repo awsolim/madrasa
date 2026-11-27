@@ -15,7 +15,7 @@ import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { Database } from "@/lib/supabase/types";
 import { cn } from "@/lib/utils";
 import { downloadStudentHistory } from "@/lib/student-history-export";
-import { formatCurrencyAmount, formatFullDate, formatPrice, formatShortDate, formatStudentDetailGender } from "@/lib/programs/display";
+import { formatCurrencyAmount, formatEventTimestamp, formatFullDate, formatPrice, formatShortDate, formatStudentDetailGender } from "@/lib/programs/display";
 
 
 
@@ -320,7 +320,7 @@ function RefundPaymentManager({ programId, studentName, payerName, payments, loa
       {payments.map((payment) => {
         const remaining = Math.max(0, payment.amountCents - payment.refundedAmountCents);
         return <button key={payment.id} type="button" disabled={remaining === 0} onClick={() => void selectPayment(payment)} className="flex min-h-16 w-full items-center justify-between gap-4 px-1 text-left disabled:cursor-not-allowed disabled:opacity-55">
-          <span><span className="block text-sm font-semibold text-[#26323A]">{formatCurrencyAmount(payment.amountCents)}</span><span className="mt-1 block text-xs text-[#7B858C]">{formatFinanceDate(payment.createdAt)}{payment.refundedAmountCents > 0 ? ` · ${formatCurrencyAmount(payment.refundedAmountCents)} refunded` : ""}</span></span>
+          <span><span className="block text-sm font-semibold text-[#26323A]">{formatCurrencyAmount(payment.amountCents)}</span><span className="mt-1 block text-xs text-[#7B858C]">{formatEventTimestamp(payment.createdAt)}{payment.refundedAmountCents > 0 ? ` · ${formatCurrencyAmount(payment.refundedAmountCents)} refunded` : ""}</span></span>
           <span className="text-sm font-semibold text-[#17624F]">{remaining ? "Review" : "Fully refunded"}</span>
         </button>;
       })}
@@ -335,7 +335,7 @@ function RefundPaymentManager({ programId, studentName, payerName, payments, loa
         <FinanceRecordFact label="Student">{studentName}</FinanceRecordFact>
         <FinanceRecordFact label="Payer">{payerName}</FinanceRecordFact>
         <FinanceRecordFact label="Paid">{formatCurrencyAmount(preview.originalAmountCents)}</FinanceRecordFact>
-        <FinanceRecordFact label="Payment date">{formatFinanceDate(preview.paidAt)}</FinanceRecordFact>
+        <FinanceRecordFact label="Payment date">{formatEventTimestamp(preview.paidAt)}</FinanceRecordFact>
         <FinanceRecordFact label="Already refunded">{formatCurrencyAmount(preview.refundedAmountCents)}</FinanceRecordFact>
         <FinanceRecordFact label="Available to refund">{formatCurrencyAmount(preview.refundableAmountCents)}</FinanceRecordFact>
       </dl>
@@ -494,20 +494,20 @@ export function FinanceDetailsDrawer({
               <FinanceRecordFact label="Class">{program.title}</FinanceRecordFact>
               <FinanceRecordFact label="Track">{trackNames.length ? trackNames.join(", ") : "General"}</FinanceRecordFact>
               <FinanceRecordFact label="Enrollment"><span className={cn("inline-flex rounded-full px-2.5 py-1 text-xs font-semibold", programStatusBadgeToneClass(financeBadgeTone(financeStatus(row))))}>{financeStatus(row)}</span></FinanceRecordFact>
-              <FinanceRecordFact label="Enrolled">{formatFinanceDate(row.enrollment.created_at)}</FinanceRecordFact>
+              <FinanceRecordFact label="Enrolled">{formatEventTimestamp(row.enrollment.created_at)}</FinanceRecordFact>
             </dl>
           </> : null}
 
           {activeTab === "history" ? <>
             {row.request ? <dl className="grid grid-cols-2 gap-x-5 gap-y-4 rounded-[16px] border border-[#E1E8EC] bg-[#FAFCFC] p-4">
               <FinanceRecordFact label="Application status">{titleCase(row.request.status)}</FinanceRecordFact>
-              <FinanceRecordFact label="Submitted">{formatFinanceDate(row.request.requested_at)}</FinanceRecordFact>
+              <FinanceRecordFact label="Submitted">{formatEventTimestamp(row.request.requested_at)}</FinanceRecordFact>
               <FinanceRecordFact label="Payment choice">{titleCase(row.request.payment_type ?? "—")}</FinanceRecordFact>
-              <FinanceRecordFact label="Reviewed">{row.request.reviewed_at ? formatFinanceDate(row.request.reviewed_at) : "—"}</FinanceRecordFact>
+              <FinanceRecordFact label="Reviewed">{row.request.reviewed_at ? formatEventTimestamp(row.request.reviewed_at) : "—"}</FinanceRecordFact>
             </dl> : null}
             <section className="space-y-2">
               <h3 className="text-sm font-semibold text-[#26323A]">Activity Timeline</h3>
-              {eventsLoading ? <div className="rounded-[14px] border border-dashed border-[#D6DCE0] bg-[#F8FAFB] p-3 text-sm font-semibold text-[#6B747B]">Loading history...</div> : eventsError ? <p role="alert" className="text-sm text-red-700">{eventsError}</p> : !studentEvents?.length ? <div className="rounded-[14px] border border-dashed border-[#D6DCE0] bg-[#F8FAFB] p-3 text-sm font-semibold text-[#6B747B]">No history recorded yet.</div> : <div className="divide-y divide-[#EEF2F4]">{studentEvents.map((event) => <div key={event.id} className="py-3"><p className="text-sm font-semibold leading-5 text-[#26323A]">{event.summary}</p><div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[#7B858C]"><span>{formatFinanceDate(event.created_at)}</span><span aria-hidden>·</span><span>{event.actor_name === "System" ? "Recorded automatically by the system" : `Performed by ${event.actor_name}`}</span></div>{event.context ? <p className="mt-1 text-xs font-medium text-[#52616A]">{event.context}</p> : null}</div>)}</div>}
+              {eventsLoading ? <div className="rounded-[14px] border border-dashed border-[#D6DCE0] bg-[#F8FAFB] p-3 text-sm font-semibold text-[#6B747B]">Loading history...</div> : eventsError ? <p role="alert" className="text-sm text-red-700">{eventsError}</p> : !studentEvents?.length ? <div className="rounded-[14px] border border-dashed border-[#D6DCE0] bg-[#F8FAFB] p-3 text-sm font-semibold text-[#6B747B]">No history recorded yet.</div> : <div className="divide-y divide-[#EEF2F4]">{studentEvents.map((event) => <div key={event.id} className="py-3"><p className="text-sm font-semibold leading-5 text-[#26323A]">{event.summary}</p><div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-[#7B858C]"><span>{formatEventTimestamp(event.created_at)}</span><span aria-hidden>·</span><span>{event.actor_name === "System" ? "Recorded automatically by the system" : `Performed by ${event.actor_name}`}</span></div>{event.context ? <p className="mt-1 text-xs font-medium text-[#52616A]">{event.context}</p> : null}</div>)}</div>}
             </section>
             <TransitionLink label="Attendance history" href={`${drawerPathname.replace(/\/finances$/, "")}/attendance?from=students&studentId=${encodeURIComponent(studentProfileId)}`} className="flex min-h-11 items-center justify-between rounded-[14px] border border-[#DDE6E9] bg-[#F7FAFB] px-4 text-sm font-semibold text-[#17624F]">
               <span>View attendance history</span><span aria-hidden="true">→</span>

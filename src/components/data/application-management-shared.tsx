@@ -7,7 +7,7 @@ import {
   formatAgeRange,
   formatCurrencyAmount,
   formatDateOnly,
-  formatFullDate,
+  formatEventTimestamp,
   formatGender,
   formatPrice,
   formatShortDate,
@@ -70,7 +70,7 @@ export function ChevronRightIcon({ className = "text-[#9AA4AA]" }: { className?:
 }
 
 export function formatFinanceDate(value: string | null | undefined) {
-  return formatFullDate(value);
+  return formatEventTimestamp(value);
 }
 
 export function resolveRequestTrack(

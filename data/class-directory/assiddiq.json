@@ -1,23 +1,64 @@
 {
   "slug": "assiddiq",
-  "name": "Assiddiq",
-  "updatedAt": null,
+  "name": "Assiddiq Islamic Center",
+  "updatedAt": "2026-11-27T00:40:22.191803Z",
+  "timezone": "America/Resolute",
   "classes": [
     {
-      "title": "Al Tarteel",
-      "description": "Contact the teacher for class information and registration inquiries.",
+      "title": "Al Tarteel Quran Program",
+      "description": "Our approach comes from years of teaching experience. We make memorization and recitation easy for those with serious intentions.",
+      "location": "Assiddiq Islamic Center · 5525 Gateway Blvd",
+      "audience": "All ages · Brothers & Sisters",
+      "schedule": ["Monday · 5:00 PM-10:00 PM", "Thursday · 5:00 PM-10:00 PM"],
+      "timezone": "America/Resolute",
+      "scheduleNotes": "",
+      "status": "active",
+      "pricing": ["$100/month"],
+      "options": [
+        {
+          "name": "Evening Track",
+          "schedule": ["Monday · 5:00 PM-10:00 PM", "Thursday · 5:00 PM-10:00 PM"],
+          "pricing": ["$100/month"],
+          "eligibility": ""
+        }
+      ],
       "contactName": "Sheikh Mohamed Moamen",
-      "phone": "+1 (587) 566-7545",
-      "email": "",
-      "schedule": []
+      "phone": "+15875667545",
+      "email": "mohbadawy981@gmail.com"
     },
     {
-      "title": "Weekend School",
-      "description": "Contact Sheikh Abdulrahman for class information and registration inquiries.",
-      "contactName": "Sheikh Abdulrahman",
+      "title": "Weekend School 2026/27",
+      "description": "",
+      "location": "Assiddiq Islamic Centre · 5525 Gateway Blvd",
+      "audience": "Ages 3-15 · Brothers & Sisters",
+      "schedule": ["Saturday · 12:00 PM-2:00 PM"],
+      "timezone": "America/Resolute",
+      "scheduleNotes": "",
+      "status": "active",
+      "pricing": [],
+      "options": [
+        {
+          "name": "Saturday Only Class",
+          "schedule": ["Saturday · 12:00 PM-2:00 PM"],
+          "pricing": ["$50/month", "$500/year"],
+          "eligibility": ""
+        },
+        {
+          "name": "Sunday Only Class",
+          "schedule": ["Sunday · 12:00 PM-2:00 PM"],
+          "pricing": ["$50/month", "$500/year"],
+          "eligibility": ""
+        },
+        {
+          "name": "Saturday & Sunday Class",
+          "schedule": ["Saturday · 12:00 PM-2:00 PM", "Sunday · 12:00 PM-2:00 PM"],
+          "pricing": ["$100/month", "$1,000/year"],
+          "eligibility": ""
+        }
+      ],
+      "contactName": "Sheikh Abdelrahman Deyah",
       "phone": "+1 (780) 680-4962",
-      "email": "",
-      "schedule": []
+      "email": "abdarrahmanedeyah@gmail.com"
     }
   ]
 }
