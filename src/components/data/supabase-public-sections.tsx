@@ -3,6 +3,10 @@
 "use client";
 
 import { AccountConnectionError } from "@/components/auth/account-connection-error";
+import { DeviceAccountSwitcher } from "@/components/auth/device-account-switcher";
+import { ClassThumbnail } from "@/components/data/class-thumbnail";
+import { publicProgramHref } from "@/lib/programs/public-links";
+import { browserHref } from "@/lib/navigation-paths";
 
 import { ChevronRightIcon, DefaultProfileIcon, SearchIcon, applicationListedPrice, applicationPaymentPlanLabel, formatFinanceDate } from "@/components/data/application-management-shared";
 import type { EnrollmentRequest, ParentDisplay, ProgramFinanceAuditEvent, ProgramSubscription, StudentDisplay } from "@/components/data/application-management-shared";
@@ -619,10 +623,11 @@ function warmClassDetail(slug: string, programId: string, section: "public" | "p
 // Prefers the OS share sheet (same one used for "Add to Home Screen") so a teacher on
 // their phone can send the link straight into WhatsApp/Messages/etc.; falls back to a
 // clipboard copy anywhere the Web Share API isn't available (most desktop browsers).
-async function shareProgramLink(slug: string, programId: string, title: string, setToast: Dispatch<SetStateAction<EditorToastState | null>>) {
-  const url = `${window.location.origin}/m/${slug}/programs/${programId}`;
+async function shareProgramLink(slug: string, program: Program, setToast: Dispatch<SetStateAction<EditorToastState | null>>, mode: "share" | "copy" = "share") {
+  const title = program.title;
+  const url = `${window.location.origin}${browserHref(publicProgramHref(slug, program), slug, window.location.hostname)}`;
 
-  if (navigator.share) {
+  if (mode === "share" && navigator.share) {
     try {
       await navigator.share({ title, url });
     } catch {
@@ -640,6 +645,8 @@ async function shareProgramLink(slug: string, programId: string, title: string, 
 }
 
 export function ProgramDetailData({ slug, programId, section = "public" }: { slug: string; programId: string; section?: "public" | "portal" | "teacher" }) {
+  const router = useRouter();
+  const pathname = usePathname();
   const [applicationOpening, setApplicationOpening] = useState(false);
   const searchParams = useSearchParams();
   const [mosque, setMosque] = useState<Mosque | null>(null);
@@ -709,6 +716,15 @@ export function ProgramDetailData({ slug, programId, section = "public" }: { slu
   const { data: eligibilitySnapshot, loading: eligibilityLoading } = useCachedQuery(eligibilityKey, () => fetchProgramApplyDetail(slug, programId, programDetailUserId));
 
   useEffect(() => {
+    const loaded = programDetailSnapshot?.program;
+    if (section !== "public" || !loaded?.public_slug) return;
+    if (pathname !== `/m/${slug}/programs/${loaded.id}`) return;
+    if (publicProgramHref(slug, loaded) === pathname) return;
+    const query = searchParams.toString();
+    router.replace(`${publicProgramHref(slug, loaded)}${query ? `?${query}` : ""}${window.location.hash}`);
+  }, [programDetailSnapshot, section, pathname, slug, searchParams, router]);
+
+  useEffect(() => {
     if (!programDetailSnapshot) {
       return;
     }
@@ -754,6 +770,9 @@ export function ProgramDetailData({ slug, programId, section = "public" }: { slu
   const teacherName = details?.instructor_display_name?.trim() || program.teacher?.full_name || "Teacher to be announced";
   const isTeacherContext = section === "teacher";
   const isStudentPreview = searchParams.get("preview") === "student";
+  const canCopyPublicLink = isSignedIn
+    && (isTeacherContext || isStaffForProgram || accountType === "admin" || accountType === "teacher")
+    && program.is_active !== false && ["published", "hidden"].includes(program.publication_status);
   const teacherCredentials = details?.instructor_credentials?.trim() ?? "";
   const age = formatAgeRange(program.age_range_text);
   const gender = formatGender(program.audience_gender);
@@ -809,11 +828,11 @@ export function ProgramDetailData({ slug, programId, section = "public" }: { slu
     : program.default_capacity != null && enrolledCount != null && enrolledCount >= program.default_capacity;
   const waitlistAllowed = program.capacity_behavior === "allow_waitlist";
 
-  const applyHref = `/m/${slug}/programs/${programId}/apply`;
+  const applyHref = `${publicProgramHref(slug, program)}/apply`;
   const viewEnrollmentHref = `/m/${slug}/portal/classes`;
   const completePaymentHref = `/m/${slug}/portal/announcements`;
   const detailQuery = searchParams.toString();
-  const detailReturnHref = `/m/${slug}/programs/${programId}${detailQuery ? `?${detailQuery}` : ""}`;
+  const detailReturnHref = `${publicProgramHref(slug, program)}${detailQuery ? `?${detailQuery}` : ""}`;
   const loginHref = `/m/${slug}/login?returnTo=${encodeURIComponent(detailReturnHref)}`;
   const primaryCta = getProgramPrimaryCta({
     fields: toProgramStatusFields(program),
@@ -853,6 +872,15 @@ export function ProgramDetailData({ slug, programId, section = "public" }: { slu
         <section className="overflow-hidden rounded-[28px] bg-white shadow-[0_12px_30px_rgba(38,50,58,0.08)]">
           <ProgramHero program={program} />
           <div className="space-y-3 p-4">
+            {canCopyPublicLink ? (
+              <div className="flex justify-end">
+                <button type="button" onClick={() => void shareProgramLink(slug, program, setToast, "copy")}
+                  className="inline-flex min-h-10 items-center gap-2 rounded-lg px-3 text-sm font-medium text-[#17624F] underline underline-offset-4 hover:bg-[#F2F5F3] active:scale-[0.97] active:bg-[#DCE7E0] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#17624F]">
+                  <ShareLinkIcon className="h-4 w-4" />
+                  Copy link
+                </button>
+              </div>
+            ) : null}
             <div className="flex flex-wrap items-center gap-2 text-xs font-medium text-[#17624F]">
               <span>{mosqueSlugLabel(mosque)}</span>
               <span aria-hidden>•</span>
@@ -985,20 +1013,16 @@ export function ProgramDetailData({ slug, programId, section = "public" }: { slu
                       {primaryCta.label}
                     </button>
                   )
-                ) : isTeacherContext || isStaffForProgram ? (
+                ) : isTeacherContext || isStaffForProgram || accountType === "admin" ? (
                   <div className="mt-2">
                     <button
                       type="button"
-                      onClick={() => void shareProgramLink(slug, programId, program.title, setToast)}
+                      onClick={() => void shareProgramLink(slug, program, setToast)}
                       className="flex min-h-12 w-full items-center justify-center gap-2 rounded-full bg-[#17624F] px-4 text-sm font-semibold text-white shadow-[0_10px_22px_rgba(23,98,79,0.2)] md:w-auto md:px-10"
                     >
                       <ShareLinkIcon className="h-4 w-4" />
                       Share Class Link
                     </button>
-                  </div>
-                ) : accountType === "admin" ? (
-                  <div className="mt-2 flex min-h-12 w-full items-center justify-center rounded-full bg-[#EEF6F8] px-4 text-sm font-semibold text-[#2F6F83] ring-1 ring-[#CFE2E8] md:w-auto md:px-10">
-                    Admin Account
                   </div>
                 ) : accountType === "teacher" ? (
                   <div className="mt-2 flex min-h-12 w-full items-center justify-center rounded-full bg-[#EEF6F8] px-4 text-sm font-semibold text-[#2F6F83] ring-1 ring-[#CFE2E8] md:w-auto md:px-10">
@@ -1827,7 +1851,7 @@ export function RegistrationConfirmationData({ slug, requestId }: { slug: string
   const firstRecurringDate = monthlyPlan?.firstRecurringChargeAt
     ? new Intl.DateTimeFormat("en-US", { month: "long", day: "numeric", year: "numeric", timeZone: monthlyTimeZone }).format(new Date(monthlyPlan.firstRecurringChargeAt * 1000))
     : null;
-  const programHref = `/m/${slug}/programs/${program.id}`;
+  const programHref = publicProgramHref(slug, program);
 
   return (
     <div className="bg-[var(--workspace)] p-4">
@@ -3301,6 +3325,9 @@ export function PortalAccountData({ slug }: { slug: string }) {
       <div className="mx-auto hidden max-w-lg overflow-hidden md:block">
         {renderAccountPanel(desktopPanel)}
       </div>
+      {activePanel === "menu" && profile?.id ? (
+        <div className="mx-auto mt-5 max-w-sm md:max-w-lg"><DeviceAccountSwitcher slug={slug} userId={profile.id} /></div>
+      ) : null}
       {deleteModalOpen ? (
         <ConfirmDeleteAccountModal
           busy={deleteBusy}
@@ -9537,7 +9564,7 @@ function ProgramCardGrid({
             program={program}
             onOpenIntent={() => warmClassDetail(mosqueSlug, program.id, detailBaseHref?.includes("/portal/") ? "portal" : "public")}
             enrolled={enrolled}
-            detailHref={`${detailBaseHref ?? `/m/${mosqueSlug}/programs`}/${program.id}${detailReturnTo ? `?returnTo=${encodeURIComponent(detailReturnTo)}` : ""}`}
+            detailHref={`${detailBaseHref?.includes("/portal/") ? `${detailBaseHref}/${program.id}` : publicProgramHref(mosqueSlug, program)}${detailReturnTo ? `?returnTo=${encodeURIComponent(detailReturnTo)}` : ""}`}
             relationship={relationship}
           />
         );
@@ -9583,7 +9610,7 @@ function EnrolledClassList({ programs, mosqueSlug }: { programs: ProgramWithTeac
               ) : null}
               <TeacherActionLink href={`/m/${mosqueSlug}/portal/announcements?tab=announcements`} icon={<MegaphoneIcon />} label="View Announcements" />
               <TeacherActionLink href={`/m/${mosqueSlug}/portal/announcements?tab=notes`} icon={<ClipboardIcon />} label="View Notes" />
-              <TeacherActionLink href={`/m/${mosqueSlug}/programs/${program.id}?returnTo=${encodeURIComponent(`/m/${mosqueSlug}/portal/classes`)}`} icon={<ExternalLinkIcon />} label="Class Details" previewLabel="Class Details" />
+              <TeacherActionLink href={`${publicProgramHref(mosqueSlug, program)}?returnTo=${encodeURIComponent(`/m/${mosqueSlug}/portal/classes`)}`} icon={<ExternalLinkIcon />} label="Class Details" previewLabel="Class Details" />
               <TeacherActionLink href={`/m/${mosqueSlug}/portal/classes/${program.id}/withdrawal`} icon={<XIcon />} label="Request Withdrawal" previewLabel="Request Withdrawal" />
             </div>
           </div>
@@ -9814,7 +9841,7 @@ export function ApplicantDetailsDrawer({
           ) : null}
           {row.program ? (
             <Link
-              href={`/m/${slug}/programs/${row.program.id}?returnTo=${encodeURIComponent(`/m/${slug}/portal/classes`)}`}
+              href={`${publicProgramHref(slug, row.program)}?returnTo=${encodeURIComponent(`/m/${slug}/portal/classes`)}`}
               className="flex min-h-10 w-full items-center justify-center rounded-[9px] border border-[#D6DCE0] bg-white px-3 text-xs font-semibold text-[#26323A] transition-colors hover:bg-[#F7FAFB]"
             >
               View Program Page
@@ -10096,12 +10123,8 @@ function ProgramCard({
     <TransitionLink href={detailHref} label="Class Details" onPointerEnter={onOpenIntent} onFocus={onOpenIntent} onTouchStart={onOpenIntent}
       className="group flex min-h-[clamp(240px,calc((100svh-240px)/2),340px)] flex-col overflow-hidden rounded-2xl border border-[#E3DAC8] bg-[#FAF7EF] text-left transition-colors hover:border-[#B8A57A] hover:bg-[#F8F3E7] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#17624F] active:bg-[#F0E8D7] motion-reduce:transition-none md:min-h-0">
       <div className="flex flex-1 items-stretch">
-        <div className="relative min-h-[176px] w-[42%] max-w-[164px] shrink-0 overflow-hidden bg-[#EAE3D4]">
-          {program.thumbnail_url ? (
-            <Image src={program.thumbnail_url} alt="" fill sizes="(max-width: 420px) 42vw, 164px" className="object-cover object-center" />
-          ) : (
-            <div className="absolute inset-0 flex items-center justify-center text-[#71857C]" aria-hidden><PhotoIcon className="h-7 w-7" /></div>
-          )}
+        <div className="relative min-h-[176px] w-[42%] max-w-[164px] shrink-0 overflow-hidden">
+          <ClassThumbnail src={program.thumbnail_url} className="absolute inset-0 h-full" sizes="(max-width: 420px) 42vw, 164px" />
         </div>
         <div className="flex min-w-0 flex-1 flex-col justify-between gap-3 p-4">
           <h3 className="break-words text-lg font-semibold leading-[1.35] text-[#26323A] group-hover:text-[#17624F]">{program.title}</h3>
@@ -10892,7 +10915,7 @@ function TeacherClassCard({
   const isDirector = role === "director";
   const classBasePath = basePath ?? `/m/${mosqueSlug}/teacher/classes`;
   const teacherClassesReturnTo = encodeURIComponent(classBasePath);
-  const publicHref = `/m/${mosqueSlug}/programs/${program.id}?preview=student&returnTo=${teacherClassesReturnTo}`;
+  const publicHref = `${publicProgramHref(mosqueSlug, program)}?preview=student&returnTo=${teacherClassesReturnTo}`;
   // The cover/title always opens the public view, for directors and instructors alike --
   // "Edit Class" stays reachable as its own row below, not overloaded onto the cover tap.
   const primaryHref = archived ? `${classBasePath}/${program.id}/students` : publicHref;
@@ -11133,7 +11156,7 @@ function ConfirmClassDeleteModal({
 
 function TeacherOtherClassCard({ program, mosqueSlug }: { program: Program; mosqueSlug: string }) {
   const schedule = scheduleSummary(program.schedule, program.schedule_notes);
-  const publicHref = `/m/${mosqueSlug}/programs/${program.id}?returnTo=${encodeURIComponent(`/m/${mosqueSlug}/teacher/classes`)}`;
+  const publicHref = `${publicProgramHref(mosqueSlug, program)}?returnTo=${encodeURIComponent(`/m/${mosqueSlug}/teacher/classes`)}`;
   return (
     <article className="w-full min-w-0 overflow-hidden rounded-[20px] border border-[#D6DCE0] bg-white p-4 shadow-[0_12px_28px_rgba(38,50,58,0.07)]">
       <div className="flex min-w-0 gap-3">

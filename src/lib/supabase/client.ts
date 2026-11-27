@@ -4,6 +4,7 @@ import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/types";
 import { getSupabasePublicEnv } from "@/lib/supabase/env";
 import { fetchWithTimeout } from "@/lib/supabase/fetch-with-timeout";
+import { readDeviceAccounts, rememberDeviceSession, removeDeviceAccount } from "@/lib/account-switching/device-store";
 
 type BrowserClient = ReturnType<typeof createClient<Database>>;
 type ClientEntry = { url: string; anonKey: string; client: BrowserClient };
@@ -21,6 +22,19 @@ export function createSupabaseBrowserClient() {
   });
   const entry = { url, anonKey, client };
   if (typeof window === "undefined") serverClient = entry;
-  else browserGlobal.__madrasaSupabaseClient = entry;
+  else {
+    browserGlobal.__madrasaSupabaseClient = entry;
+    client.auth.onAuthStateChange((event, session) => {
+      // Save only actual SDK sessions, including rotated refresh tokens. Other
+      // devices have no local account bank and this is a no-op for them.
+      try {
+        if (session) rememberDeviceSession(url, session);
+        else if (event === "SIGNED_OUT") {
+          const activeId = readDeviceAccounts(url)?.activeId;
+          if (activeId) removeDeviceAccount(url, activeId);
+        }
+      } catch { /* A full/blocked store must not break normal authentication. */ }
+    });
+  }
   return client;
 }

@@ -3,6 +3,7 @@
 import { programMediaType, validateProgramMediaFile } from "@/lib/program-media";
 import { useWizardExit } from "@/components/data/use-wizard-exit";
 import Image from "next/image";
+import { ThumbnailDisplayField } from "@/components/data/class-thumbnail";
 import { createPortal } from "react-dom";
 import { Upload } from "tus-js-client";
 import type { Dispatch, PointerEvent as ReactPointerEvent, ReactNode, RefObject, SetStateAction, WheelEvent as ReactWheelEvent } from "react";
@@ -964,9 +965,9 @@ export function TeacherProgramSettingsData({ slug, programId, returnHref }: { sl
             <ImageCropModal
               file={thumbnailCropFile}
               title="Crop thumbnail"
-              aspectRatio={4 / 3}
+              aspectRatio={1}
               outputWidth={1200}
-              outputHeight={900}
+              outputHeight={1200}
               onCancel={() => setThumbnailCropFile(null)}
               onConfirm={(croppedFile) => {
                 handleThumbnailFile(croppedFile);
@@ -975,6 +976,7 @@ export function TeacherProgramSettingsData({ slug, programId, returnHref }: { sl
             />
           ) : null}
           <div className="space-y-3 p-4">
+            <ThumbnailDisplayField onChoose={() => thumbnailInputRef.current?.click()} src={thumbnailUrl || null} />
             <EditBox label="Public name" required value={title} onChange={setTitle} />
             <label className="block">
               <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-[#6B747B]">{formatRequiredLabel("Class type", true)}</span>
@@ -4486,9 +4488,9 @@ export function TeacherProgramCreateData({ slug }: { slug: string }) {
             <ImageCropModal
               file={thumbnailCropFile}
               title="Crop thumbnail"
-              aspectRatio={4 / 3}
+              aspectRatio={1}
               outputWidth={1200}
-              outputHeight={900}
+              outputHeight={1200}
               onCancel={() => setThumbnailCropFile(null)}
               onConfirm={(croppedFile) => {
                 handleThumbnailFile(croppedFile);
@@ -4497,6 +4499,7 @@ export function TeacherProgramCreateData({ slug }: { slug: string }) {
             />
           ) : null}
           <div className="space-y-3 p-4">
+            <ThumbnailDisplayField onChoose={() => thumbnailInputRef.current?.click()} src={thumbnailUrl || null} />
             <EditBox label="Public name" required value={title} onChange={setTitle} />
             <label className="block">
               <span className="mb-1 block text-[11px] font-semibold uppercase tracking-wide text-[#6B747B]">{formatRequiredLabel("Class type", true)}</span>

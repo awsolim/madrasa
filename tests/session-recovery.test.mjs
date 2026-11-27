@@ -15,7 +15,8 @@ test('development module reloads reuse one browser client and keep projects sepa
   let creates = 0;
   let url = 'https://one.example.test';
   const context = vm.createContext({ window: {}, require: name => {
-    if (name === '@supabase/supabase-js') return { createClient: () => ({ instance: ++creates }) };
+    if (name === '@supabase/supabase-js') return { createClient: () => ({ instance: ++creates, auth: { onAuthStateChange() {} } }) };
+    if (name.endsWith('/device-store')) return { readDeviceAccounts: () => null, rememberDeviceSession() {}, removeDeviceAccount() {} };
     if (name.endsWith('/env')) return { getSupabasePublicEnv: () => ({ url, anonKey: 'public-test' }) };
     if (name.endsWith('/fetch-with-timeout')) return { fetchWithTimeout: () => () => {} };
     throw new Error(name);

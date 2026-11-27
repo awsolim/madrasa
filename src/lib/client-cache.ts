@@ -340,7 +340,7 @@ export async function refreshCachedProfileSummary(userId: string) {
   return loadCachedProfileSummary(userId);
 }
 
-async function detachLogoutNotifications(accessToken?: string) {
+export async function detachLogoutNotifications(accessToken?: string) {
   try {
     if ("serviceWorker" in navigator && "PushManager" in window) {
       // `ready` never resolves if no worker is installed (normal in local dev).

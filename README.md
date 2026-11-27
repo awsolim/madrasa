@@ -151,3 +151,55 @@ Tenant app URLs temporarily redirect straight to their directory without attempt
 Auth/database access. API routes, including payment webhooks, remain untouched.
 Remove the variable and redeploy after recovery. It defaults off. No maintenance
 switch has been enabled on production by this change.
+
+### Public class links and browse thumbnails
+
+Apply `supabase/migrations/20261126233652_public_program_links_and_thumbnail_display.sql`
+before deploying the matching app changes. It adds stable public slugs;
+it does not alter enrollment, subscriptions or public
+visibility. Existing published/hidden classes receive title-based slugs, unique
+within their masjid, with numeric suffixes for duplicate names. Drafts receive a
+slug when first published. Subsequent title edits retain the same link.
+
+Public cards and Share use these readable links. Existing UUID links still work,
+including staff previews; operational routes and payment/enrollment references
+continue using UUIDs. On tenant subdomains, shared links use `/programs/class-name`
+without repeating the masjid path. Unpublishing a class disables its public slug
+lookup without releasing its reserved name.
+
+Browse thumbnails fill the top-left section of each card without padding.
+The builder's **Browse thumbnail** preview has a **Change** button that opens
+image selection followed by a square crop tool. Keep important text away from
+the edges: responsive cards may crop the image further to fill their section.
+Re-upload the original if an older stored image is already cropped. The large
+class-detail cover is unchanged. Thumbnail styling needs no database migration.
+
+Local verification (no Docker or external database):
+`node --test --test-isolation=none tests/public-program-links.test.mjs tests/public-program-links-db.test.mjs`.
+
+### Owner's device account switcher
+
+Profile includes **Switch account** for the explicitly configured Amr Soliman
+admin profile. Set it up once in the browser or installed PWA being used, then
+sign in to each of the other three configured accounts using its existing password
+or Google login. Switch back to the admin account to add the next one. The four
+profile IDs are deliberately allowlisted in `src/lib/account-switching/policy.ts`;
+this is not a general admin impersonation feature and grants no new permissions.
+
+Other devices have no saved-account store, so teachers there do not see the
+switcher. On the configured device, all four accounts can switch to already-saved
+sign-ins; only the owner admin gets setup/add/remove controls. Passwords are never
+stored. Supabase session credentials are saved locally, with refresh-token changes
+mirrored from the active SDK session. They are sensitive like the app's existing
+remembered sign-in; use a personally controlled device. Browser/PWA storage is
+origin-specific and may be separate on iOS. Clearing it forgets the saved accounts.
+
+Switches restore and verify the target's own session, stop inactive refresh work,
+detach the previous device notification association and replace the page to clear
+mounted private content. This still needs a working Auth service. Account revocation
+or expiration can require another login. Normal **Log out** revokes/removes the
+current saved session only. **Forget saved accounts on this device** removes the
+local switcher store while retaining the current normal sign-in. No migration,
+password changes, privileged session-minting API or teacher-device setup is needed.
+
+Verification: `node --test --test-isolation=none tests/device-account-switching.test.mjs tests/session-recovery.test.mjs tests/logout-navigation.test.mjs`.

@@ -30,6 +30,7 @@ export type Database = {
       programs: {
         Row: {
           id: string;
+          public_slug?: string | null;
           mosque_id: string;
           teacher_profile_id: string | null;
           director_profile_id: string | null;
@@ -779,6 +780,10 @@ export type Database = {
     };
     Views: Record<string, never>;
     Functions: {
+      resolve_public_program_link: {
+        Args: { p_mosque_slug: string; p_reference: string };
+        Returns: { program_id: string; canonical_slug: string }[];
+      };
       get_program_withdrawals: {
         Args: { p_program_id: string; p_reviewed?: boolean; p_offset?: number; p_request_id?: string };
         Returns: Json;
