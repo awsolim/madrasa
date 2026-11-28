@@ -479,6 +479,10 @@ export function ProgramApplicationsData({ slug, programId, mode = "teacher" }: {
               router.replace(`${pathname.replace(/\/applications$/, "")}/students`, { scroll: false });
               return;
             }
+            if (searchParams.get("from") === "finances") {
+              router.replace(`${pathname.replace(/\/applications$/, "")}/finances`, { scroll: false });
+              return;
+            }
             if (searchParams.has("studentId")) {
               const nextParams = new URLSearchParams(searchParams.toString());
               nextParams.delete("studentId");

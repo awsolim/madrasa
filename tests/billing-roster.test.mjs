@@ -12,7 +12,7 @@ vm.runInNewContext(ts.transpileModule(await fs.readFile(new URL('../src/lib/fina
 const code = ts.transpileModule(await fs.readFile(new URL('../src/components/data/billing-roster.tsx', import.meta.url), 'utf8'), {
   compilerOptions: { module: ts.ModuleKind.CommonJS, target: ts.ScriptTarget.ES2022, jsx: ts.JsxEmit.ReactJSX },
 }).outputText;
-function render({ filter, checks = {}, error = null, data = true, checkedAt = '2026-11-27T18:00:00Z', selectedMonth = checkedAt.slice(0, 7), responseMonth = selectedMonth } = {}) {
+function render({ filter, checks = {}, error = null, data = true, applicants = [], checkedAt = '2026-11-27T18:00:00Z', selectedMonth = checkedAt.slice(0, 7), responseMonth = selectedMonth } = {}) {
   let state = 0;
   const exports = {};
   class ClockDate extends Date { constructor(...args) { super(...(args.length ? args : [checkedAt])); } static now() { return Date.parse(checkedAt); } }
@@ -28,7 +28,7 @@ function render({ filter, checks = {}, error = null, data = true, checkedAt = '2
     throw new Error(name);
   } });
   const row = (id, stripe = true) => ({ enrollment: { id, student_profile_id: id, status: 'active', created_at: '2026-09-01T18:00:00Z' }, student: { full_name: id === 'owing' ? 'A Student With A Long Name' : id }, parent: { full_name: 'Parent Name' }, subscription: stripe ? { stripe_subscription_id: `sub_${id}`, payment_type: 'monthly', amount_cents: 10000, currency: 'cad' } : null, paymentTerms: stripe ? { payment_type: 'monthly', amount_cents: 10000, currency: 'cad' } : { payment_type: 'waived', created_at: '2026-09-01T18:00:00Z' } });
-  return renderToStaticMarkup(React.createElement(exports.BillingRoster, { program: { id: 'class', is_paid: true, start_date: '2026-09-01', monthly_billing_anchor: 'first_of_month', schedule_timezone: 'America/Resolute' }, rows: [row('owing'), row('paid'), row('unknown'), row('waived', false)], onOpenStudent() {}, onRefreshRows: async () => {} }));
+  return renderToStaticMarkup(React.createElement(exports.BillingRoster, { program: { id: 'class', is_paid: true, start_date: '2026-09-01', monthly_billing_anchor: 'first_of_month', schedule_timezone: 'America/Resolute' }, rows: [row('owing'), row('paid'), row('unknown'), row('waived', false)], applicants, onOpenApplication() {}, onOpenStudent() {}, onRefreshRows: async () => {} }));
 }
 const checks = {
   owing: { group: 'attention', label: 'Payment outstanding', explanation: '', bills: [{ id: 'in_due', amountCents: 3500, currency: 'cad', dueAt: '2026-11-01T15:00:00Z', periodStart: '2026-11-01T15:00:00Z', periodEnd: '2026-12-01T15:00:00Z' }] },
@@ -52,6 +52,18 @@ test('in-order is the default and includes settled and waived students without o
   assert.doesNotMatch(html, /Current bill settled/);
   assert.match(html, /Waived/);
   assert.doesNotMatch(html, /A Student With A Long Name/);
+});
+
+test('awaiting enrollment appears only in current-month attention and never as debt or paid', () => {
+  const applicants = [{ request: { id: 'application' }, student: { full_name: 'Accepted Applicant' }, parent: { full_name: 'Applicant Parent' } }];
+  const html = render({ filter: 'attention', checks, applicants });
+  assert.match(html, /Accepted Applicant/);
+  assert.match(html, /Parent: Applicant Parent/);
+  assert.match(html, /Awaiting enrollment/);
+  assert.match(html, /Needs attention<\/span><span class="tabular-nums">3</);
+  assert.doesNotMatch(html.slice(html.indexOf('Accepted Applicant')), /unpaid|>Paid</);
+  assert.doesNotMatch(render({ checks, applicants }), /Accepted Applicant|Awaiting enrollment/);
+  assert.doesNotMatch(render({ filter: 'attention', checks, applicants, selectedMonth: '2026-10' }), /Accepted Applicant|Awaiting enrollment/);
 });
 test('the selected historical month shows the returned balance and keeps compact rows', () => {
   const older = { ...checks.owing, settledPeriod: checks.paid.settledPeriod, bills: [{ ...checks.owing.bills[0], periodStart: '2026-10-01T15:00:00Z', periodEnd: '2026-11-01T15:00:00Z' }] };

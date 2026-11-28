@@ -16,6 +16,7 @@ import { useEffect, useRef, useState } from "react";
 import { EmptyState } from "@/components/data/empty-state";
 import { DurableReceiptLink } from "@/components/data/durable-receipt-link";
 import { BillingRoster } from "@/components/data/billing-roster";
+import { awaitingEnrollmentRequests } from "@/lib/finance/awaiting-enrollment";
 import type { BillingCheck } from "@/lib/finance/billing-check";
 import { DirectorySkeleton } from "@/components/data/data-loading";
 import { useHideMobileChromeWhileMounted, useModalFocusTrap } from "@/hooks/use-modal-behavior";
@@ -71,6 +72,8 @@ export type FinanceEnrollmentRow = {
   paymentTermsHistory: ProgramPaymentTerms[];
 };
 
+export type BillingApplicantRow = { request: EnrollmentRequest; student: StudentDisplay | null; parent: ParentDisplay | null };
+
 
 type FinanceAction = "waive" | "change_price" | "end_subscription";
 
@@ -78,6 +81,7 @@ type FinanceAction = "waive" | "change_price" | "end_subscription";
 type CachedFinancesPage = {
   program: Program;
   rows: FinanceEnrollmentRow[];
+  applicants?: BillingApplicantRow[];
   auditEvents: ProgramFinanceAuditEvent[];
   auditActorsById: Record<string, Profile>;
 };
@@ -108,6 +112,7 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
   const [initialPage] = useState(() => readPrivatePage<CachedFinancesPage>(cacheKey));
   const [program, setProgram] = useState<Program | null>(initialPage?.program ?? null);
   const [rows, setRows] = useState<FinanceEnrollmentRow[]>(initialPage?.rows ?? []);
+  const [applicants, setApplicants] = useState<BillingApplicantRow[]>(initialPage?.applicants ?? []);
   const [, setAuditActorsById] = useState<Record<string, Profile>>(initialPage?.auditActorsById ?? {});
   const [view, setView] = useState<"overview" | "billing" | "transactions">("billing");
   const [analytics, setAnalytics] = useState<ProgramFinanceAnalytics | null>(null);
@@ -199,6 +204,7 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
       clearPrivatePage(`finances:${slug}:${programId}:${mode}:${userId}`);
       setProgram(snapshot.program);
       setRows([]);
+      setApplicants([]);
       setAuditActorsById({});
       setError("Finance access has not been enabled for this class.");
       setLoading(false);
@@ -212,7 +218,25 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
     const paymentTermsRows = snapshot.paymentTerms ?? [];
     const auditRows = snapshot.auditEvents ?? [];
     const linkRows = snapshot.links ?? [];
-    const profileRows = snapshot.profiles ?? [];
+    const profileRows = [...(snapshot.profiles ?? [])];
+    const waitingRequests = awaitingEnrollmentRequests(requestRows, enrollmentRows);
+    // The legacy snapshot includes enrolled student profiles, but may omit
+    // applicants who have not enrolled yet. Read only those missing identities.
+    const missingProfileIds = [...new Set(waitingRequests.flatMap(request => [request.student_profile_id, request.parent_profile_id]).filter((id): id is string => Boolean(id) && !profileRows.some(profile => profile.id === id)))];
+    if (missingProfileIds.length) {
+      const identities = await supabase.from("profiles").select("id, full_name, email, phone_number, avatar_url, age, gender, date_of_birth, account_type").in("id", missingProfileIds);
+      if (identities.error) {
+        setError(friendlyErrorMessage(identities.error, "Could not load applicants."));
+        setLoading(false);
+        return;
+      }
+      profileRows.push(...(identities.data ?? []) as Profile[]);
+    }
+    const applicantRows = waitingRequests.map(request => ({
+      request,
+      student: profileRows.find(profile => profile.id === request.student_profile_id) ?? null,
+      parent: profileRows.find(profile => profile.id === request.parent_profile_id) ?? null,
+    }));
     const auditActorIds = Array.from(new Set(auditRows.map((event) => event.actor_profile_id).filter(Boolean) as string[]));
 
     setProgram(programRow);
@@ -239,11 +263,12 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
         };
       });
     setRows(mappedRows);
+    setApplicants(applicantRows);
     const actorsById = Object.fromEntries(profileRows.filter((profile) => auditActorIds.includes(profile.id)).map((profile) => [profile.id, profile]));
     setAuditActorsById(actorsById);
     setAnalytics(overview);
     writePrivatePage<CachedFinancesPage>(`finances:${slug}:${programId}:${mode}:${userId}`, {
-      program: programRow, rows: mappedRows, auditEvents: auditRows, auditActorsById: actorsById,
+      program: programRow, rows: mappedRows, applicants: applicantRows, auditEvents: auditRows, auditActorsById: actorsById,
     });
     setLoading(false);
   }
@@ -281,7 +306,7 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
 
       {view === "overview" ? (analytics ? <ProgramFinanceOverview analytics={analytics} fallbackProjectedMonthlyCents={estimatedMonthlyCents} /> : <div className="min-h-64" aria-label="Loading finance summary" aria-busy="true" />) : view === "transactions" ? <ProgramFinanceTransactions programId={programId} key={programId} onOpenStudent={(studentProfileId) => { const row = rows.find((item) => item.enrollment.student_profile_id === studentProfileId); if (row) setDetailsTarget(row); }} /> : null}
 
-      {view === "billing" ? <BillingRoster program={program} rows={rows} onOpenStudent={(row, check) => { setDetailsTarget(row); setDetailsBillingCheck(check); }} onRefreshRows={loadFinanceRows} /> : null}
+      {view === "billing" ? <BillingRoster program={program} rows={rows} applicants={applicants} onOpenApplication={requestId => router.push(`${pathname.replace(/\/finances$/, "")}/applications?requestId=${encodeURIComponent(requestId)}&from=finances`)} onOpenStudent={(row, check) => { setDetailsTarget(row); setDetailsBillingCheck(check); }} onRefreshRows={loadFinanceRows} /> : null}
 
       {detailsTarget ? (
         <FinanceDetailsDrawer

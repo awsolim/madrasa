@@ -1,7 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import type { FinanceEnrollmentRow } from "@/components/data/program-finances-data";
+import type { BillingApplicantRow, FinanceEnrollmentRow } from "@/components/data/program-finances-data";
 import type { BillingCheck } from "@/lib/finance/billing-check";
 import { billingMonth, billingMonthOptions, validBillingMonth } from "@/lib/finance/billing-month";
 import { checkRecordedBillingMonth } from "@/lib/finance/recorded-billing-month";
@@ -18,8 +18,8 @@ const filters: Array<[Filter, string]> = [["current", "In order"], ["attention",
 const matchesFilter = (group: BillingCheck["group"], filter: Filter) => filter === "attention" ? group !== "current" : group === "current";
 const money = (amount: number, currency = "cad") => new Intl.NumberFormat("en-CA", { style: "currency", currency: currency.toUpperCase() }).format(amount / 100);
 
-export function BillingRoster({ program, rows, onOpenStudent, onRefreshRows }: {
-  program: Program; rows: FinanceEnrollmentRow[]; onOpenStudent: (row: FinanceEnrollmentRow, check: BillingCheck) => void; onRefreshRows: () => Promise<void>;
+export function BillingRoster({ program, rows, applicants = [], onOpenApplication, onOpenStudent, onRefreshRows }: {
+  program: Program; rows: FinanceEnrollmentRow[]; applicants?: BillingApplicantRow[]; onOpenApplication?: (requestId: string) => void; onOpenStudent: (row: FinanceEnrollmentRow, check: BillingCheck) => void; onRefreshRows: () => Promise<void>;
 }) {
   const [filter, setFilter] = useState<Filter>("current");
   const timezone = program.schedule_timezone || "UTC";
@@ -80,6 +80,9 @@ export function BillingRoster({ program, rows, onOpenStudent, onRefreshRows }: {
       if (filter === "attention" && a.check.group !== b.check.group) return a.check.group === "attention" ? -1 : 1;
       return (a.row.student?.full_name || "Student").localeCompare(b.row.student?.full_name || "Student");
     });
+  const awaiting = selectedMonth === currentMonth ? applicants : [];
+  const visibleApplicants = filter === "attention" ? awaiting.filter(row => `${row.student?.full_name ?? ""} ${row.parent?.full_name ?? ""}`.toLowerCase().includes(search.trim().toLowerCase()))
+    .sort((a, b) => (a.student?.full_name || "Student").localeCompare(b.student?.full_name || "Student")) : [];
   async function refresh() {
     if (refreshing) return;
     setRefreshing(true);
@@ -109,7 +112,7 @@ export function BillingRoster({ program, rows, onOpenStudent, onRefreshRows }: {
       </button>
     </div>
     <div className="grid grid-cols-2 border-b border-[#DCE3E0]" aria-label="Payment standing">
-      {filters.map(([value, label]) => <button key={value} type="button" onClick={() => setFilter(value)} aria-pressed={filter === value} className={cn("press-feedback flex min-h-11 items-center justify-center gap-2 border-b-2 px-2 text-sm", filter === value ? "border-[#17624F] font-semibold text-[#17624F]" : "border-transparent text-[#657178]")}><span>{label}</span><span className="tabular-nums">{checking ? "—" : entries.filter(entry => matchesFilter(entry.check.group, value)).length}</span></button>)}
+      {filters.map(([value, label]) => <button key={value} type="button" onClick={() => setFilter(value)} aria-pressed={filter === value} className={cn("press-feedback flex min-h-11 items-center justify-center gap-2 border-b-2 px-2 text-sm", filter === value ? "border-[#17624F] font-semibold text-[#17624F]" : "border-transparent text-[#657178]")}><span>{label}</span><span className="tabular-nums">{checking ? "—" : entries.filter(entry => matchesFilter(entry.check.group, value)).length + (value === "attention" ? awaiting.length : 0)}</span></button>)}
     </div>
     <input aria-label="Search student or parent" placeholder="Search student or parent" value={search} onChange={event => setSearch(event.target.value)} className="min-h-11 w-full rounded-xl border border-[#D6DCE0] bg-[#F8FAFB] px-3 text-sm focus-visible:outline-[#17624F]" />
     {error || checkFailure ? <p role="status" className="text-sm text-[#845A1E]">Couldn’t refresh payments. Try again.</p> : null}
@@ -122,7 +125,12 @@ export function BillingRoster({ program, rows, onOpenStudent, onRefreshRows }: {
           <svg viewBox="0 0 16 16" className="h-4 w-3 text-[#8B9992]" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden><path d="m6 3 5 5-5 5" /></svg>
         </button>;
       })}
-      {!visible.length ? <p className="py-8 text-center text-sm text-[#657178]">{search ? "No matching students." : !entries.length ? "No enrolled students." : filter === "attention" ? "Everyone checked is in order." : "No students in this list."}</p> : null}
+      {visibleApplicants.map(row => <button key={`application:${row.request.id}`} type="button" onClick={() => onOpenApplication?.(row.request.id)} className="press-feedback grid min-h-[76px] w-full grid-cols-[minmax(0,1fr)_auto_12px] items-center gap-3 rounded-lg px-2 py-3 text-left hover:bg-[#F7F9F8] focus-visible:outline-2 focus-visible:outline-[#17624F] md:gap-6 md:px-3">
+        <span className="min-w-0"><span className="block break-words text-sm font-semibold">{row.student?.full_name || "Student"}</span>{row.parent?.full_name ? <span className="mt-1 block break-words text-xs text-[#657178]">Parent: {row.parent.full_name}</span> : null}</span>
+        <span className="max-w-[145px] text-right text-sm font-semibold text-[#845A1E]">Awaiting enrollment</span>
+        <svg viewBox="0 0 16 16" className="h-4 w-3 text-[#8B9992]" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden><path d="m6 3 5 5-5 5" /></svg>
+      </button>)}
+      {!visible.length && !visibleApplicants.length ? <p className="py-8 text-center text-sm text-[#657178]">{search ? "No matching students." : !entries.length && !awaiting.length ? "No enrolled students." : filter === "attention" ? "Everyone checked is in order." : "No students in this list."}</p> : null}
     </div>}
   </div>;
 }

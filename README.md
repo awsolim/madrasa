@@ -34,6 +34,10 @@ the selected month is being checked; another month's cached result is not shown.
   missing evidence and failed checks, with the distinct reason shown. Do not
   request payment solely because a record needs checking. A later paid invoice
   does not hide an unpaid invoice belonging to that month. Open the row for the student file.
+  In the current month it also lists approved applicants who have not completed
+  enrollment, labeled **Awaiting enrollment**. These are follow-ups, not unpaid
+  balances; opening one takes staff to its application. Already-active students
+  (including deferred first payments) are not duplicated as awaiting enrollment.
 - **In order** includes settled selected periods, future first payments, recorded
   waivers/external payments and free arrangements. The reason is shown explicitly.
 - The two compact lists show student/parent names and a brief payment status or
