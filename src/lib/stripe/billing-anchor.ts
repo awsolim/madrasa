@@ -31,6 +31,7 @@ function localFirstAtNine(year: number, monthIndex: number, timeZone: string) {
 export type MonthlyCheckoutPlan = {
   billingAnchor: number | undefined;
   prorateOpeningPeriod: boolean;
+  waiveOpeningPeriod: boolean;
   firstRecurringChargeAt: number | undefined;
 };
 
@@ -41,21 +42,28 @@ export type MonthlyCheckoutPlan = {
  * - the full approved monthly price then renews on the next 1st.
  */
 export function monthlyCheckoutPlan(
-  program: { monthly_billing_anchor: string; schedule_timezone?: string | null },
+  program: { id?: string; monthly_billing_anchor: string; schedule_timezone?: string | null },
   now = new Date(),
 ): MonthlyCheckoutPlan {
   if (program.monthly_billing_anchor !== "first_of_month") {
-    return { billingAnchor: undefined, prorateOpeningPeriod: false, firstRecurringChargeAt: undefined };
+    return { billingAnchor: undefined, prorateOpeningPeriod: false, waiveOpeningPeriod: false, firstRecurringChargeAt: undefined };
   }
   const timeZone = validTimeZone(program.schedule_timezone);
   const current = localParts(now, timeZone);
   const nextFirst = localFirstAtNine(current.year, current.month, timeZone);
-  if (current.day === 1) {
-    return { billingAnchor: undefined, prorateOpeningPeriod: false, firstRecurringChargeAt: nextFirst };
+  // Approved one-time Al Tarteel exception: registrations completed during
+  // November 2026 owe nothing for the opening November period. Existing
+  // subscriptions are untouched; December and later signups use normal billing.
+  // Scope by permanent class ID rather than a mutable title or public slug.
+  const waiveOpeningPeriod = program.id === "6cb4630d-5d08-4f36-9b5b-35b59e8e8620"
+    && current.year === 2026 && current.month === 11;
+  if (current.day === 1 && !waiveOpeningPeriod) {
+    return { billingAnchor: undefined, prorateOpeningPeriod: false, waiveOpeningPeriod: false, firstRecurringChargeAt: nextFirst };
   }
   return {
     billingAnchor: nextFirst,
-    prorateOpeningPeriod: true,
+    prorateOpeningPeriod: !waiveOpeningPeriod,
+    waiveOpeningPeriod,
     firstRecurringChargeAt: nextFirst,
   };
 }

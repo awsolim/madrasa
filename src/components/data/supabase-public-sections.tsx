@@ -1813,7 +1813,7 @@ export function RegistrationConfirmationData({ slug, requestId }: { slug: string
   const listedPriceCents = request.payment_type === "annual" ? request.approved_price_annual_cents : request.approved_price_monthly_cents;
   const listedPrice = request.payment_bypassed ? "Waived" : listedPriceCents != null ? formatPrice(listedPriceCents) : "Payment terms not set";
   const monthlyPlan = state === "payment_required_monthly"
-    ? monthlyCheckoutPlan({ monthly_billing_anchor: program.monthly_billing_anchor, schedule_timezone: program.schedule_timezone })
+    ? monthlyCheckoutPlan({ id: program.id, monthly_billing_anchor: program.monthly_billing_anchor, schedule_timezone: program.schedule_timezone })
     : null;
   const monthlyTimeZone = program.schedule_timezone || "America/Edmonton";
   const openingMonth = new Intl.DateTimeFormat("en-US", { month: "long", timeZone: monthlyTimeZone }).format(new Date());
@@ -1890,7 +1890,7 @@ export function RegistrationConfirmationData({ slug, requestId }: { slug: string
               ) : state === "payment_required_annual_subscription" ? (
                 <p className="text-sm leading-6 text-[#52616A]">Your registration has been approved. Start your annual subscription to complete registration — {listedPrice}/year, renews automatically until cancelled.</p>
               ) : (
-                <p className="text-sm leading-6 text-[#52616A]">Your registration has been approved. Start your monthly subscription to complete registration — {listedPrice}/month. {monthlyPlan?.prorateOpeningPeriod ? `Today you will pay only for the remaining days of ${openingMonth}. Stripe shows the exact amount before payment. The full monthly price begins ${firstRecurringDate}.` : "The full monthly price is due today and renews monthly."}</p>
+                <p className="text-sm leading-6 text-[#52616A]">Your registration has been approved. Start your monthly subscription to complete registration — {listedPrice}/month. {monthlyPlan?.waiveOpeningPeriod ? `No payment is due today. November tuition is waived. Save your card to complete registration; your first monthly payment is ${firstRecurringDate}, followed by payments on the first of each month.` : monthlyPlan?.prorateOpeningPeriod ? `Today you will pay only for the remaining days of ${openingMonth}. Stripe shows the exact amount before payment. The full monthly price begins ${firstRecurringDate}.` : "The full monthly price is due today and renews monthly."}</p>
               )}
               {state !== "completed" ? (
                 <div className="rounded-[14px] bg-[#F7FAFB] p-3 text-sm">
@@ -1901,7 +1901,7 @@ export function RegistrationConfirmationData({ slug, requestId }: { slug: string
                   {monthlyPlan?.firstRecurringChargeAt ? <>
                     <div className="mt-2 flex items-center justify-between border-t border-[#E3E9EB] pt-2">
                       <span className="text-[#6B747B]">Due today</span>
-                      <span className="font-semibold text-[#26323A]">{monthlyPlan.prorateOpeningPeriod ? "Prorated amount shown at checkout" : listedPrice}</span>
+                      <span className="font-semibold text-[#26323A]">{monthlyPlan.waiveOpeningPeriod ? "$0 — November waived" : monthlyPlan.prorateOpeningPeriod ? "Prorated amount shown at checkout" : listedPrice}</span>
                     </div>
                     <div className="mt-2 flex items-center justify-between gap-4">
                       <span className="text-[#6B747B]">Recurring billing</span>

@@ -154,11 +154,22 @@ export async function POST(request: Request) {
       stripe_price_id: dynamicPrice.id,
     };
     const monthlyPlan = isRecurringMonthly
-      ? monthlyCheckoutPlan({ monthly_billing_anchor: paymentTerms.monthly_billing_anchor, schedule_timezone: program.schedule_timezone })
+      ? monthlyCheckoutPlan({ id: program.id, monthly_billing_anchor: paymentTerms.monthly_billing_anchor, schedule_timezone: program.schedule_timezone })
       : null;
+    if (monthlyPlan?.waiveOpeningPeriod) {
+      Object.assign(checkoutMetadata, {
+        opening_period_waived: "true",
+        first_charge_at: new Date(monthlyPlan.billingAnchor! * 1000).toISOString(),
+        waiver_reason: "Al Tarteel November 2026 opening-period waiver; normal monthly billing begins December 1.",
+      });
+    }
     const session = await stripe.checkout.sessions.create(
       {
         mode: isRecurring ? "subscription" : "payment",
+        ...(monthlyPlan?.waiveOpeningPeriod ? {
+          payment_method_collection: "always" as const,
+          custom_text: { submit: { message: "No payment today. November tuition is waived. Your first monthly payment is on December 1, 2026, then on the first of each month." } },
+        } : {}),
         line_items: [{ price: dynamicPrice.id, quantity: 1 }],
         customer_email: profile?.email ?? user.email ?? undefined,
         client_reference_id: enrollmentRequest.id,
@@ -168,7 +179,7 @@ export async function POST(request: Request) {
           metadata: checkoutMetadata,
           ...(monthlyPlan?.billingAnchor ? {
             billing_cycle_anchor: monthlyPlan.billingAnchor,
-            proration_behavior: "create_prorations" as const,
+            proration_behavior: monthlyPlan.waiveOpeningPeriod ? "none" as const : "create_prorations" as const,
           } : {}),
         } } : {}),
         metadata: checkoutMetadata,

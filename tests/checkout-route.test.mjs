@@ -28,7 +28,7 @@ function checkout(options={}) {
     if(name.endsWith('/programs/status')) return {toProgramStatusFields:p=>({publicationStatus:p.publication_status,lifecycleStatus:p.lifecycle_status})};
     if(name.endsWith('/supabase/service')) return {createSupabaseServiceClient:()=>db};
     if(name.endsWith('/monitoring/log-error')) return {logServerError:async(_db,value)=>calls.logs.push(value)};
-    if(name.endsWith('/stripe/billing-anchor')) return {monthlyCheckoutPlan};
+    if(name.endsWith('/stripe/billing-anchor')) return {monthlyCheckoutPlan:program=>monthlyCheckoutPlan(program,options.now??new Date('2026-11-27T18:00:00Z'))};
     throw Error('Unexpected dependency '+name);
   }});
   return {calls,run:()=>exports.POST(new Request('https://demo.madrasa.ca/api/stripe/checkout',{method:'POST',headers:options.guest?{}:{authorization:'Bearer synthetic','content-type':'application/json'},body:JSON.stringify({enrollmentRequestId:'request'})}))};
@@ -71,4 +71,32 @@ test('failure to save payment terms expires checkout rather than letting payment
 });
 test('a class ending during preparation invalidates the checkout before returning its URL',async()=>{
   const {calls,run}=checkout({closedDuringCheckout:true});assert.equal((await run()).status,500);assert.deepEqual(calls.expired,['cs_synthetic']);
+});
+
+test('Al Tarteel November registration waives the opening invoice and saves a card for December without changing approved price',async()=>{
+  const {calls,run}=checkout({program:{id:'6cb4630d-5d08-4f36-9b5b-35b59e8e8620',schedule_timezone:'America/Resolute'},terms:{monthly_billing_anchor:'first_of_month'}});
+  assert.equal((await run()).status,200);
+  assert.equal(calls.prices[0].unit_amount,10000);
+  const session=calls.sessions[0];
+  assert.equal(session.payment_method_collection,'always');
+  assert.equal(session.subscription_data.billing_cycle_anchor,1796137200);
+  assert.equal(session.subscription_data.proration_behavior,'none');
+  assert.equal(session.metadata.opening_period_waived,'true');
+  assert.match(session.custom_text.submit.message,/No payment today/);
+  assert.equal(calls.saved[0].amount_cents,10000);
+});
+test('the waiver cannot affect another class or an annual subscription',async()=>{
+  const other=checkout({terms:{monthly_billing_anchor:'first_of_month'}});
+  assert.equal((await other.run()).status,200);
+  assert.equal(other.calls.sessions[0].subscription_data.proration_behavior,'create_prorations');
+  const annual=checkout({program:{id:'6cb4630d-5d08-4f36-9b5b-35b59e8e8620'},terms:{payment_type:'annual',monthly_billing_anchor:'first_of_month'}});
+  assert.equal((await annual.run()).status,200);
+  assert.equal(annual.calls.sessions[0].metadata.opening_period_waived,undefined);
+});
+test('December Al Tarteel checkout resumes normal payment immediately without carrying November waiver metadata',async()=>{
+  const {calls,run}=checkout({now:new Date('2026-12-01T06:00:00Z'),program:{id:'6cb4630d-5d08-4f36-9b5b-35b59e8e8620',schedule_timezone:'America/Resolute'},terms:{monthly_billing_anchor:'first_of_month'}});
+  assert.equal((await run()).status,200);
+  assert.equal(calls.sessions[0].metadata.opening_period_waived,undefined);
+  assert.equal(calls.sessions[0].subscription_data.proration_behavior,undefined);
+  assert.equal(calls.sessions[0].custom_text,undefined);
 });
