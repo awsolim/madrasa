@@ -71,10 +71,12 @@ export async function POST(request: Request) {
       const { data: student } = await supabase.from("profiles").select("full_name, email").eq("id", enrollmentRequest.student_profile_id).maybeSingle();
       const managerIds = await getProgramEnrollmentRecipientProfileIds(supabase, { id: enrollmentRequest.program_id, ...program });
       if (mosque) {
-        const message = `${student?.full_name || student?.email || "A student"} completed registration for ${program.title}.`;
+        const studentLabel = student?.full_name || student?.email || "A student";
+        const paymentLine = enrollmentRequest.payment_bypass_external ? "Payment is handled outside Madrasa." : enrollmentRequest.payment_type === "free" ? "No payment required." : "Payment waived.";
+        const message = `${studentLabel} is now enrolled in ${program.title}. ${paymentLine}`;
       await sendPushNotification(supabase, {
           recipientProfileIds: managerIds,
-          title: "Registration completed",
+          title: "Enrollment confirmed",
           body: message,
           url: `/m/${mosque.slug}/teacher/inbox`,
           category: "applications",
@@ -84,8 +86,8 @@ export async function POST(request: Request) {
           category: "applications",
           adminAction: { label: "Open Students", href: getTenantAppUrl(mosque.slug, `/admin/programs/${enrollmentRequest.program_id}/students`) },
           eventKey: `registration-completed:${enrollmentRequest.id}`,
-          subject: `Registration completed: ${program.title}`,
-          title: "A Student Joined Your Class",
+          subject: `Enrollment confirmed — ${studentLabel}: ${program.title}`,
+          title: "Enrollment confirmed",
           message,
           action: { label: "Open Teacher Inbox", href: getTenantAppUrl(mosque.slug, "/teacher/inbox") },
           replyTo: student?.email ?? null,

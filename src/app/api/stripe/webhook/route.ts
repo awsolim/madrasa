@@ -12,6 +12,7 @@ import type { Database } from "@/lib/supabase/types";
 import { getTenantAppUrl } from "@/lib/email/resend";
 import { sendProfileNotificationEmails } from "@/lib/email/notifications";
 import { monthlyBillingEndDate } from "@/lib/stripe/billing-anchor";
+import { enrollmentPaymentLine, shouldNotifyRecurringPayment, type EnrollmentPaymentNotice } from "@/lib/finance/enrollment-notification";
 
 type ProgramPaymentTermsRow = Database["public"]["Tables"]["program_payment_terms"]["Row"];
 
@@ -113,16 +114,17 @@ async function ensureFixedDurationSchedule(
 async function notifyProgramManagers(
   supabase: ReturnType<typeof createSupabaseServiceClient>,
   programId: string,
-  payload: { title: string; body: string; eventKey: string; category: "billing_alerts" | "payment_activity"; includeAdmins?: boolean },
+  payload: { title: string; body: string; eventKey: string; category: "billing_alerts" | "payment_activity"; includeAdmins?: boolean; studentLabel?: string; payment?: EnrollmentPaymentNotice },
 ) {
   const { data: program } = await supabase
     .from("programs")
-    .select("title, mosque_id, director_profile_id, teacher_profile_id")
+    .select("title, mosque_id, director_profile_id, teacher_profile_id, schedule_timezone")
     .eq("id", programId)
     .maybeSingle();
   if (!program) {
     return;
   }
+  const message = payload.payment ? `${payload.body} ${enrollmentPaymentLine(payload.payment, program.schedule_timezone || "UTC")}` : payload.body;
   const { data: mosque } = await supabase.from("mosques").select("slug").eq("id", program.mosque_id).maybeSingle();
   if (!mosque) {
     return;
@@ -135,7 +137,7 @@ async function notifyProgramManagers(
       await sendPushNotification(supabase, {
     recipientProfileIds: managerIds,
     title: payload.title,
-    body: payload.body,
+    body: message,
     url: `/m/${mosque.slug}/teacher/inbox`,
     category: payload.category,
   });
@@ -144,9 +146,9 @@ async function notifyProgramManagers(
     category: payload.category,
     adminAction: { label: "Open Finances", href: getTenantAppUrl(mosque.slug, `/admin/programs/${programId}/finances`) },
     eventKey: payload.eventKey,
-    subject: `${payload.title}: ${program.title}`,
+    subject: payload.studentLabel ? `${payload.title} — ${payload.studentLabel}: ${program.title}` : `${payload.title}: ${program.title}`,
     title: payload.title,
-    message: payload.body,
+    message,
     action: { label: "Open Teacher Inbox", href: getTenantAppUrl(mosque.slug, "/teacher/inbox") },
   }).catch(() => null);
 }
@@ -287,8 +289,16 @@ async function upsertPaidEnrollmentFromSession(
 
     await notifyProgramManagers(supabase, programId, {
       eventKey: `stripe-checkout:${session.id}`,
-      title: "Payment received",
-      body: isOneTimePayment ? `${studentLabel} completed payment and enrollment is active.` : `${studentLabel} started a subscription and enrollment is active.`,
+      title: "Enrollment confirmed",
+      body: `${studentLabel} is now enrolled in your class.`,
+      studentLabel,
+      payment: {
+        amountPaidCents: session.amount_total,
+        currency: session.currency ?? paymentTerms?.currency ?? "cad",
+        firstPaymentAt: subscription?.trial_end ? stripeTimestampToIso(subscription.trial_end)
+          : metadata.opening_period_waived === "true" ? metadata.first_charge_at : null,
+        firstPaymentCents: paymentTerms?.amount_cents ?? subscription?.items.data[0]?.price.unit_amount,
+      },
       category: "payment_activity",
       includeAdmins: true,
     });
@@ -428,7 +438,7 @@ async function handleInvoicePaid(invoice: Stripe.Invoice, stripeAccountId: strin
     metadata: { stripeSubscriptionId: subscriptionId, amountPaidCents: invoice.amount_paid },
   });
 
-  if (!suppressNotifications) {
+  if (!suppressNotifications && shouldNotifyRecurringPayment(invoice.amount_paid, invoice.billing_reason)) {
     await notifyProgramManagers(supabase, subscriptionRow.program_id, {
       eventKey: `stripe-invoice-paid:${invoice.id}`,
       title: "Payment received",
