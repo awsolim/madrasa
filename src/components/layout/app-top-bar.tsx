@@ -38,7 +38,7 @@ function BottomNav({ items, inboxBadgeCount = 0, inboxActionRequired = false }: 
     .filter((item): item is NavItem => Boolean(item));
   const shouldShow = !overlayChromeHidden && isMainTabRoute(pathname, visibleItems);
   const navRef = useRef<HTMLElement | null>(null);
-  useMobileNavViewport(navRef, standalone === true && shouldShow);
+  useMobileNavViewport(navRef, standalone === true && shouldShow, pathname);
 
   useEffect(() => {
     for (const item of items) {
