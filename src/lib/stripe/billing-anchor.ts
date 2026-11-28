@@ -33,12 +33,14 @@ export type MonthlyCheckoutPlan = {
   prorateOpeningPeriod: boolean;
   waiveOpeningPeriod: boolean;
   firstRecurringChargeAt: number | undefined;
+  waiverReason?: "november_2026" | "late_month";
 };
 
 /**
  * Calendar-month policy for first-of-month programs:
  * - the 1st charges normally through the recurring item;
- * - every later signup pays only for the remaining portion of that month;
+ * - later signups normally pay for the remaining portion of that month;
+ * - Assiddiq's two classes waive that opening period after the 25th;
  * - the full approved monthly price then renews on the next 1st.
  */
 export function monthlyCheckoutPlan(
@@ -55,8 +57,13 @@ export function monthlyCheckoutPlan(
   // November 2026 owe nothing for the opening November period. Existing
   // subscriptions are untouched; December and later signups use normal billing.
   // Scope by permanent class ID rather than a mutable title or public slug.
-  const waiveOpeningPeriod = program.id === "6cb4630d-5d08-4f36-9b5b-35b59e8e8620"
+  const novemberException = program.id === "6cb4630d-5d08-4f36-9b5b-35b59e8e8620"
     && current.year === 2026 && current.month === 11;
+  const lateMonth = current.day > 25 && [
+    "6cb4630d-5d08-4f36-9b5b-35b59e8e8620", // Al Tarteel
+    "c7ab396e-f365-4d73-bdf8-b9da59600240", // Weekend School
+  ].includes(program.id ?? "");
+  const waiveOpeningPeriod = novemberException || lateMonth;
   if (current.day === 1 && !waiveOpeningPeriod) {
     return { billingAnchor: undefined, prorateOpeningPeriod: false, waiveOpeningPeriod: false, firstRecurringChargeAt: nextFirst };
   }
@@ -65,6 +72,7 @@ export function monthlyCheckoutPlan(
     prorateOpeningPeriod: !waiveOpeningPeriod,
     waiveOpeningPeriod,
     firstRecurringChargeAt: nextFirst,
+    ...(waiveOpeningPeriod ? { waiverReason: novemberException ? "november_2026" as const : "late_month" as const } : {}),
   };
 }
 

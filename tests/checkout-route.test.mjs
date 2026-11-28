@@ -100,3 +100,17 @@ test('December Al Tarteel checkout resumes normal payment immediately without ca
   assert.equal(calls.sessions[0].subscription_data.proration_behavior,undefined);
   assert.equal(calls.sessions[0].custom_text,undefined);
 });
+for (const id of ['6cb4630d-5d08-4f36-9b5b-35b59e8e8620', 'c7ab396e-f365-4d73-bdf8-b9da59600240']) {
+  test(`late-month checkout for ${id} saves a card, defers payment and keeps approved price`, async () => {
+    const { calls, run } = checkout({ now: new Date('2027-01-26T18:00:00Z'), program: { id, schedule_timezone: 'America/Resolute' }, terms: { monthly_billing_anchor: 'first_of_month', amount_cents: 12500 } });
+    assert.equal((await run()).status, 200);
+    assert.equal(calls.prices[0].unit_amount, 12500);
+    const session = calls.sessions[0];
+    assert.equal(session.payment_method_collection, 'always');
+    assert.equal(session.subscription_data.proration_behavior, 'none');
+    assert.match(session.custom_text.submit.message, /February 1, 2027/);
+    assert.doesNotMatch(session.custom_text.submit.message, /November|December/);
+    assert.match(session.metadata.waiver_reason, /after the 25th/);
+    assert.equal(calls.saved[0].amount_cents, 12500);
+  });
+}

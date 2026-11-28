@@ -20,6 +20,41 @@ You can start editing the page by modifying `app/page.tsx`. The page auto-update
 
 This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
+## Teacher payment checks
+
+Open **Classes → Finances → Billing**. Finance permission is required.
+The heading names the month of the displayed check. Settled monthly periods show
+the month as paid; annual coverage and adjusted bills are identified explicitly.
+When this period is settled but an older bill remains unpaid, both facts appear.
+
+- **Needs attention** lists confirmed outstanding Stripe bills first, including
+  each remaining balance, billing period and due date. It also includes setup,
+  missing evidence and failed checks, with the distinct reason shown. Do not
+  request payment solely because a record needs checking. A later paid invoice
+  does not hide an older unpaid invoice. Open the row for the student file.
+- **In order** includes settled current periods, future first payments, recorded
+  waivers/external payments and free arrangements. The reason is shown explicitly.
+- **Everyone** shows the combined list. Search accepts student or parent names;
+  inactive students are included by default so leaving a class does not hide debt.
+
+Press **Refresh** for a fresh check; the screen displays when it was checked.
+The server reads linked subscriptions and their invoices with four concurrent
+workers, at most three invoice pages per subscription and a shared 25-second
+Stripe request budget. Incomplete checks remain explicitly unverified. These
+checks never charge, refund, cancel or update Stripe/database records, and do
+not continuously poll. Results stay in the signed-in user's memory cache only.
+Older subscriptions no longer linked to a student, and fees never billed or
+recorded, require a separate historical reconciliation. A refund does not by
+itself create a new balance owing. This screen is not an audit of unbilled fees.
+
+For new monthly checkouts in Al Tarteel and Weekend School, the first is a full
+month, the 2nd–25th inclusive is prorated, and the 26th onward has no opening-month
+charge; the first full payment is on the next first at 9 am in the class timezone.
+The dated Al Tarteel November 2026 waiver remains in effect. This changes no
+existing subscription or annual plan. A Stripe checkout already open retains
+its quoted terms; start a fresh checkout to use the current date's policy.
+No migration is required for the cutoff or payment-check screen.
+
 ## Learn More
 
 To learn more about Next.js, take a look at the following resources:

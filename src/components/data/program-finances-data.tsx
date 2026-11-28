@@ -4,21 +4,19 @@
 import {
   FinanceActionModal,
   FinanceDetailsDrawer,
-  formatFinanceDate,
-  formatFinanceShortDate,
   hasCurrentPaymentBypass,
-  type FinanceActionEndpoint,
 } from "@/components/data/student-record-file";
 export { FinanceActionModal, FinanceDetailsDrawer } from "@/components/data/student-record-file";
 import { selectCurrentPaymentTerms } from "@/lib/current-payment-terms";
-import { loadStudentActivity } from "@/lib/student-activity";
 import Link from "@/components/layout/workspace-link";
 import { createPortal } from "react-dom";
 import { useSearchParams } from "next/navigation";
 import { useWorkspacePathname as usePathname, useWorkspaceRouter as useRouter } from "@/components/layout/workspace-navigation";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { EmptyState } from "@/components/data/empty-state";
 import { DurableReceiptLink } from "@/components/data/durable-receipt-link";
+import { BillingRoster } from "@/components/data/billing-roster";
+import type { BillingCheck } from "@/lib/finance/billing-check";
 import { DirectorySkeleton } from "@/components/data/data-loading";
 import { useHideMobileChromeWhileMounted, useModalFocusTrap } from "@/hooks/use-modal-behavior";
 import { getCachedSessionSnapshot, loadCachedSession } from "@/lib/client-cache";
@@ -27,7 +25,7 @@ import { clearPrivatePage, invalidatePrivateSnapshots, invalidateQueryPrefix, lo
 import { createSupabaseBrowserClient } from "@/lib/supabase/client";
 import type { Database } from "@/lib/supabase/types";
 import { cn } from "@/lib/utils";
-import { formatCurrencyAmount, formatPrice } from "@/lib/programs/display";
+import { formatCurrencyAmount } from "@/lib/programs/display";
 
 type Program = Database["public"]["Tables"]["programs"]["Row"];
 
@@ -62,7 +60,7 @@ export function programStatusBadgeToneClass(tone: "neutral" | "positive" | "warn
 }
 
 
-type FinanceEnrollmentRow = {
+export type FinanceEnrollmentRow = {
   enrollment: Enrollment;
   student: StudentDisplay | null;
   parent: ParentDisplay | null;
@@ -75,42 +73,6 @@ type FinanceEnrollmentRow = {
 
 
 type FinanceAction = "waive" | "change_price" | "end_subscription";
-
-
-async function callFinanceAction<T = Record<string, unknown>>(
-  programId: string,
-  endpoint: FinanceActionEndpoint,
-  payload: Record<string, unknown>,
-): Promise<{ ok: true; data: T } | { ok: false; error: string }> {
-  const supabase = createSupabaseBrowserClient();
-  const { data: sessionData } = await supabase.auth.getSession();
-  const token = sessionData.session?.access_token;
-  if (!token) {
-    return { ok: false, error: "Please sign in again to continue." };
-  }
-
-  const run = async () => {
-    const response = await fetch(`/api/programs/${programId}/finance/${endpoint}`, {
-      method: "POST", headers: { "content-type": "application/json", authorization: `Bearer ${token}` }, body: JSON.stringify(payload),
-    });
-    const result = (await response.json().catch(() => ({}))) as T & { error?: string };
-    if (!response.ok) throw new Error(result.error ?? "Could not complete this request.");
-    return result;
-  };
-  try {
-    const data = endpoint === "payment-history"
-      ? await loadPrivateSnapshot(`payment-history:${programId}:${payload.studentProfileId}:${sessionData.session!.user.id}`, run)
-      : await run();
-    if (endpoint !== "payment-history") {
-      invalidateQueryPrefix(`finance-transactions:${programId}:`);
-      invalidatePrivateSnapshots(`payment-history:${programId}:`);
-      invalidatePrivateSnapshots(`student-activity:${programId}:`);
-    }
-    return { ok: true, data };
-  } catch (error) {
-    return { ok: false, error: error instanceof Error ? error.message : "Could not load or update this record. Please try again." };
-  }
-}
 
 
 type CachedFinancesPage = {
@@ -149,17 +111,9 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
   const [, setAuditActorsById] = useState<Record<string, Profile>>(initialPage?.auditActorsById ?? {});
   const [view, setView] = useState<"overview" | "billing" | "transactions">("overview");
   const [analytics, setAnalytics] = useState<ProgramFinanceAnalytics | null>(null);
-  const [sortBy, setSortBy] = useState<"student" | "parent">("student");
-  const [search, setSearch] = useState(searchParams.get("studentId") ?? "");
-  const [statusFilter, setStatusFilter] = useState("all");
-  const [paymentFilter, setPaymentFilter] = useState("all");
-  const [typeFilter, setTypeFilter] = useState("all");
-  const [genderFilter, setGenderFilter] = useState("all");
-  const [payStatusFilter, setPayStatusFilter] = useState("all");
-  const [subStatusFilter, setSubStatusFilter] = useState("all");
-  const [filtersOpen, setFiltersOpen] = useState(false);
   const [actionTarget, setActionTarget] = useState<{ row: FinanceEnrollmentRow; action: FinanceAction } | null>(null);
   const [detailsTarget, setDetailsTarget] = useState<FinanceEnrollmentRow | null>(null);
+  const [detailsBillingCheck, setDetailsBillingCheck] = useState<BillingCheck | undefined>();
   const [removeTarget, setRemoveTarget] = useState<FinanceEnrollmentRow | null>(null);
   const [removeBusy, setRemoveBusy] = useState(false);
   const [removeError, setRemoveError] = useState<string | null>(null);
@@ -294,50 +248,6 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
     setLoading(false);
   }
 
-  const filteredRows = useMemo(() => {
-    const query = search.trim().toLowerCase();
-    return rows.filter((row) => {
-      const status = financeStatus(row);
-      const payment = financePaymentType(row, program);
-      const studentType = financeStudentType(row);
-      const gender = normalizeGender(row.student?.gender ?? null);
-      const payStatus = financePaymentStatus(row, program);
-      const subStatus = financeSubscriptionStatus(row);
-      if (statusFilter !== "all" && status.toLowerCase() !== statusFilter) {
-        return false;
-      }
-      if (paymentFilter !== "all" && payment.toLowerCase() !== paymentFilter) {
-        return false;
-      }
-      if (typeFilter !== "all" && studentType !== typeFilter) {
-        return false;
-      }
-      if (genderFilter !== "all" && gender !== genderFilter) {
-        return false;
-      }
-      if (payStatusFilter !== "all" && payStatus.toLowerCase() !== payStatusFilter) {
-        return false;
-      }
-      if (subStatusFilter !== "all" && subStatus.toLowerCase() !== subStatusFilter) {
-        return false;
-      }
-      if (!query) {
-        return true;
-      }
-      return [row.enrollment.student_profile_id, row.student?.full_name, row.parent?.full_name, row.student?.email, row.parent?.email, payment, status, payStatus, subStatus]
-        .filter(Boolean)
-        .join(" ")
-        .toLowerCase()
-        .includes(query);
-    }).sort((left, right) =>
-      ((sortBy === "parent" ? left.parent?.full_name : null) ?? left.student?.full_name ?? left.student?.email ?? "Student").localeCompare(
-        (sortBy === "parent" ? right.parent?.full_name : null) ?? right.student?.full_name ?? right.student?.email ?? "Student",
-        undefined,
-        { sensitivity: "base" },
-      ),
-    );
-  }, [genderFilter, payStatusFilter, paymentFilter, program, rows, search, sortBy, statusFilter, subStatusFilter, typeFilter]);
-
   const activeRows = rows.filter((row) => financeStatus(row) === "Active");
   const estimatedMonthlyCents = analytics?.projectedMonthlyCents ?? activeRows.reduce((sum, row) => sum + financeMonthlyAmountCents(row, program), 0);
 
@@ -371,109 +281,18 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
 
       {view === "overview" ? (analytics ? <ProgramFinanceOverview analytics={analytics} fallbackProjectedMonthlyCents={estimatedMonthlyCents} /> : <div className="min-h-64" aria-label="Loading finance overview" aria-busy="true" />) : view === "transactions" ? <ProgramFinanceTransactions programId={programId} key={programId} onOpenStudent={(studentProfileId) => { const row = rows.find((item) => item.enrollment.student_profile_id === studentProfileId); if (row) setDetailsTarget(row); }} /> : null}
 
-      {view === "billing" ? <>
-
-      <div className="flex items-center gap-2">
-        <label className="flex min-h-11 min-w-0 flex-1 items-center gap-2 rounded-[14px] border border-[#D6DCE0] bg-[#F8FAFB] px-3 text-[#6B747B] md:max-w-xl">
-          <SearchIcon />
-          <input aria-label="Search finance records" value={search} onChange={(event) => setSearch(event.target.value)} className="min-w-0 flex-1 bg-transparent text-sm font-semibold text-[#26323A] outline-none" />
-          {search ? <button type="button" aria-label="Clear search" onClick={() => setSearch("")} className="h-8 w-8 shrink-0 rounded-full text-lg hover:bg-black/5">×</button> : null}
-        </label>
-        <button type="button" onClick={() => setFiltersOpen((open) => !open)} className={cn("flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[#52616A] transition-colors", filtersOpen && "bg-[#DDF2EB] text-[#17624F]")} aria-label={filtersOpen ? "Close finance filters" : "Open finance filters"} aria-expanded={filtersOpen}>
-          <FilterSlidersIcon />
-        </button>
-      </div>
-      <label className="flex items-center justify-end gap-2 text-xs text-[#657178]">Sort by
-        <select aria-label="Sort billing records" value={sortBy} onChange={(event) => setSortBy(event.target.value as "student" | "parent")} className="min-h-9 rounded-lg border border-[#D6DCE0] bg-white px-2 text-xs font-semibold text-[#26323A]">
-          <option value="student">Child / student name</option><option value="parent">Parent name</option>
-        </select>
-      </label>
-      {filtersOpen ? (
-        <div className="divide-y divide-[#EEF2F4] rounded-[16px] border border-[#DDE5E9] bg-white px-3">
-          <CompactFinanceSelect label="Enrollment" value={statusFilter} options={["active", "kicked", "withdrawn"]} onChange={setStatusFilter} />
-          <CompactFinanceSelect label="Payment status" value={payStatusFilter} options={["paid", "awaiting payment", "no payment required", "waived", "paid externally", "past due", "payment failed", "checkout sent", "needs billing decision"]} onChange={setPayStatusFilter} />
-          <CompactFinanceSelect label="Subscription" value={subStatusFilter} options={["n/a", "setup pending", "active", "paused", "ending", "past due", "payment failed", "ended"]} labels={{ "n/a": "N/A" }} onChange={setSubStatusFilter} />
-          <CompactFinanceSelect label="Payment type" value={paymentFilter} options={["waived", "paid externally", "monthly", program?.is_ongoing ? "annual subscription" : "pay in full"]} labels={{ "pay in full": "Pay in Full", "annual subscription": "Annual Subscription" }} onChange={setPaymentFilter} />
-          <CompactFinanceSelect label="Type" value={typeFilter} options={["adult", "child"]} labels={{ adult: "Adult student", child: "Child student" }} onChange={setTypeFilter} />
-          <CompactFinanceSelect label="Gender" value={genderFilter} options={["male", "female"]} labels={{ male: "Brothers", female: "Sisters" }} onChange={setGenderFilter} />
-        </div>
-      ) : null}
-
-      <div className="flex items-center justify-between px-1 text-sm font-semibold text-[#6B747B]">
-        <span>Showing {filteredRows.length} of {rows.length} records</span>
-      </div>
-
-      <div className="grid gap-3 md:hidden">
-        {filteredRows.map((row) => (
-          <button key={row.enrollment.id} type="button" onClick={() => setDetailsTarget(row)} className="rounded-[18px] border border-[#DFE7E5] bg-white p-4 text-left shadow-[0_8px_22px_rgba(38,50,58,0.06)]">
-            <div className="flex items-start justify-between gap-3">
-              <div className="min-w-0"><p className="truncate font-semibold text-[#26323A]">{row.student?.full_name || "Student"}</p>{row.parent?.full_name ? <p className="mt-0.5 truncate text-xs text-[#7B858C]">Parent: {row.parent.full_name}</p> : null}<p className="mt-1 text-xs text-[#6B747B]">{financePaymentType(row, program)} · {financePrice(row, program)}</p></div>
-              <span className={cn("shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold", programStatusBadgeToneClass(financeBadgeTone(financeSubscriptionStatus(row))))}>{financeSubscriptionStatus(row)}</span>
-            </div>
-            <div className="mt-3 grid grid-cols-2 gap-3 border-t border-[#EEF2F4] pt-3 text-xs"><div><p className="text-[#7B858C]">Payment</p><p className="mt-1 font-semibold text-[#52616A]">{financePaymentStatus(row, program)}</p></div><div><p className="text-[#7B858C]">Next billing</p><p className="mt-1 font-semibold text-[#52616A]">{financeNextBillingLabel(row)}</p></div></div>
-          </button>
-        ))}
-        {!filteredRows.length ? <p className="rounded-[18px] border border-[#DFE7E5] px-4 py-10 text-center text-sm font-semibold text-[#7B858C]">No matching billing records.</p> : null}
-      </div>
-
-      <div className="hidden overflow-hidden rounded-[24px] border border-[#E1E8EC] bg-white shadow-[0_14px_38px_rgba(38,50,58,0.08)] md:block">
-        <div className="overflow-x-auto">
-          <table className="min-w-[1040px] w-full text-left text-sm">
-            <thead className="bg-[#F7FAFB] text-[11px] font-semibold uppercase tracking-wide text-[#7B858C]">
-              <tr>
-                {["Student", "Payment plan", "Price", "Enrollment", "Payment", "Subscription", "Current period", "Next billing"].map((column) => (
-                  <th key={column} className="px-4 py-3">{column}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-[#EEF2F4]">
-              {filteredRows.map((row) => (
-                <tr onPointerEnter={() => { void loadStudentActivity(programId, row.enrollment.student_profile_id, "finance").catch(() => undefined); void callFinanceAction(programId, "payment-history", { studentProfileId: row.enrollment.student_profile_id }); }} key={row.enrollment.id} className="cursor-pointer align-middle hover:bg-[#F8FAFB]" tabIndex={0} aria-label={`Open finance file for ${row.student?.full_name ?? "student"}`} onClick={() => setDetailsTarget(row)} onKeyDown={(event) => { if (event.target === event.currentTarget && (event.key === "Enter" || event.key === " ")) { event.preventDefault(); setDetailsTarget(row); } }}>
-                  <td className="px-4 py-4">
-                    <p className="font-semibold text-[#26323A]">{row.student?.full_name || "Student"}</p>
-                    <p className="mt-0.5 text-xs text-[#7B858C]">{row.parent?.full_name ? `Parent: ${row.parent.full_name}` : financeStudentSubtitle(row)}</p>
-                  </td>
-                  <td className="px-4 py-4 font-semibold text-[#52616A]">{financePaymentType(row, program)}</td>
-                  <td className="px-4 py-4 font-semibold text-[#26323A]">{financePrice(row, program)}</td>
-                  <td className="px-4 py-4">
-                    <span className={cn("rounded-full px-2.5 py-1 text-xs font-semibold", programStatusBadgeToneClass(financeBadgeTone(financeStatus(row))))}>
-                      {financeStatus(row)}
-                    </span>
-                  </td>
-                  <td className="px-4 py-4">
-                    <span className={cn("rounded-full px-2.5 py-1 text-xs font-semibold", programStatusBadgeToneClass(financeBadgeTone(financePaymentStatus(row, program))))}>
-                      {financePaymentStatus(row, program)}
-                    </span>
-                  </td>
-                  <td className="px-4 py-4">
-                    <span className={cn("rounded-full px-2.5 py-1 text-xs font-semibold", programStatusBadgeToneClass(financeBadgeTone(financeSubscriptionStatus(row))))}>
-                      {financeSubscriptionStatus(row)}
-                    </span>
-                  </td>
-                  <td className="px-4 py-4 text-[#52616A]">{financeCurrentPeriodLabel(row)}</td>
-                  <td className="px-4 py-4 text-[#52616A]">{financeNextBillingLabel(row)}</td>
-                </tr>
-              ))}
-              {!filteredRows.length ? (
-                <tr>
-                  <td colSpan={8} className="px-4 py-10 text-center text-sm font-semibold text-[#7B858C]">No matching billing records.</td>
-                </tr>
-              ) : null}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      </> : null}
+      {view === "billing" ? <BillingRoster program={program} rows={rows} onOpenStudent={(row, check) => { setDetailsTarget(row); setDetailsBillingCheck(check); }} onRefreshRows={loadFinanceRows} /> : null}
 
       {detailsTarget ? (
         <FinanceDetailsDrawer
           row={detailsTarget}
           program={program}
+          billingCheck={detailsBillingCheck}
           initialTab={searchParams.get("from") === "students" ? "overview" : "finances"}
           childDialogOpen={Boolean(actionTarget || removeTarget)}
           onClose={() => {
             setDetailsTarget(null);
+            setDetailsBillingCheck(undefined);
             if (searchParams.get("from") === "students") {
               router.replace(`${pathname.replace(/\/finances$/, "")}/students`, { scroll: false });
               return;
@@ -713,48 +532,6 @@ function financePaymentType(row: FinanceEnrollmentRow, program: Program | null) 
 }
 
 
-function CompactFinanceSelect({ label, value, options, labels = {}, onChange }: { label: string; value: string; options: string[]; labels?: Record<string, string>; onChange: (value: string) => void }) {
-  return (
-    <label className="flex min-h-11 items-center justify-between gap-3 py-1 text-sm font-semibold text-[#52616A]">
-      <span>{label}</span>
-      <select value={value} onChange={(event) => onChange(event.target.value)} className="h-8 w-44 max-w-[58%] rounded-[9px] border border-[#D6DCE0] bg-[#F8FAFB] px-2 text-xs font-semibold text-[#26323A] outline-none">
-        <option value="all">All</option>
-        {options.map((option) => <option key={option} value={option}>{labels[option] ?? titleCase(option)}</option>)}
-      </select>
-    </label>
-  );
-}
-
-
-function FilterSlidersIcon() {
-  return <svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="1.9" strokeLinecap="round"><path d="M4 7h10M18 7h2M4 17h3M11 17h9"/><circle cx="16" cy="7" r="2"/><circle cx="9" cy="17" r="2"/></svg>;
-}
-
-
-function financePrice(row: FinanceEnrollmentRow, program: Program | null) {
-  if (hasCurrentPaymentBypass(row)) {
-    return row.request?.payment_bypass_external ? "Paid Externally" : "Waived";
-  }
-  if (row.subscription?.payment_waived) {
-    return "Waived";
-  }
-  if (row.paymentTerms) {
-    if (row.paymentTerms.payment_type === "free") {
-      return "Free";
-    }
-    if (row.paymentTerms.payment_type === "waived") {
-      return "Waived";
-    }
-    const amount = formatPrice(row.paymentTerms.amount_cents);
-    return row.paymentTerms.payment_type === "monthly" ? `${amount}/month` : amount;
-  }
-  if ((row.subscription?.payment_type ?? row.request?.payment_type) === "annual") {
-    return formatPrice(row.request?.approved_price_annual_cents ?? program?.price_annual_cents ?? null);
-  }
-  return formatPrice(row.request?.approved_price_monthly_cents ?? program?.price_monthly_cents ?? null);
-}
-
-
 function financeStatus(row: FinanceEnrollmentRow) {
   const status = row.enrollment.status || "active";
   if (status === "kicked") {
@@ -767,198 +544,8 @@ function financeStatus(row: FinanceEnrollmentRow) {
 }
 
 
-function financeStudentType(row: FinanceEnrollmentRow) {
-  return row.parent ? "child" : "adult";
-}
-
-
-function financeSubscriptionStatus(row: FinanceEnrollmentRow) {
-  if (hasCurrentPaymentBypass(row) && !row.subscription?.stripe_subscription_id) {
-    return "N/A";
-  }
-  if (row.subscription?.stripe_subscription_id) {
-    const stripeStatus = row.subscription.status?.toLowerCase();
-    if (stripeStatus === "incomplete" || stripeStatus === "checkout_started") return "Setup pending";
-    if (stripeStatus === "trialing") return "Trial";
-    if (stripeStatus === "paused") return "Paused";
-    if (stripeStatus === "past_due" || stripeStatus === "unpaid") {
-      return "Past due";
-    }
-    if (!hasActiveRecurringSubscription(row.subscription)) {
-      return "Ended";
-    }
-    if (row.subscription.payment_paused) {
-      return "Paused";
-    }
-    return row.subscription.cancel_at_period_end ? "Ending" : "Active";
-  }
-  if (row.paymentTerms) {
-    if (!["monthly", "annual"].includes(row.paymentTerms.payment_type)) {
-      return "N/A";
-    }
-  }
-  if (!row.subscription?.stripe_subscription_id) {
-    const localStatus = row.subscription?.status?.toLowerCase();
-    if (localStatus === "active") return "Active";
-    if (localStatus === "trialing") return "Trial";
-    if (localStatus === "past_due") return "Past due";
-    if (localStatus === "unpaid") return "Unpaid";
-    if (localStatus === "paid") return "Completed";
-    if (localStatus === "checkout_started") return "Setup pending";
-    if (row.paymentTerms?.status === "checkout_pending" || row.paymentTerms?.status === "payment_required") {
-      return "Setup pending";
-    }
-    if (row.paymentTerms?.status === "past_due") {
-      return "Past due";
-    }
-    if (row.paymentTerms?.status === "failed") {
-      return "Payment failed";
-    }
-    if (row.paymentTerms && ["ended", "cancelled", "superseded"].includes(row.paymentTerms.status)) {
-      return "Ended";
-    }
-    if (financeStatus(row) === "Active" && ["monthly", "annual"].includes(row.paymentTerms?.payment_type ?? "")) return "Active";
-    return "N/A";
-  }
-  return "N/A";
-}
-
-
-function financePaymentStatus(row: FinanceEnrollmentRow, program: Program | null) {
-  if (hasCurrentPaymentBypass(row)) {
-    return row.request?.payment_bypass_external ? "Paid Externally" : "Waived";
-  }
-  if (row.subscription?.payment_paused || row.subscription?.status === "paused") return "Paused";
-  if (row.subscription?.status === "trialing") return "Trial — not charged";
-  if (row.subscription?.status === "incomplete") return "Awaiting payment";
-  if (row.subscription?.status === "checkout_started") return "Checkout sent";
-  if (row.subscription?.payment_waived) {
-    return "Waived";
-  }
-  if (row.paymentTerms) {
-    const stripeStatus = row.subscription?.status?.toLowerCase();
-    if (["monthly", "annual"].includes(row.paymentTerms.payment_type) && row.subscription?.stripe_subscription_id && hasActiveRecurringSubscription(row.subscription)) {
-      if (stripeStatus === "past_due") {
-        return "Past due";
-      }
-      if (stripeStatus === "unpaid") {
-        return "Payment failed";
-      }
-      return "Paid";
-    }
-    switch (row.paymentTerms.status) {
-      case "payment_required":
-        return "Awaiting payment";
-      case "checkout_pending":
-        return "Checkout sent";
-      case "active":
-        if (row.paymentTerms.payment_type === "waived") return "Waived";
-        if (row.subscription?.status === "trialing") return "Trial";
-        if (row.subscription?.status === "active") return "Current";
-        return ["monthly", "annual", "pay_in_full"].includes(row.paymentTerms.payment_type) ? "Registration completed" : "No payment required";
-      case "paid":
-        return "Paid";
-      case "waived":
-        return "Waived";
-      case "past_due":
-        return "Past due";
-      case "failed":
-        return "Payment failed";
-      case "ended":
-      case "cancelled":
-      case "superseded":
-        return "Ended";
-      default:
-        return "Needs billing decision";
-    }
-  }
-  if (!program?.is_paid) {
-    return "No payment required";
-  }
-  const stripeStatus = row.subscription?.status?.toLowerCase();
-  if (stripeStatus === "past_due") {
-    return "Past due";
-  }
-  if (stripeStatus === "unpaid") {
-    return "Payment failed";
-  }
-  if (stripeStatus === "checkout_started") {
-    return "Checkout sent";
-  }
-  if (row.subscription?.stripe_subscription_id && hasActiveRecurringSubscription(row.subscription)) {
-    return "Paid";
-  }
-  if (row.subscription?.stripe_subscription_id) {
-    return "Needs billing decision";
-  }
-  if (row.request?.approved_price_monthly_cents || row.request?.approved_price_annual_cents || program.price_monthly_cents || program.price_annual_cents) {
-    return "Awaiting payment";
-  }
-  return "Needs billing decision";
-}
-
-
-function financeBadgeTone(label: string): "neutral" | "positive" | "warning" | "danger" {
-  const value = label.toLowerCase();
-  if (["active", "paid"].includes(value)) {
-    return "positive";
-  }
-  if (["paused", "ending", "awaiting payment", "checkout sent", "setup pending"].includes(value)) {
-    return "warning";
-  }
-  if (["kicked", "past due", "payment failed", "needs billing decision"].includes(value)) {
-    return "danger";
-  }
-  return "neutral";
-}
-
-
-function financeCurrentPeriodLabel(row: FinanceEnrollmentRow) {
-  if (!row.subscription?.stripe_subscription_id && row.paymentTerms?.current_period_start && row.paymentTerms.current_period_end) {
-    return `${formatFinanceDate(row.paymentTerms.current_period_start)} – ${formatFinanceDate(row.paymentTerms.current_period_end)}`;
-  }
-  if (!row.subscription?.current_period_start || !row.subscription.current_period_end) {
-    return "—";
-  }
-  return `${formatFinanceDate(row.subscription.current_period_start)} – ${formatFinanceDate(row.subscription.current_period_end)}`;
-}
-
-
-function financeNextBillingLabel(row: FinanceEnrollmentRow) {
-  const subscription = row.subscription;
-  if (row.paymentTerms && !["monthly", "annual"].includes(row.paymentTerms.payment_type)) {
-    return row.paymentTerms.payment_type === "pay_in_full" ? "Paid once" : "—";
-  }
-  if (!subscription?.stripe_subscription_id || !hasActiveRecurringSubscription(subscription)) {
-    if (row.paymentTerms?.current_period_end && ["ended", "cancelled"].includes(row.paymentTerms.status)) {
-      return `Ended ${formatFinanceShortDate(row.paymentTerms.current_period_end)}`;
-    }
-    return "—";
-  }
-  if (subscription.payment_paused) {
-    return subscription.payment_paused_until ? `Resumes ${formatFinanceShortDate(subscription.payment_paused_until)}` : "Paused indefinitely";
-  }
-  if (!subscription.current_period_end) {
-    return "—";
-  }
-  return subscription.cancel_at_period_end ? `Ends on ${formatFinanceShortDate(subscription.current_period_end)}` : `Next billing: ${formatFinanceShortDate(subscription.current_period_end)}`;
-}
-
-
 function hasActiveRecurringSubscription(subscription: ProgramSubscription | null | undefined) {
-  if (!subscription?.stripe_subscription_id) {
-    return false;
-  }
-  const status = subscription.status?.toLowerCase();
-  return !["canceled", "cancelled", "incomplete_expired"].includes(status);
-}
-
-
-function financeStudentSubtitle(row: FinanceEnrollmentRow) {
-  if (financeStudentType(row) === "child") {
-    return "Child Student";
-  }
-  return row.student?.email || "Adult Student";
+  return Boolean(subscription?.stripe_subscription_id && !["canceled", "cancelled", "incomplete_expired", "ended"].includes(subscription.status?.toLowerCase() ?? ""));
 }
 
 
@@ -989,28 +576,4 @@ function SearchIcon() {
       <path d="m16.5 16.5 3.5 3.5" />
     </svg>
   );
-}
-
-
-function titleCase(value: string) {
-  return value
-    .split(/[\s_-]+/)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1).toLowerCase())
-    .join(" ");
-}
-
-
-function normalizeGender(gender: string | null) {
-  const normalized = gender?.trim().toLowerCase();
-  if (!normalized) {
-    return null;
-  }
-  if (["male", "boy", "boys", "brother", "brothers"].includes(normalized)) {
-    return "male";
-  }
-  if (["female", "girl", "girls", "sister", "sisters"].includes(normalized)) {
-    return "female";
-  }
-  return normalized;
 }

@@ -1,4 +1,5 @@
 "use client";
+import type { BillingCheck } from "@/lib/finance/billing-check";
 import { StudentWithdrawalNotice } from "@/components/data/program-withdrawals";
 import { loadStudentActivity, type StudentActivity } from "@/lib/student-activity";
 import { createPortal } from "react-dom";
@@ -352,6 +353,7 @@ function RefundPaymentManager({ programId, studentName, payerName, payments, loa
 export function FinanceDetailsDrawer({
   row,
   program,
+  billingCheck,
   initialPaymentHistory,
   initialTab = "overview",
   canViewFinances = true,
@@ -362,6 +364,7 @@ export function FinanceDetailsDrawer({
 }: {
   row: FinanceEnrollmentRow;
   program: Program;
+  billingCheck?: BillingCheck;
   initialPaymentHistory?: FinanceChargeRow[] | null;
   initialTab?: "overview" | "history" | "finances" | "actions";
   canViewFinances?: boolean;
@@ -518,13 +521,18 @@ export function FinanceDetailsDrawer({
             <dl className="grid grid-cols-2 gap-x-5 gap-y-4 rounded-[16px] border border-[#E1E8EC] bg-[#FAFCFC] p-4">
               <FinanceRecordFact label="Approved price">{financePrice(row, program)}</FinanceRecordFact>
               <FinanceRecordFact label="Payment plan">{financePaymentType(row, program)}</FinanceRecordFact>
-              <FinanceRecordFact label="Payment status"><span className={cn("inline-flex rounded-full px-2.5 py-1 text-xs font-semibold", programStatusBadgeToneClass(financeBadgeTone(financePaymentStatus(row, program))))}>{financePaymentStatus(row, program)}</span></FinanceRecordFact>
+              <FinanceRecordFact label="Payment status"><span className={cn("inline-flex rounded-full px-2.5 py-1 text-xs font-semibold", programStatusBadgeToneClass(billingCheck ? billingCheck.group === "attention" ? "danger" : billingCheck.group === "current" ? "positive" : "warning" : financeBadgeTone(financePaymentStatus(row, program))))}>{billingCheck?.label ?? financePaymentStatus(row, program)}</span></FinanceRecordFact>
               <FinanceRecordFact label="Subscription"><span className={cn("inline-flex rounded-full px-2.5 py-1 text-xs font-semibold", programStatusBadgeToneClass(financeBadgeTone(financeSubscriptionStatus(row))))}>{financeSubscriptionStatus(row)}</span></FinanceRecordFact>
               <FinanceRecordFact label="Billing cycle">{row.paymentTerms ? financeBillingCycleLabel(row.paymentTerms, program) : "—"}</FinanceRecordFact>
               <FinanceRecordFact label="Current period">{financeCurrentPeriodLabel(row)}</FinanceRecordFact>
               <FinanceRecordFact label="Next billing">{financeNextBillingLabel(row)}</FinanceRecordFact>
               <FinanceRecordFact label="Checkout">{checkoutLinkStatus}</FinanceRecordFact>
             </dl>
+            {billingCheck ? <div className="space-y-2 text-sm leading-6 text-[#52616A]">
+              <p>{billingCheck.explanation}</p>
+              {billingCheck.bills.map(bill => <p key={bill.id}><strong>{new Intl.NumberFormat("en-CA", { style: "currency", currency: bill.currency.toUpperCase() }).format(bill.amountCents / 100)} unpaid</strong> · Billing period starts {new Date(bill.periodStart).toLocaleDateString("en-CA", { timeZone: program.schedule_timezone || "UTC", month: "long", day: "numeric", year: "numeric" })} · Due {new Date(bill.dueAt).toLocaleDateString("en-CA", { timeZone: program.schedule_timezone || "UTC" })}</p>)}
+              {billingCheck.checkedAt ? <p className="text-xs text-[#657178]">Checked {new Date(billingCheck.checkedAt).toLocaleString("en-CA", { timeZone: program.schedule_timezone || "UTC", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}. Refresh Billing for an updated check.</p> : null}
+            </div> : null}
             <section className="space-y-2">
             <h3 className="text-sm font-semibold text-[#26323A]">Payment History</h3>
             {historyLoading ? (
@@ -930,7 +938,7 @@ function financePaymentStatus(row: FinanceEnrollmentRow, program: Program | null
       if (stripeStatus === "unpaid") {
         return "Payment failed";
       }
-      return "Paid";
+      return "Subscription active";
     }
     switch (row.paymentTerms.status) {
       case "payment_required":
@@ -972,7 +980,7 @@ function financePaymentStatus(row: FinanceEnrollmentRow, program: Program | null
     return "Checkout sent";
   }
   if (row.subscription?.stripe_subscription_id && hasActiveRecurringSubscription(row.subscription)) {
-    return "Paid";
+    return "Subscription active";
   }
   if (row.subscription?.stripe_subscription_id) {
     return "Needs billing decision";

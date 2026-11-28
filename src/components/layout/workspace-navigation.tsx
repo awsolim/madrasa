@@ -40,13 +40,18 @@ export function WorkspaceNavigationProvider({ slug, section, children }: {
   const navigate = useCallback((value: string, replace = false, scroll = true) => {
     const target = new URL(value, window.location.href);
     if (target.origin !== window.location.origin || !workspaceRoute(target.pathname, slug, section)) return false;
+    const samePage = workspacePath(target.pathname, slug) === workspacePath(window.location.pathname, slug);
     const destination = browserHref(`${target.pathname}${target.search}${target.hash}`, slug, window.location.hostname);
-    if (destination === `${window.location.pathname}${window.location.search}${window.location.hash}`) return true;
+    if (destination === `${window.location.pathname}${window.location.search}${window.location.hash}`) {
+      window.dispatchEvent(new Event("tareeqah:workspace-reselect"));
+      return true;
+    }
     if (process.env.NEXT_PUBLIC_NAVIGATION_QA === "1") window.dispatchEvent(new CustomEvent("tareeqah:navigation-start", { detail: workspacePath(target.pathname, slug) }));
     // Update the actual screen and its selected tab in the same synchronous commit.
     if (replace) window.history.replaceState(null, "", destination);
     else window.history.pushState(null, "", destination);
     window.dispatchEvent(new Event(locationEvent));
+    if (samePage) window.dispatchEvent(new Event("tareeqah:workspace-reselect"));
     if (scroll) window.scrollTo({ top: 0, left: 0, behavior: "instant" });
     return true;
   }, [section, slug]);

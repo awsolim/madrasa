@@ -160,7 +160,9 @@ export async function POST(request: Request) {
       Object.assign(checkoutMetadata, {
         opening_period_waived: "true",
         first_charge_at: new Date(monthlyPlan.billingAnchor! * 1000).toISOString(),
-        waiver_reason: "Al Tarteel November 2026 opening-period waiver; normal monthly billing begins December 1.",
+        waiver_reason: monthlyPlan.waiverReason === "november_2026"
+          ? "Al Tarteel November 2026 opening-period waiver; normal monthly billing begins December 1."
+          : "Registration after the 25th: opening month waived; monthly billing begins on the next first.",
       });
     }
     const session = await stripe.checkout.sessions.create(
@@ -168,7 +170,7 @@ export async function POST(request: Request) {
         mode: isRecurring ? "subscription" : "payment",
         ...(monthlyPlan?.waiveOpeningPeriod ? {
           payment_method_collection: "always" as const,
-          custom_text: { submit: { message: "No payment today. November tuition is waived. Your first monthly payment is on December 1, 2026, then on the first of each month." } },
+          custom_text: { submit: { message: `No payment today. Your first monthly payment is on ${new Date(monthlyPlan.billingAnchor! * 1000).toLocaleDateString("en-CA", { timeZone: program.schedule_timezone || "UTC", month: "long", day: "numeric", year: "numeric" })}, then on the first of each month.` } },
         } : {}),
         line_items: [{ price: dynamicPrice.id, quantity: 1 }],
         customer_email: profile?.email ?? user.email ?? undefined,

@@ -51,6 +51,7 @@ import { ConfirmModal } from "@/components/ui/confirm-modal";
 import { FlatLink } from "@/components/ui/flat-button";
 import { useHideMobileChromeWhileMounted, useModalFocusTrap } from "@/hooks/use-modal-behavior";
 import { useDismissMenu } from "@/hooks/use-dismiss-menu";
+import { useRefreshOnReturn } from "@/hooks/use-refresh-on-return";
 import { useStudentNotificationCounts, useTeacherNotificationCounts } from "@/hooks/use-notification-counts";
 import { ProgramWithdrawals, useProgramWithdrawals } from "@/components/data/program-withdrawals";
 import { getAccountLabel, loadUserAccessByMosqueSlug } from "@/lib/authz";
@@ -1890,7 +1891,7 @@ export function RegistrationConfirmationData({ slug, requestId }: { slug: string
               ) : state === "payment_required_annual_subscription" ? (
                 <p className="text-sm leading-6 text-[#52616A]">Your registration has been approved. Start your annual subscription to complete registration — {listedPrice}/year, renews automatically until cancelled.</p>
               ) : (
-                <p className="text-sm leading-6 text-[#52616A]">Your registration has been approved. Start your monthly subscription to complete registration — {listedPrice}/month. {monthlyPlan?.waiveOpeningPeriod ? `No payment is due today. November tuition is waived. Save your card to complete registration; your first monthly payment is ${firstRecurringDate}, followed by payments on the first of each month.` : monthlyPlan?.prorateOpeningPeriod ? `Today you will pay only for the remaining days of ${openingMonth}. Stripe shows the exact amount before payment. The full monthly price begins ${firstRecurringDate}.` : "The full monthly price is due today and renews monthly."}</p>
+                <p className="text-sm leading-6 text-[#52616A]">Your registration has been approved. Start your monthly subscription to complete registration — {listedPrice}/month. {monthlyPlan?.waiveOpeningPeriod ? `No payment is due today. Tuition for the rest of ${openingMonth} is waived. Save your card to complete registration; your first monthly payment is ${firstRecurringDate}, followed by payments on the first of each month.` : monthlyPlan?.prorateOpeningPeriod ? `Today you will pay only for the remaining days of ${openingMonth}. Stripe shows the exact amount before payment. The full monthly price begins ${firstRecurringDate}.` : "The full monthly price is due today and renews monthly."}</p>
               )}
               {state !== "completed" ? (
                 <div className="rounded-[14px] bg-[#F7FAFB] p-3 text-sm">
@@ -1901,7 +1902,7 @@ export function RegistrationConfirmationData({ slug, requestId }: { slug: string
                   {monthlyPlan?.firstRecurringChargeAt ? <>
                     <div className="mt-2 flex items-center justify-between border-t border-[#E3E9EB] pt-2">
                       <span className="text-[#6B747B]">Due today</span>
-                      <span className="font-semibold text-[#26323A]">{monthlyPlan.waiveOpeningPeriod ? "$0 — November waived" : monthlyPlan.prorateOpeningPeriod ? "Prorated amount shown at checkout" : listedPrice}</span>
+                      <span className="font-semibold text-[#26323A]">{monthlyPlan.waiveOpeningPeriod ? `$0 — ${openingMonth} waived` : monthlyPlan.prorateOpeningPeriod ? "Prorated amount shown at checkout" : listedPrice}</span>
                     </div>
                     <div className="mt-2 flex items-center justify-between gap-4">
                       <span className="text-[#6B747B]">Recurring billing</span>
@@ -4347,7 +4348,9 @@ export function AdminHomeData({ slug }: { slug: string }) {
 }
 
 export function TeacherClassesData({ slug }: { slug: string }) {
-  const { programs, allPrograms, roleByProgramId, permissionsByProgramId, programCounts, canCreateClass, loading, error } = useTeacherPrograms(slug);
+  const { programs, allPrograms, roleByProgramId, permissionsByProgramId, programCounts, canCreateClass, loading, error, refetch } = useTeacherPrograms(slug);
+  const pathname = usePathname();
+  useRefreshOnReturn(pathname === `/m/${slug}/teacher/classes`, refetch);
   const router = useRouter();
   const searchParams = useSearchParams();
   const initialTeacherClassesTab = searchParams.get("tab");
@@ -4459,7 +4462,9 @@ export function TeacherClassesData({ slug }: { slug: string }) {
 }
 
 export function AdminClassesData({ slug }: { slug: string }) {
-  const { programs, programCounts, canCreateClass, loading, error } = useTeacherPrograms(slug);
+  const { programs, programCounts, canCreateClass, loading, error, refetch } = useTeacherPrograms(slug);
+  const pathname = usePathname();
+  useRefreshOnReturn(pathname === `/m/${slug}/admin/programs`, refetch);
   const [toast, setToast] = useState<EditorToastState | null>(null);
   const [hiddenProgramIds, setHiddenProgramIds] = useState<Set<string>>(new Set());
   const [showArchived, setShowArchived] = useState(false);

@@ -25,6 +25,7 @@ import { ScheduleIcon } from "@/components/ui/schedule-icon";
 import { cn } from "@/lib/utils";
 import { useStandaloneMode } from "@/lib/pwa/install";
 import { useDismissMenu } from "@/hooks/use-dismiss-menu";
+import { useMobileNavViewport } from "@/hooks/use-mobile-nav-viewport";
 
 function BottomNav({ items, inboxBadgeCount = 0, inboxActionRequired = false }: { items: NavItem[]; inboxBadgeCount?: number; inboxActionRequired?: boolean }) {
   const standalone = useStandaloneMode();
@@ -36,6 +37,8 @@ function BottomNav({ items, inboxBadgeCount = 0, inboxActionRequired = false }: 
     .map((label) => itemByLabel.get(label))
     .filter((item): item is NavItem => Boolean(item));
   const shouldShow = !overlayChromeHidden && isMainTabRoute(pathname, visibleItems);
+  const navRef = useRef<HTMLElement | null>(null);
+  useMobileNavViewport(navRef, standalone === true && shouldShow);
 
   useEffect(() => {
     for (const item of items) {
@@ -52,15 +55,17 @@ function BottomNav({ items, inboxBadgeCount = 0, inboxActionRequired = false }: 
   // containment on this fixed element: Safari can detach that layer while scrolling.
   return createPortal(
     <nav
-      className="pointer-events-auto fixed inset-x-0 bottom-0 z-[2147483647] h-[calc(88px+env(safe-area-inset-bottom))] overflow-visible bg-transparent md:hidden"
+      ref={navRef}
+      className="pointer-events-auto fixed inset-x-0 z-[2147483647] h-[calc(88px+env(safe-area-inset-bottom))] overflow-visible bg-transparent md:hidden"
+      style={{ top: "calc(var(--mobile-nav-viewport-bottom, 100dvh) - 88px - env(safe-area-inset-bottom))" }}
       aria-label="Mobile primary navigation"
     >
       <div aria-hidden className="pointer-events-auto absolute inset-0 bg-gradient-to-b from-transparent via-[#E7ECEE]/75 to-[#DDE4E7]/95" />
-      <div aria-hidden className="pointer-events-auto absolute inset-x-0 bottom-0 h-[calc(58px+env(safe-area-inset-bottom))] bg-[#E3E9EB]/55 backdrop-blur-[5px]" />
+      <div aria-hidden className="pointer-events-auto absolute inset-x-0 bottom-0 h-[calc(58px+env(safe-area-inset-bottom))] bg-[#E3E9EB]/55" />
       <div
         className={cn(
           "absolute inset-x-3 bottom-[calc(10px+env(safe-area-inset-bottom))] mx-auto grid h-[68px] max-w-[420px] overflow-hidden rounded-[24px] border border-[#BCC8CD]/80",
-          "bg-[#E3E9EB]/95 shadow-[0_12px_36px_rgba(38,50,58,0.24)] backdrop-blur-xl backdrop-saturate-150",
+          "bg-[#E3E9EB]/95 shadow-[0_12px_36px_rgba(38,50,58,0.24)]",
         )}
         style={{ gridTemplateColumns: `repeat(${visibleItems.length}, minmax(0, 1fr))` }}
       >
@@ -76,6 +81,7 @@ function BottomNav({ items, inboxBadgeCount = 0, inboxActionRequired = false }: 
                 if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
                 if (pathname === item.href) {
                   event.preventDefault();
+                  router.push(item.href, { scroll: false });
                   window.scrollTo({ top: 0, behavior: "instant" });
                   return;
                 }
@@ -514,7 +520,10 @@ export function AppTopBar({
                       setPageMenuOpen(false);
                       if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
                       event.preventDefault();
-                      if (active) return;
+                      if (active) {
+                        router.push(item.href, { scroll: false });
+                        return;
+                      }
                       const direction = currentPageIndex >= 0 && index < currentPageIndex ? "from-left" : "from-right";
                       window.dispatchEvent(new CustomEvent("tareeqah:nav-preview", { detail: { href: item.href, label: item.label, direction, fromPath: pathname } }));
                       router.push(item.href);
