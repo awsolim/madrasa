@@ -36,54 +36,53 @@ test('default list identifies the owing student, parent, unpaid balance and name
   assert.match(html, /\$35\.00 unpaid/);
   assert.match(html, /November 2026/);
   assert.doesNotMatch(html, /Current bill settled/);
-  assert.match(html, /Could not verify/);
+  assert.match(html, /Check payment/);
   assert.match(html, /Needs attention/);
-  assert.match(html, /Payment status for November 2026/);
-  assert.match(html, /Applications → Waiting Payment/);
+  assert.match(html, /November 2026/);
+  assert.doesNotMatch(html, /Applications → Waiting Payment|Unbilled historical|Next payment:|Last paid:|Student file →/);
 });
 test('in-order list includes settled and waived students without overdue rows', () => {
   const html = render({ filter: 'current', checks });
-  assert.match(html, /Current bill settled/);
-  assert.match(html, /November paid/);
+  assert.match(html, />Paid</);
+  assert.doesNotMatch(html, /Current bill settled/);
   assert.match(html, /Waived/);
   assert.doesNotMatch(html, /A Student With A Long Name/);
 });
 test('the current month being paid does not conceal an older unpaid bill', () => {
   const older = { ...checks.owing, settledPeriod: checks.paid.settledPeriod, bills: [{ ...checks.owing.bills[0], periodStart: '2026-10-01T15:00:00Z', periodEnd: '2026-11-01T15:00:00Z' }] };
   const html = render({ checks: { ...checks, owing: older } });
-  assert.match(html, /November paid/);
   assert.match(html, /October 2026/);
   assert.match(html, /\$35\.00 unpaid/);
 });
 test('annual coverage and an adjusted bill have explicit reasons instead of a false monthly payment', () => {
   const annual = render({ filter: 'current', checks: { ...checks, paid: { ...checks.paid, settledPeriod: { ...checks.paid.settledPeriod, interval: 'year' } } } });
-  assert.match(annual, /Covered by annual payment/);
+  assert.match(annual, />Paid</);
+  assert.match(annual, />Annual</);
   assert.doesNotMatch(annual, /November paid/);
   const adjusted = render({ filter: 'current', checks: { ...checks, paid: { ...checks.paid, settledPeriod: { ...checks.paid.settledPeriod, kind: 'adjusted' } } } });
-  assert.match(adjusted, /Nothing due for November — bill adjusted/);
+  assert.match(adjusted, /Nothing due/);
   assert.doesNotMatch(adjusted, /November paid/);
 });
 test('before the first-of-month collection time, a previous paid period does not mark the new month paid', () => {
   const html = render({ filter: 'current', checks, checkedAt: '2026-12-01T06:30:00Z' });
-  assert.match(html, /Payment status for December 2026/);
-  assert.match(html, /Next payment upcoming/);
-  assert.match(html, /previous billing period is settled/);
+  assert.match(html, /December 2026/);
+  assert.match(html, /Not due yet/);
   assert.doesNotMatch(html, /December paid/);
 });
 test('unverified records share Needs attention with unpaid bills, with distinct reasons and unpaid first', () => {
   const html = render({ filter: 'attention', checks });
-  assert.match(html, /Could not verify/);
-  assert.match(html, /has not been checked/);
+  assert.match(html, /Check payment/);
+  assert.match(html, /Not verified/);
   assert.doesNotMatch(html, /Current bill settled/);
   assert.match(html, /\$35\.00 unpaid/);
-  assert.ok(html.indexOf('A Student With A Long Name') < html.indexOf('>unknown</p>'));
-  assert.equal((html.match(/aria-pressed=/g) ?? []).length, 3, 'two main groups plus Everyone');
+  assert.ok(html.indexOf('A Student With A Long Name') < html.indexOf('>unknown</span>'));
+  assert.equal((html.match(/aria-pressed=/g) ?? []).length, 2, 'only the two requested lists');
 });
 test('cold loading and connection failure never claim everyone has paid', () => {
   const loading = render({ data: false });
-  assert.match(loading, /Checking payment records/);
+  assert.match(loading, /Checking payments/);
   assert.doesNotMatch(loading, /No unpaid bills found/);
   const failure = render({ data: false, error: 'connection failed' });
-  assert.match(failure, /Could not check payments/);
+  assert.match(failure, /Couldn’t refresh payments/);
   assert.doesNotMatch(failure, /No unpaid bills found in the checked records/);
 });

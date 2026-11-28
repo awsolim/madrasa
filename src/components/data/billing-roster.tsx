@@ -12,9 +12,9 @@ import { cn } from "@/lib/utils";
 
 type Program = Database["public"]["Tables"]["programs"]["Row"];
 type CheckResponse = { checks: Record<string, BillingCheck>; checkedAt: string };
-type Filter = "attention" | "current" | "all";
-const filters: Array<[Filter, string]> = [["attention", "Needs attention"], ["current", "In order"], ["all", "Everyone"]];
-const matchesFilter = (group: BillingCheck["group"], filter: Filter) => filter === "all" || (filter === "attention" ? group !== "current" : group === "current");
+type Filter = "attention" | "current";
+const filters: Array<[Filter, string]> = [["current", "In order"], ["attention", "Needs attention"]];
+const matchesFilter = (group: BillingCheck["group"], filter: Filter) => filter === "attention" ? group !== "current" : group === "current";
 const money = (amount: number, currency = "cad") => new Intl.NumberFormat("en-CA", { style: "currency", currency: currency.toUpperCase() }).format(amount / 100);
 
 function localCheck(row: FinanceEnrollmentRow, program: Program): BillingCheck {
@@ -34,8 +34,6 @@ export function BillingRoster({ program, rows, onOpenStudent, onRefreshRows }: {
   const [filter, setFilter] = useState<Filter>("attention");
   const [search, setSearch] = useState("");
   const [refreshing, setRefreshing] = useState(false);
-  const [activeOnly, setActiveOnly] = useState(false);
-  const [sortByParent, setSortByParent] = useState(false);
   const [checkFailure, setCheckFailure] = useState<string | null>(null);
   const viewerId = getCachedSessionSnapshot()?.user.id;
   const { data, error, refetch } = useCachedQuery<CheckResponse>(viewerId ? `billing-check:${program.id}:${viewerId}` : null, async () => {
@@ -58,7 +56,7 @@ export function BillingRoster({ program, rows, onOpenStudent, onRefreshRows }: {
   const asOf = data?.checkedAt ?? new Date().toISOString();
   const monthLabel = new Date(asOf).toLocaleDateString("en-CA", { timeZone: timezone, month: "long", year: "numeric" });
   const monthName = new Date(asOf).toLocaleDateString("en-CA", { timeZone: timezone, month: "long" });
-  const date = (value: string) => new Date(value).toLocaleDateString("en-CA", { timeZone: timezone, month: "short", day: "numeric", year: "numeric" });
+  const date = (value: string) => new Date(value).toLocaleDateString("en-CA", { timeZone: timezone, month: "short", day: "numeric" });
   const period = (start: string, end: string) => {
     const endInclusive = new Date(new Date(end).getTime() - 1).toISOString();
     const month = (value: string) => new Date(value).toLocaleDateString("en-CA", { timeZone: timezone, month: "long", year: "numeric" });
@@ -90,49 +88,55 @@ export function BillingRoster({ program, rows, onOpenStudent, onRefreshRows }: {
     }
     return { row, check };
   }), [asOf, checkFailure, data, monthLabel, monthName, program, rows, timezone]);
-  const scoped = entries.filter(({ row }) => !activeOnly || row.enrollment.status === "active");
-  const visible = scoped.filter(({ row, check }) => matchesFilter(check.group, filter) && `${row.student?.full_name ?? ""} ${row.parent?.full_name ?? ""}`.toLowerCase().includes(search.trim().toLowerCase()))
+  const visible = entries.filter(({ row, check }) => matchesFilter(check.group, filter) && `${row.student?.full_name ?? ""} ${row.parent?.full_name ?? ""}`.toLowerCase().includes(search.trim().toLowerCase()))
     .sort((a, b) => {
       // Show confirmed unpaid bills before uncertain records, without mixing the reasons.
       if (filter === "attention" && a.check.group !== b.check.group) return a.check.group === "attention" ? -1 : 1;
-      return ((sortByParent ? a.row.parent?.full_name : null) || a.row.student?.full_name || "Student").localeCompare((sortByParent ? b.row.parent?.full_name : null) || b.row.student?.full_name || "Student");
+      return (a.row.student?.full_name || "Student").localeCompare(b.row.student?.full_name || "Student");
     });
   async function refresh() {
     if (refreshing) return;
     setRefreshing(true);
     try { await Promise.all([refetch(), onRefreshRows()]); } finally { setRefreshing(false); }
   }
-  function standing(check: BillingCheck) {
-    return <div className="min-w-0 space-y-1.5">
-      <p className={cn("font-semibold", check.group === "attention" ? "text-[#B42318]" : check.group === "current" ? "text-[#17624F]" : "text-[#845A1E]")}>{check.label}</p>
-      {check.bills.map(bill => <p key={bill.id} className="text-sm leading-5 text-[#52616A]"><strong className="font-semibold text-[#26323A]">{money(bill.amountCents, bill.currency)} unpaid</strong> · {period(bill.periodStart, bill.periodEnd)}<br /><span className="text-xs">Due {date(bill.dueAt)}</span></p>)}
-      <p className="max-w-md text-xs leading-5 text-[#657178]">{check.explanation}</p>
-    </div>;
+  function status(check: BillingCheck) {
+    if (check.bills.length) {
+      const currency = check.bills[0].currency;
+      const sameCurrency = check.bills.every(bill => bill.currency === currency);
+      return {
+        label: sameCurrency ? money(check.bills.reduce((sum, bill) => sum + bill.amountCents, 0), currency) + " unpaid" : check.bills.length + " unpaid bills",
+        detail: check.bills.length === 1 ? period(check.bills[0].periodStart, check.bills[0].periodEnd) : check.bills.length + " bills",
+      };
+    }
+    if (check.group !== "current") return { label: "Check payment", detail: "Not verified" };
+    if (check.label === "Covered by annual payment") return { label: "Paid", detail: "Annual" };
+    if (check.label.includes("bill adjusted")) return { label: "Nothing due", detail: "" };
+    if (/upcoming|not.*due|Nothing due yet/i.test(check.label)) return { label: "Not due yet", detail: check.nextPaymentAt ? "Due " + date(check.nextPaymentAt) : "" };
+    if (/paid|Up to date/i.test(check.label) && check.label !== "Paid externally") return { label: "Paid", detail: "" };
+    return { label: check.label, detail: "" };
   }
-  return <div className="space-y-4">
-    <div className="flex items-start justify-between gap-3">
-      <div><h2 className="text-lg font-semibold">Payment status for {monthLabel}</h2><p className="mt-1 text-sm leading-5 text-[#657178]">See who is in order and who needs attention. Earlier unpaid bills stay visible, even when this month is paid.</p></div>
-      <button type="button" disabled={refreshing || checking} onClick={() => void refresh()} className="press-feedback min-h-11 shrink-0 rounded-lg border border-[#CCD7D3] px-3 text-sm font-semibold text-[#17624F] disabled:opacity-50">{refreshing ? "Checking…" : "Refresh"}</button>
+  return <div className="space-y-3">
+    <div className="flex items-center justify-between gap-3">
+      <h2 className="text-base font-semibold">{monthLabel}</h2>
+      <button type="button" disabled={refreshing || checking} onClick={() => void refresh()} aria-label={refreshing ? "Refreshing payments" : "Refresh payments"} title={data ? "Last checked " + new Date(data.checkedAt).toLocaleString("en-CA", { timeZone: timezone }) : "Refresh payments"} className="press-feedback flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[#52616A] hover:bg-[#EEF3F2] focus-visible:outline-2 focus-visible:outline-[#17624F] disabled:opacity-40">
+        <svg viewBox="0 0 24 24" className={cn("h-5 w-5", refreshing && "animate-spin")} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M20 7v5h-5M4 17v-5h5" /><path d="M6.1 8a7 7 0 0 1 11.6-2L20 9M4 15l2.3 3A7 7 0 0 0 17.9 16" /></svg>
+      </button>
     </div>
-    {checking ? <p role="status" className="py-8 text-sm text-[#657178]">Checking payment records with Stripe…</p> : <>
-      <p role="status" className="text-xs text-[#657178]">{error || checkFailure ? "Could not check payments. Linked subscriptions appear under Needs attention until a refresh succeeds. This does not confirm money is owed." : data ? `Checked ${new Date(data.checkedAt).toLocaleString("en-CA", { timeZone: timezone, month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}` : "Payment records could not be verified."}</p>
-      <div className="grid grid-cols-3 gap-x-2 border-b border-[#DCE3E0] sm:gap-x-4" aria-label="Payment standing">
-        {filters.map(([value, label]) => <button key={value} type="button" onClick={() => setFilter(value)} aria-pressed={filter === value} className={cn("press-feedback flex min-h-12 flex-wrap items-center justify-between gap-1 border-b-2 px-1 text-sm", filter === value ? "border-[#17624F] font-semibold text-[#17624F]" : "border-transparent text-[#657178]")}><span>{label}</span><span className="tabular-nums">{scoped.filter(entry => matchesFilter(entry.check.group, value)).length}</span></button>)}
-      </div>
-      <div className="flex flex-wrap items-center gap-3">
-        <input aria-label="Search student or parent" placeholder="Search student or parent" value={search} onChange={event => setSearch(event.target.value)} className="min-h-11 min-w-0 flex-1 rounded-lg border border-[#D6DCE0] bg-white px-3 text-sm focus-visible:outline-[#17624F]" />
-        <select aria-label="Sort payment list" value={sortByParent ? "parent" : "student"} onChange={event => setSortByParent(event.target.value === "parent")} className="min-h-11 rounded-lg border border-[#D6DCE0] bg-white px-2 text-sm"><option value="student">Student name</option><option value="parent">Parent name</option></select>
-      </div>
-      <label className="flex min-h-10 w-fit items-center gap-2 text-sm text-[#52616A]"><input type="checkbox" checked={activeOnly} onChange={event => setActiveOnly(event.target.checked)} />Active students only</label>
-      <div className="divide-y divide-[#DFE6E2] border-y border-[#DFE6E2]">
-        {visible.map(({ row, check }) => <button key={row.enrollment.id} type="button" onClick={() => onOpenStudent(row, check)} className="press-feedback grid w-full gap-3 py-4 text-left hover:bg-[#F7F9F8] focus-visible:outline-[#17624F] md:grid-cols-[minmax(0,1fr)_minmax(0,1.5fr)_minmax(0,1fr)] md:gap-5">
-          <div className="min-w-0"><p className="break-words font-semibold">{row.student?.full_name || "Student"}</p>{row.parent?.full_name ? <p className="mt-1 break-words text-sm text-[#657178]">Parent: {row.parent.full_name}</p> : null}<p className="mt-1 text-xs text-[#657178]">{row.enrollment.status !== "active" ? `${row.enrollment.status} · ` : ""}{row.paymentTerms?.payment_type === "monthly" || row.subscription?.payment_type === "monthly" ? `${money(row.paymentTerms?.amount_cents ?? row.subscription?.amount_cents ?? 0, row.paymentTerms?.currency ?? row.subscription?.currency)} / month` : row.paymentTerms?.payment_type === "annual" ? "Annual" : "Payment arrangement"}</p></div>
-          {standing(check)}
-          <div className="space-y-1 text-xs leading-5 text-[#657178]">{check.lastPaymentAt ? <p>Last paid: {money(check.lastPaymentAmountCents ?? 0, check.currency)} · {date(check.lastPaymentAt)}</p> : null}{check.nextPaymentAt ? <p>Next payment: {date(check.nextPaymentAt)}</p> : null}<p className="font-semibold text-[#17624F] underline underline-offset-2">Student file →</p></div>
-        </button>)}
-        {!visible.length ? <p className="py-8 text-sm text-[#657178]">{search || activeOnly ? "No matching students." : filter === "attention" ? "No outstanding bills or records needing review were found in the checked list." : "No students in this group."}</p> : null}
-      </div>
-      <div className="space-y-2 text-xs leading-5 text-[#657178]"><p>Not enrolled yet? Approved students who have not completed registration are in Applications → Waiting Payment.</p><p>This checks linked Stripe subscriptions and recorded payment arrangements. Unbilled historical fees cannot be inferred from payment history. Refunds do not automatically create a new amount owing.</p></div>
-    </>}
+    <div className="grid grid-cols-2 border-b border-[#DCE3E0]" aria-label="Payment standing">
+      {filters.map(([value, label]) => <button key={value} type="button" onClick={() => setFilter(value)} aria-pressed={filter === value} className={cn("press-feedback flex min-h-11 items-center justify-center gap-2 border-b-2 px-2 text-sm", filter === value ? "border-[#17624F] font-semibold text-[#17624F]" : "border-transparent text-[#657178]")}><span>{label}</span><span className="tabular-nums">{checking ? "—" : entries.filter(entry => matchesFilter(entry.check.group, value)).length}</span></button>)}
+    </div>
+    <input aria-label="Search student or parent" placeholder="Search student or parent" value={search} onChange={event => setSearch(event.target.value)} className="min-h-11 w-full rounded-xl border border-[#D6DCE0] bg-[#F8FAFB] px-3 text-sm focus-visible:outline-[#17624F]" />
+    {error || checkFailure ? <p role="status" className="text-sm text-[#845A1E]">Couldn’t refresh payments. Try again.</p> : null}
+    {checking ? <p role="status" className="py-8 text-center text-sm text-[#657178]">Checking payments…</p> : <div className="divide-y divide-[#E3E8E6]">
+      {visible.map(({ row, check }) => {
+        const summary = status(check);
+        return <button key={row.enrollment.id} type="button" onClick={() => onOpenStudent(row, check)} className="press-feedback grid min-h-[76px] w-full grid-cols-[minmax(0,1fr)_auto_12px] items-center gap-3 rounded-lg px-2 py-3 text-left hover:bg-[#F7F9F8] focus-visible:outline-2 focus-visible:outline-[#17624F] md:gap-6 md:px-3">
+          <span className="min-w-0"><span className="block break-words text-sm font-semibold">{row.student?.full_name || "Student"}</span>{row.parent?.full_name ? <span className="mt-1 block break-words text-xs text-[#657178]">Parent: {row.parent.full_name}</span> : null}{row.enrollment.status !== "active" ? <span className="mt-1 block text-xs capitalize text-[#657178]">{row.enrollment.status}</span> : null}</span>
+          <span className="max-w-[145px] text-right"><span className={cn("block text-sm font-semibold", check.group === "attention" ? "text-[#B42318]" : check.group === "current" ? "text-[#17624F]" : "text-[#845A1E]")}>{summary.label}</span>{summary.detail ? <span className="mt-1 block text-xs text-[#657178]">{summary.detail}</span> : null}</span>
+          <svg viewBox="0 0 16 16" className="h-4 w-3 text-[#8B9992]" fill="none" stroke="currentColor" strokeWidth="1.75" aria-hidden><path d="m6 3 5 5-5 5" /></svg>
+        </button>;
+      })}
+      {!visible.length ? <p className="py-8 text-center text-sm text-[#657178]">{search ? "No matching students." : !entries.length ? "No enrolled students." : filter === "attention" ? "Everyone checked is in order." : "No students in this list."}</p> : null}
+    </div>}
   </div>;
 }

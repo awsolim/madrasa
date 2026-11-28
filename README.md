@@ -34,10 +34,11 @@ When this period is settled but an older bill remains unpaid, both facts appear.
   does not hide an older unpaid invoice. Open the row for the student file.
 - **In order** includes settled current periods, future first payments, recorded
   waivers/external payments and free arrangements. The reason is shown explicitly.
-- **Everyone** shows the combined list. Search accepts student or parent names;
-  inactive students are included by default so leaving a class does not hide debt.
+- The two compact lists show student/parent names and a brief payment status or
+  unpaid amount. Open a row for invoice details, dates and explanations. Search
+  accepts student or parent names; former students remain visible when relevant.
 
-Press **Refresh** for a fresh check; the screen displays when it was checked.
+Press the refresh icon for a fresh check; its tooltip includes the check time.
 The server reads linked subscriptions and their invoices with four concurrent
 workers, at most three invoice pages per subscription and a shared 25-second
 Stripe request budget. Incomplete checks remain explicitly unverified. These
