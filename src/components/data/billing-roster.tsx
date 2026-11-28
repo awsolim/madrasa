@@ -1,9 +1,10 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { hasCurrentPaymentBypass } from "@/components/data/student-record-file";
 import type { FinanceEnrollmentRow } from "@/components/data/program-finances-data";
 import type { BillingCheck } from "@/lib/finance/billing-check";
+import { billingMonth, billingMonthOptions, validBillingMonth } from "@/lib/finance/billing-month";
+import { checkRecordedBillingMonth } from "@/lib/finance/recorded-billing-month";
 import type { Database } from "@/lib/supabase/types";
 import { getCachedSessionSnapshot, loadCachedSession } from "@/lib/client-cache";
 import { useCachedQuery } from "@/lib/query-cache";
@@ -11,36 +12,28 @@ import { useRefreshOnReturn } from "@/hooks/use-refresh-on-return";
 import { cn } from "@/lib/utils";
 
 type Program = Database["public"]["Tables"]["programs"]["Row"];
-type CheckResponse = { checks: Record<string, BillingCheck>; checkedAt: string };
+type CheckResponse = { checks: Record<string, BillingCheck>; checkedAt: string; month: string };
 type Filter = "attention" | "current";
 const filters: Array<[Filter, string]> = [["current", "In order"], ["attention", "Needs attention"]];
 const matchesFilter = (group: BillingCheck["group"], filter: Filter) => filter === "attention" ? group !== "current" : group === "current";
 const money = (amount: number, currency = "cad") => new Intl.NumberFormat("en-CA", { style: "currency", currency: currency.toUpperCase() }).format(amount / 100);
 
-function localCheck(row: FinanceEnrollmentRow, program: Program): BillingCheck {
-  const base = { bills: [], checkedAt: "" };
-  if (hasCurrentPaymentBypass(row) || row.subscription?.payment_waived || row.paymentTerms?.payment_type === "waived") {
-    const external = row.request?.payment_bypass_external;
-    return { ...base, group: "current", label: external ? "Paid externally" : "Waived", explanation: external ? "Staff recorded payment outside the app." : "Staff waived tuition under the current payment arrangement." };
-  }
-  if (row.paymentTerms?.payment_type === "free" || !program.is_paid) return { ...base, group: "current", label: "Free", explanation: "No payment is required." };
-  if (row.paymentTerms?.status === "paid" && ["pay_in_full", "one_time"].includes(row.paymentTerms.payment_type)) return { ...base, group: "current", label: "Paid in full", explanation: "The approved one-time payment is recorded as settled." };
-  return { ...base, group: "review", label: "Setup / records need review", explanation: "No linked recurring subscription or settled payment confirms this arrangement. Open the student file to review it; no overdue amount has been assumed." };
-}
-
 export function BillingRoster({ program, rows, onOpenStudent, onRefreshRows }: {
   program: Program; rows: FinanceEnrollmentRow[]; onOpenStudent: (row: FinanceEnrollmentRow, check: BillingCheck) => void; onRefreshRows: () => Promise<void>;
 }) {
-  const [filter, setFilter] = useState<Filter>("attention");
+  const [filter, setFilter] = useState<Filter>("current");
+  const timezone = program.schedule_timezone || "UTC";
+  const [selectedMonth, setSelectedMonth] = useState(() => billingMonth(Date.now(), timezone));
+  const [currentMonth] = useState(() => billingMonth(Date.now(), timezone));
   const [search, setSearch] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   const [checkFailure, setCheckFailure] = useState<string | null>(null);
   const viewerId = getCachedSessionSnapshot()?.user.id;
-  const { data, error, refetch } = useCachedQuery<CheckResponse>(viewerId ? `billing-check:${program.id}:${viewerId}` : null, async () => {
+  const { data, error, refetch } = useCachedQuery<CheckResponse>(viewerId ? `billing-month:${program.id}:${viewerId}:${selectedMonth}` : null, async () => {
     try {
       const session = await loadCachedSession();
       if (!session) throw new Error("Please sign in again.");
-      const response = await fetch(`/api/programs/${program.id}/finance/billing-check`, { method: "POST", headers: { authorization: `Bearer ${session.access_token}` } });
+      const response = await fetch(`/api/programs/${program.id}/finance/billing-check`, { method: "POST", headers: { authorization: `Bearer ${session.access_token}`, "content-type": "application/json" }, body: JSON.stringify({ month: selectedMonth }) });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || "Could not check payments.");
       setCheckFailure(null);
@@ -51,11 +44,11 @@ export function BillingRoster({ program, rows, onOpenStudent, onRefreshRows }: {
     }
   }, { persist: false });
   useRefreshOnReturn(true, refetch);
-  const checking = !data && !error;
-  const timezone = program.schedule_timezone || "UTC";
-  const asOf = data?.checkedAt ?? new Date().toISOString();
-  const monthLabel = new Date(asOf).toLocaleDateString("en-CA", { timeZone: timezone, month: "long", year: "numeric" });
-  const monthName = new Date(asOf).toLocaleDateString("en-CA", { timeZone: timezone, month: "long" });
+  const snapshot = data?.month === selectedMonth ? data : undefined;
+  const checking = !snapshot && !error;
+  const firstMonth = program.start_date?.slice(0, 7) || (program.created_at ? billingMonth(program.created_at, timezone) : currentMonth);
+  const months = billingMonthOptions(validBillingMonth(firstMonth) && firstMonth <= currentMonth ? firstMonth : currentMonth, currentMonth);
+  const monthLabel = (value: string) => new Date(`${value}-15T12:00:00Z`).toLocaleDateString("en-CA", { timeZone: timezone, month: "long", year: "numeric" });
   const date = (value: string) => new Date(value).toLocaleDateString("en-CA", { timeZone: timezone, month: "short", day: "numeric" });
   const period = (start: string, end: string) => {
     const endInclusive = new Date(new Date(end).getTime() - 1).toISOString();
@@ -70,24 +63,17 @@ export function BillingRoster({ program, rows, onOpenStudent, onRefreshRows }: {
     return month(start) === month(endInclusive) ? month(start) : `${date(start)} – ${date(endInclusive)}`;
   };
   const entries = useMemo(() => rows.map(row => {
-    const live = checkFailure ? undefined : data?.checks[row.enrollment.student_profile_id];
-    let check: BillingCheck = row.subscription?.stripe_subscription_id
+    const recorded = checkRecordedBillingMonth(row, program.is_paid, selectedMonth, timezone);
+    const live = checkFailure ? undefined : snapshot?.checks[row.enrollment.student_profile_id];
+    const linked = row.subscription?.stripe_subscription_id || row.paymentTermsHistory?.some(terms => terms.stripe_subscription_id);
+    let check: BillingCheck = linked
       ? live ?? { group: "review", label: "Could not verify", explanation: "The linked Stripe subscription has not been checked. Refresh before treating this student as in order.", bills: [], checkedAt: "" }
-      : localCheck(row, program);
-    const coverage = check.settledPeriod;
-    const checkedTime = new Date(asOf).getTime();
-    if (coverage && new Date(coverage.start).getTime() <= checkedTime && new Date(coverage.end).getTime() > checkedTime) {
-      const coverageMonth = new Date(coverage.start).toLocaleDateString("en-CA", { timeZone: timezone, month: "long", year: "numeric" });
-      // Before the 9 am renewal on the first, the previous month's paid period
-      // is still current. It must not become a claim that the new month is paid.
-      const awaitingRenewal = program.monthly_billing_anchor === "first_of_month" && coverage.interval !== "year" && coverageMonth !== monthLabel;
-      const summary = awaitingRenewal ? "Next payment upcoming" : coverage.kind === "adjusted" ? `Nothing due for ${monthName} — bill adjusted`
-        : coverage.interval === "year" ? "Covered by annual payment" : program.monthly_billing_anchor === "first_of_month" ? `${monthName} paid` : "Current billing period paid";
-      const explanation = awaitingRenewal ? "The previous billing period is settled. The next payment is not due yet." : check.explanation;
-      check = { ...check, label: check.group === "current" ? summary : check.label, explanation: check.group === "current" ? explanation : `${summary}. ${check.explanation}` };
+      : recorded;
+    if (live?.applicable === false) {
+      check = recorded.group === "current" || row.enrollment.status === "active" ? recorded : live;
     }
     return { row, check };
-  }), [asOf, checkFailure, data, monthLabel, monthName, program, rows, timezone]);
+  }).filter(entry => entry.check.applicable !== false), [checkFailure, snapshot, selectedMonth, program.is_paid, rows, timezone]);
   const visible = entries.filter(({ row, check }) => matchesFilter(check.group, filter) && `${row.student?.full_name ?? ""} ${row.parent?.full_name ?? ""}`.toLowerCase().includes(search.trim().toLowerCase()))
     .sort((a, b) => {
       // Show confirmed unpaid bills before uncertain records, without mixing the reasons.
@@ -110,15 +96,15 @@ export function BillingRoster({ program, rows, onOpenStudent, onRefreshRows }: {
     }
     if (check.group !== "current") return { label: "Check payment", detail: "Not verified" };
     if (check.label === "Covered by annual payment") return { label: "Paid", detail: "Annual" };
-    if (check.label.includes("bill adjusted")) return { label: "Nothing due", detail: "" };
+    if (/bill adjusted/i.test(check.label)) return { label: "Nothing due", detail: "" };
     if (/upcoming|not.*due|Nothing due yet/i.test(check.label)) return { label: "Not due yet", detail: check.nextPaymentAt ? "Due " + date(check.nextPaymentAt) : "" };
     if (/paid|Up to date/i.test(check.label) && check.label !== "Paid externally") return { label: "Paid", detail: "" };
     return { label: check.label, detail: "" };
   }
   return <div className="space-y-3">
     <div className="flex items-center justify-between gap-3">
-      <h2 className="text-base font-semibold">{monthLabel}</h2>
-      <button type="button" disabled={refreshing || checking} onClick={() => void refresh()} aria-label={refreshing ? "Refreshing payments" : "Refresh payments"} title={data ? "Last checked " + new Date(data.checkedAt).toLocaleString("en-CA", { timeZone: timezone }) : "Refresh payments"} className="press-feedback flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[#52616A] hover:bg-[#EEF3F2] focus-visible:outline-2 focus-visible:outline-[#17624F] disabled:opacity-40">
+      <select aria-label="Billing month" value={selectedMonth} onChange={event => setSelectedMonth(event.target.value)} className="min-h-11 max-w-[calc(100%-52px)] bg-transparent py-2 pr-2 text-base font-semibold text-[#26323A] focus-visible:outline-2 focus-visible:outline-[#17624F]">{months.map(month => <option key={month} value={month}>{monthLabel(month)}</option>)}</select>
+      <button type="button" disabled={refreshing || checking} onClick={() => void refresh()} aria-label={refreshing ? "Refreshing payments" : "Refresh payments"} title={snapshot ? "Last checked " + new Date(snapshot.checkedAt).toLocaleString("en-CA", { timeZone: timezone }) : "Refresh payments"} className="press-feedback flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-[#52616A] hover:bg-[#EEF3F2] focus-visible:outline-2 focus-visible:outline-[#17624F] disabled:opacity-40">
         <svg viewBox="0 0 24 24" className={cn("h-5 w-5", refreshing && "animate-spin")} fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden><path d="M20 7v5h-5M4 17v-5h5" /><path d="M6.1 8a7 7 0 0 1 11.6-2L20 9M4 15l2.3 3A7 7 0 0 0 17.9 16" /></svg>
       </button>
     </div>
@@ -127,7 +113,7 @@ export function BillingRoster({ program, rows, onOpenStudent, onRefreshRows }: {
     </div>
     <input aria-label="Search student or parent" placeholder="Search student or parent" value={search} onChange={event => setSearch(event.target.value)} className="min-h-11 w-full rounded-xl border border-[#D6DCE0] bg-[#F8FAFB] px-3 text-sm focus-visible:outline-[#17624F]" />
     {error || checkFailure ? <p role="status" className="text-sm text-[#845A1E]">Couldn’t refresh payments. Try again.</p> : null}
-    {checking ? <p role="status" className="py-8 text-center text-sm text-[#657178]">Checking payments…</p> : <div className="divide-y divide-[#E3E8E6]">
+    {checking ? <div role="status" aria-busy="true" aria-label="Checking payments" className="flex justify-center py-10 text-[#17624F]"><svg viewBox="0 0 24 24" className="h-7 w-7 animate-spin" fill="none" aria-hidden><circle cx="12" cy="12" r="9" stroke="currentColor" strokeWidth="2.5" opacity="0.2" /><path d="M12 3a9 9 0 0 1 9 9" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" /></svg><span className="sr-only">Checking payments…</span></div> : <div className="divide-y divide-[#E3E8E6]">
       {visible.map(({ row, check }) => {
         const summary = status(check);
         return <button key={row.enrollment.id} type="button" onClick={() => onOpenStudent(row, check)} className="press-feedback grid min-h-[76px] w-full grid-cols-[minmax(0,1fr)_auto_12px] items-center gap-3 rounded-lg px-2 py-3 text-left hover:bg-[#F7F9F8] focus-visible:outline-2 focus-visible:outline-[#17624F] md:gap-6 md:px-3">

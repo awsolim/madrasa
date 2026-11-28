@@ -17,6 +17,7 @@ export type BillingCheck = {
   lastPaymentAt?: string;
   lastPaymentAmountCents?: number;
   currency?: string;
+  applicable?: boolean;
   settledPeriod?: { start: string; end: string; kind: "paid" | "adjusted"; interval?: string };
 };
 

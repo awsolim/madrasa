@@ -109,7 +109,7 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
   const [program, setProgram] = useState<Program | null>(initialPage?.program ?? null);
   const [rows, setRows] = useState<FinanceEnrollmentRow[]>(initialPage?.rows ?? []);
   const [, setAuditActorsById] = useState<Record<string, Profile>>(initialPage?.auditActorsById ?? {});
-  const [view, setView] = useState<"overview" | "billing" | "transactions">("overview");
+  const [view, setView] = useState<"overview" | "billing" | "transactions">("billing");
   const [analytics, setAnalytics] = useState<ProgramFinanceAnalytics | null>(null);
   const [actionTarget, setActionTarget] = useState<{ row: FinanceEnrollmentRow; action: FinanceAction } | null>(null);
   const [detailsTarget, setDetailsTarget] = useState<FinanceEnrollmentRow | null>(null);
@@ -270,16 +270,16 @@ export function ProgramFinancesData({ slug, programId, mode = "teacher" }: { slu
   return (
     <section className="space-y-5 bg-white px-4 pb-28 pt-4 text-[#26323A]">
       {error ? <p role="status" className="rounded-xl bg-[#FFF6E8] px-4 py-3 text-sm text-[#79521B]">Could not refresh finances. Showing the last loaded records.</p> : null}
-      <div className="flex items-center gap-3">
-      <div className="grid min-w-0 flex-1 grid-cols-3 rounded-full bg-[#EEF3F2] p-1 md:max-w-lg">
-        {([['overview', 'Overview'], ['billing', 'Billing'], ['transactions', 'Transactions']] as const).map(([value, label]) => (
-          <button key={value} type="button" onClick={() => setView(value)} className={cn("h-10 rounded-full text-sm font-semibold transition", view === value ? "bg-white text-[#17624F] shadow-sm" : "text-[#657178]")}>{label}</button>
+      <div className="flex flex-wrap items-center justify-end gap-2 sm:flex-nowrap sm:gap-3">
+      <div className="grid w-full min-w-0 grid-cols-[1fr_1.3fr_1fr] rounded-full bg-[#EEF3F2] p-1 sm:w-auto sm:flex-1 md:max-w-lg">
+        {([['billing', 'Billing'], ['transactions', 'Transactions'], ['overview', 'Summary']] as const).map(([value, label]) => (
+          <button key={value} type="button" onClick={() => setView(value)} aria-pressed={view === value} className={cn("min-h-10 min-w-0 rounded-full px-2 py-2 text-sm font-semibold transition active:scale-[0.97] focus-visible:outline-2 focus-visible:outline-[#17624F]", view === value ? "bg-white text-[#17624F] shadow-sm" : "text-[#657178]")}>{label}</button>
         ))}
       </div>
         <Link href={`${mode === "admin" ? `/m/${slug}/admin/programs` : `/m/${slug}/teacher/classes`}/${programId}/exports?type=finance_summary`} className="inline-flex h-10 shrink-0 items-center rounded-full border border-[#C7D6D1] bg-white px-4 text-sm font-semibold text-[#17624F] hover:bg-[#F5F9F7]">Export</Link>
       </div>
 
-      {view === "overview" ? (analytics ? <ProgramFinanceOverview analytics={analytics} fallbackProjectedMonthlyCents={estimatedMonthlyCents} /> : <div className="min-h-64" aria-label="Loading finance overview" aria-busy="true" />) : view === "transactions" ? <ProgramFinanceTransactions programId={programId} key={programId} onOpenStudent={(studentProfileId) => { const row = rows.find((item) => item.enrollment.student_profile_id === studentProfileId); if (row) setDetailsTarget(row); }} /> : null}
+      {view === "overview" ? (analytics ? <ProgramFinanceOverview analytics={analytics} fallbackProjectedMonthlyCents={estimatedMonthlyCents} /> : <div className="min-h-64" aria-label="Loading finance summary" aria-busy="true" />) : view === "transactions" ? <ProgramFinanceTransactions programId={programId} key={programId} onOpenStudent={(studentProfileId) => { const row = rows.find((item) => item.enrollment.student_profile_id === studentProfileId); if (row) setDetailsTarget(row); }} /> : null}
 
       {view === "billing" ? <BillingRoster program={program} rows={rows} onOpenStudent={(row, check) => { setDetailsTarget(row); setDetailsBillingCheck(check); }} onRefreshRows={loadFinanceRows} /> : null}
 

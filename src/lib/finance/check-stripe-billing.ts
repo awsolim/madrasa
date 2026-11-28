@@ -1,10 +1,11 @@
 import "server-only";
 import type Stripe from "stripe";
 import { checkSubscriptionBilling, type BillingCheck, type InvoiceEvidence } from "@/lib/finance/billing-check";
+import { checkSubscriptionBillingMonth } from "@/lib/finance/billing-month";
 
 // Bounded, read-only checks. A truncated history is explicitly 'Review needed'.
 // There is no recurring polling and no Stripe or database mutation here.
-export async function checkStripeBilling(stripe: Stripe, subscriptionId: string, options: Stripe.RequestOptions | undefined, deadline = Date.now() + 25_000): Promise<BillingCheck> {
+export async function checkStripeBilling(stripe: Stripe, subscriptionId: string, options: Stripe.RequestOptions | undefined, deadline = Date.now() + 25_000, month?: { value: string; timeZone: string }): Promise<BillingCheck> {
   function requestOptions() {
     const remaining = deadline - Date.now();
     if (remaining <= 0) throw new Error("Billing check time limit reached.");
@@ -36,10 +37,16 @@ export async function checkStripeBilling(stripe: Stripe, subscriptionId: string,
   // Read Stripe's response clock, avoiding host clock skew around collection dates.
   const responseDate = subscription.lastResponse?.headers?.date;
   const now = responseDate ? Date.parse(responseDate) / 1000 : Date.now() / 1000;
-  return checkSubscriptionBilling({
+  const evidence = {
     status: subscription.status, paused: Boolean(subscription.pause_collection), cancelAtPeriodEnd: subscription.cancel_at_period_end,
     periodStart: item?.current_period_start ?? null, periodEnd: item?.current_period_end ?? null,
     interval: item?.price.recurring?.interval,
     firstChargeAt: Number.isFinite(firstCharge) ? firstCharge : subscription.billing_cycle_anchor > now ? subscription.billing_cycle_anchor : null,
-  }, invoices, complete && subscription.items.data.length === 1 && !subscription.items.has_more, now);
+    startedAt: subscription.start_date,
+    endedAt: subscription.ended_at,
+    freeUntil: subscription.metadata.opening_period_waived === "true" && Number.isFinite(firstCharge) ? firstCharge : subscription.trial_end,
+  };
+  const completeHistory = complete && subscription.items.data.length === 1 && !subscription.items.has_more;
+  return month ? checkSubscriptionBillingMonth(evidence, invoices, completeHistory, now, month.value, month.timeZone)
+    : checkSubscriptionBilling(evidence, invoices, completeHistory, now);
 }

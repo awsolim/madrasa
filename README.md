@@ -23,16 +23,18 @@ This project uses [`next/font`](https://nextjs.org/docs/app/building-your-applic
 ## Teacher payment checks
 
 Open **Classes → Finances → Billing**. Finance permission is required.
-The heading names the month of the displayed check. Settled monthly periods show
-the month as paid; annual coverage and adjusted bills are identified explicitly.
-When this period is settled but an older bill remains unpaid, both facts appear.
+Choose the month from the heading dropdown, from the class start through the
+current month. Checks follow the invoice's tuition period, not the date money
+arrived: an October bill paid in November counts as settled for October. Annual
+coverage and adjusted bills are identified explicitly. A spinner shows while
+the selected month is being checked; another month's cached result is not shown.
 
 - **Needs attention** lists confirmed outstanding Stripe bills first, including
-  each remaining balance, billing period and due date. It also includes setup,
+  each remaining balance for the selected month. It also includes setup,
   missing evidence and failed checks, with the distinct reason shown. Do not
   request payment solely because a record needs checking. A later paid invoice
-  does not hide an older unpaid invoice. Open the row for the student file.
-- **In order** includes settled current periods, future first payments, recorded
+  does not hide an unpaid invoice belonging to that month. Open the row for the student file.
+- **In order** includes settled selected periods, future first payments, recorded
   waivers/external payments and free arrangements. The reason is shown explicitly.
 - The two compact lists show student/parent names and a brief payment status or
   unpaid amount. Open a row for invoice details, dates and explanations. Search
@@ -44,8 +46,10 @@ workers, at most three invoice pages per subscription and a shared 25-second
 Stripe request budget. Incomplete checks remain explicitly unverified. These
 checks never charge, refund, cancel or update Stripe/database records, and do
 not continuously poll. Results stay in the signed-in user's memory cache only.
-Older subscriptions no longer linked to a student, and fees never billed or
-recorded, require a separate historical reconciliation. A refund does not by
+Older subscription links retained in payment-term history are checked too.
+Missing historical links, incomplete evidence and fees never billed or recorded
+require separate reconciliation. Today's waiver or pause does not retrospectively
+clear earlier months without dated supporting records. A refund does not by
 itself create a new balance owing. This screen is not an audit of unbilled fees.
 
 For new monthly checkouts in Al Tarteel and Weekend School, the first is a full
